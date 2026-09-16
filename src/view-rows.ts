@@ -74,7 +74,7 @@ function optionCheckMark(theme: Theme, q: NormalizedQuestion, st: QuestionAnswer
  *
  * 排版不变量：
  * - 首行携带「光标 + 勾选」前缀，后续折行等宽悬挂缩进、左缘与前缀一致；聚焦项全部折行套用 `selectedBg` 与 `bold` 样式至 `targetWidth`
- * - 非聚焦未选中预设选项淡化 `dim`（其余 `text`）且不超限；带专属补充说明的选项追加 `ICONS.note`
+ * - 非聚焦未选中选项与题目补充说明淡化 `dim`（其余 `text`）且不超限；带专属补充说明的选项追加 `ICONS.note`
  * - 快路径：标签可见宽度未超限时直接复用单行，跳过 `wrapTextWithAnsi` 正则解析
  *
  * @param theme - 主题样式提供者
@@ -117,8 +117,8 @@ export function formatMenuItemRow(
       return theme.bg("selectedBg", theme.fg("text", theme.bold(padToVisibleWidth(row, targetWidth))));
     }
 
-    const isUnselectedOption = item.type === "option" && !isSelected;
-    const styledLine = isUnselectedOption ? theme.fg("dim", line) : theme.fg("text", line);
+    const isUnselected = (item.type === "option" || item.type === "custom_note") && !isSelected;
+    const styledLine = isUnselected ? theme.fg("dim", line) : theme.fg("text", line);
     const row = idx === 0 ? `${prefix}${styledLine}` : `${indent}${styledLine}`;
     return safeLine(row, targetWidth);
   });

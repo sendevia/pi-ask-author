@@ -948,7 +948,7 @@ export class AskAuthorComponent implements Component, Focusable {
         const optLabel = optionLabelOf(q, currentItem.optionIndex);
         pushWrapped(
           lines,
-          this.theme.fg("warning", TEXTS.view.optionAttachedNoteBanner(optLabel, optNote)),
+          this.theme.fg("success", TEXTS.view.optionAttachedNoteBanner(optLabel, optNote)),
           renderWidth,
           "  ",
         );
