@@ -33,9 +33,9 @@ export interface ResultContext {
 }
 
 /**
- * 提取异常对象的用户可读消息（`Error` 取 `message`，其余经 `String` 字符串化）
+ * 提取异常对象的用户可读消息（`Error` 取自 `message`，其余经 `String` 字符串化）
  * @param err - 未知异常对象
- * @returns `Error` 实例取其 `message`（可为空串），其余类型取 `String(err)`（对象为 `[object Object]`）
+ * @returns `Error` 实例读取其 `message`（可为空串），其余类型取自 `String(err)`（对象为 `[object Object]`）
  */
 function toErrorMessage(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
@@ -142,13 +142,13 @@ function createSuccessResult(formModel: AskAuthorFormModel, answers: AuthorAnswe
 // ===== 宿主边界收窄与结果卡片数据派生 =====
 
 /**
- * 结果卡片宿主边界的**唯一**类型收窄点：把 `renderResult` 的 `details` 从未可信型别提升为 `AskAuthorResult`（工具入参边界另由 `sanitizeAskAuthorArgs` 做运行时守卫，与本函数互不覆盖）
+ * 结果卡片宿主边界的**唯一**类型收窄点：把 `renderResult` 的 `details` 从不可信类型提升为 `AskAuthorResult`（工具入参边界另由 `sanitizeAskAuthorArgs` 做运行时守卫，与本函数互不覆盖）
  * 会话回放时 `details` 由转录 JSON 反序列化而来（运行期形状不可信），故先做形状闸门再断言一次；数组元素由本扩展自身写入，不在闸门范围
  * 校验项：普通对象、`cancelled`/`answers`/`questions`/`formTitle` 键存在性、`cancelled` 布尔、`answers`/`questions` 数组、`formTitle` 字符串
  * 可选 `error` / `formDescription` 不设闸门：二者仅参与字符串插值，非字符串至多渲染为退化文本（`fg` 为模板拼接，不抛出错误）
  * @param value - 宿主传入的不可信 `details` 值
  * @returns 通过形状闸门的 `AskAuthorResult`
- * @throws 任一校验项失败时抛出错误（就地崩溃，避免用错误的卡片掩盖结果损坏）
+ * @throws 任一校验项失败时抛出错误（就地崩溃）
  */
 function narrowResultDetails(value: unknown): AskAuthorResult {
   if (typeof value !== "object" || value === null || Array.isArray(value)) {
@@ -190,7 +190,7 @@ function formatAnswerLine(ans: AuthorAnswerItem): string {
   return ans.customText || TEXTS.fallbacks.unselectedOption;
 }
 
-/** 调用卡片派生数据：与主题无关的纯计算结果（颜色合成每帧按当前主题现算） */
+/** 调用卡片派生数据：与主题无关的纯计算结果（颜色合成每帧按当前主题现场计算） */
 export interface CallCardData {
   /** 卡片标题（已清洗的 `formTitle`） */
   title: string;
@@ -200,7 +200,7 @@ export interface CallCardData {
 
 /**
  * `renderCall` 记忆化状态载荷：宿主按工具执行行创建一次、跨帧复用的可变对象（`ToolRenderContext.state`，同一行的 `renderCall` 与 `renderResult` 共享该实例）
- * 以 **args 对象身份**为键（`cachedArgs` 记身份、`cachedCard` 记派生数据），依赖宿主「流式补全整体替换 `args` 引用」的不变量（宿主经 `ToolExecutionComponent.updateArgs` 赋入新对象）：身份变化即失效重算；若宿主原地改写同一对象，缓存将滞留旧数据
+ * 以 **args 对象身份**为键（`cachedArgs` 记录身份、`cachedCard` 记录派生数据），依赖宿主「流式补全整体替换 `args` 引用」的不变量（宿主经 `ToolExecutionComponent.updateArgs` 赋入新对象）：身份变化即失效重新计算；若宿主原地改写同一对象，缓存将滞留旧数据
  */
 export interface CallRenderState {
   /** 上一次派生所用的 args 对象身份（仅作 `===` 引用比对，不读取任何属性） */
@@ -211,11 +211,11 @@ export interface CallRenderState {
 
 /**
  * 派生调用卡片数据（标题 + 计数标签：题目数 > 1 时附带题量，单题模式仅选项数）
- * 入参清洗、模型构建与计数归约仅在 **args 对象身份变化时**执行一次，同帧后续渲染只做一次引用比对（§2.1）
- * 缓存只存与主题无关的数据——`theme` 是身份稳定的 Proxy，缓存 ANSI 着色结果会在主题切换后滞留
+ * 入参清洗、模型构建与计数归约仅在 **args 对象身份变化时**执行一次，同帧后续渲染只做一次引用比对
+ * 缓存只存储与主题无关的数据——`theme` 是身份稳定的 Proxy，缓存 ANSI 着色结果会在主题切换后滞留
  * @param args - 本次渲染的原始工具入参（未经 `sanitizeAskAuthorArgs` 清洗，流式期间可能为不完整对象）
  * @param state - 宿主按工具行复用、跨帧身份稳定的可变状态载荷
- * @returns 派生卡片数据（`state` 身份命中时直接复用，否则新算并写回 `state.cachedCard`）
+ * @returns 派生卡片数据（`state` 身份命中时直接复用，否则重新计算并写入 `state.cachedCard`）
  */
 function resolveCallCard(args: RawParams, state: CallRenderState): CallCardData {
   if (state.cachedArgs === args && state.cachedCard) return state.cachedCard;
@@ -242,7 +242,7 @@ function resolveCallCard(args: RawParams, state: CallRenderState): CallCardData 
  * @param pi - Pi 扩展运行时 API 实例
  */
 export default function askAuthorExtension(pi: ExtensionAPI): void {
-  // 注册 ask_author 工具：显式实例化 TState，避免宿主泛型缺省值把 context.state 退化为 any
+  // 注册 ask_author 工具：显式实例化 TState
   pi.registerTool<typeof AskAuthorParams, AskAuthorResult, CallRenderState>({
     name: TEXTS.tool.name,
     label: TEXTS.tool.label,
@@ -251,7 +251,7 @@ export default function askAuthorExtension(pi: ExtensionAPI): void {
     // 宿主接口要求可变 `string[]`；TEXTS 为 `as const` 只读元组，故展开构造可变副本
     promptGuidelines: [...TEXTS.tool.promptGuidelines],
     parameters: AskAuthorParams,
-    // 交互式 UI 独占编辑器（`ctx.ui.custom`）：串行执行避免与其他工具并发挂载组件
+    // 交互式 UI 独占编辑器（`ctx.ui.custom`）：串行执行
     executionMode: "sequential",
     // 宿主在 Schema 校验前调用：清洗为白名单形状，并兼容未按当前 Schema 书写的别名/包裹入参
     prepareArguments: sanitizeAskAuthorArgs,
@@ -264,7 +264,7 @@ export default function askAuthorExtension(pi: ExtensionAPI): void {
      * @param signal - 宿主取消信号（可缺省；Esc / Ctrl+C 级联终止交互界面）
      * @param _onUpdate - 流式进度回调（本实现不使用；本工具不上报部分结果）
      * @param ctx - Pi 扩展上下文（`mode` 守卫与 `ui.custom` 组件挂载）
-     * @returns 取消 / 结构化报错 / 运行期异常 / 完成四类结果之一；模型构建与 `ui.custom` 阶段的异常均被捕获并转为运行期异常结果
+     * @returns 取消 / 结构化报错 / 运行期异常 / 完成四类结果之一；模型构建与 `ui.custom` 阶段的异常均被捕获并转换为运行期异常结果
      */
     async execute(_toolCallId, rawParams, signal, _onUpdate, ctx) {
       const initialFormTitle = cleanOptional(rawParams?.formTitle) ?? TEXTS.fallbacks.defaultFormTitle;
@@ -300,7 +300,7 @@ export default function askAuthorExtension(pi: ExtensionAPI): void {
 
       let comp: AskAuthorComponent | undefined;
       try {
-        // 宿主回调约定 `(tui, theme, keybindings, done)`：按键分派由组件内部 `matchesKey` 自持，
+        // 宿主回调约定 `(tui, theme, keybindings, done)`：按键分派由组件内部 `matchesKey` 自行持有，
         // 注入的 keybindings 管理器未被消费，故以 `_kb` 标记未使用
         const result = await ctx.ui.custom<AskAuthorResult>((tui, theme, _kb, done) => {
           comp = new AskAuthorComponent(tui, theme, formModel, done);
@@ -346,8 +346,8 @@ export default function askAuthorExtension(pi: ExtensionAPI): void {
 
     /**
      * 会话回放结果卡片渲染（错误 / 取消 / 完成三态，展开态追加答卷明细）
-     * 错误态优先于取消态判定：`details.error` 为真值时即使 `cancelled` 为 true 也按错误呈现（本扩展产出的 details 中二者互斥：`createErrorResult` 恒置 `cancelled: false`）
-     * @param result - 工具执行结果（`details` 须经 {@link narrowResultDetails} 收窄）
+     * 错误态优先于取消态判定：`details.error` 为真值时即使 `cancelled` 为 true 也按错误呈现（本扩展产出的 details 中二者互斥：`createErrorResult` 恒设置 `cancelled: false`）
+     * @param result - 工具执行结果（`details` 必须经由 {@link narrowResultDetails} 收窄）
      * @param expanded - 是否展开答卷明细（同组的 `isPartial` 未使用：本工具不上报流式部分结果）
      * @param theme - 当前 TUI 主题实例
      * @param context - 宿主渲染上下文（`lastComponent` 槽位复用；`state` 由 `renderCall` 独占使用）

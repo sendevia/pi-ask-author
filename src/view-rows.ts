@@ -3,9 +3,9 @@
  * @description 纯函数视图排版层：题目菜单行、Tab 导航栏与底部框架 chrome 的统一生成器
  *
  * 核心架构特性：
- * - 全部导出函数为无状态纯函数（无 `this` / 缓存 / IO），输出仅由入参决定，可独立单测与跨视图复用
+ * - 全部导出函数为无状态纯函数（无 `this` / 缓存 / IO），输出仅由入参决定，可独立单元测试与跨视图复用
  * - 文案与几何常量一律取自 `texts.ts`，本层不直接书写任何可见字符
- * - 折行与补齐一律经 `visibleWidth` / `wrapTextWithAnsi` / `safeLine`，禁止 `string.length` 直算
+ * - 折行与补齐一律经 `visibleWidth` / `wrapTextWithAnsi` / `safeLine` 处理，禁止使用 `string.length` 直接计算
  *
  * 依赖方向：view-rows.ts → format.ts / model.ts / texts.ts / theme.ts；禁止反向导入 `component.ts`
  */
@@ -26,7 +26,7 @@ import type { Theme } from "./theme.js";
  * 解析菜单选项的展示标签（作者可见文案兜底入口）
  * @param q - 归一化题目对象
  * @param optionIndex - 0-based 索引（兜底文案按 1-based 展示）
- * @returns 选项自带标签；索引越界取不到条目时回退 `TEXTS.fallbacks.autoOptionLabel`（形如「选项 3」）
+ * @returns 选项自带标签；索引越界获取不到条目时回退 `TEXTS.fallbacks.autoOptionLabel`（形如「选项 3」）
  */
 export function optionLabelOf(q: NormalizedQuestion, optionIndex: number): string {
   return q.options[optionIndex]?.label ?? TEXTS.fallbacks.autoOptionLabel(optionIndex + 1);
@@ -37,7 +37,7 @@ export function optionLabelOf(q: NormalizedQuestion, optionIndex: number): strin
  * @param item - 目标菜单项
  * @param q - 当前题目
  * @param st - 作答状态
- * @returns 多选查 `selectedIndices` 成员资格，单选比对 `selectedIndex`；`custom_note` 条目在题目补充说明非空时生效；其余条目（含缺失 `optionIndex` 的选项）恒为 false
+ * @returns 多选查询 `selectedIndices` 成员资格，单选比对 `selectedIndex`；`custom_note` 条目在题目补充说明非空时生效；其余条目（含缺失 `optionIndex` 的选项）恒为 false
  */
 function isItemSelected(item: MenuItem, q: NormalizedQuestion, st: QuestionAnswerState): boolean {
   if (item.type === "option" && item.optionIndex !== undefined) {
@@ -50,7 +50,7 @@ function isItemSelected(item: MenuItem, q: NormalizedQuestion, st: QuestionAnswe
 }
 
 /**
- * 生成选项前置勾选/选中指示符
+ * 生成选项前面的勾选/选中指示符
  * @param theme - 主题样式提供者
  * @param q - 当前题目
  * @param st - 作答状态

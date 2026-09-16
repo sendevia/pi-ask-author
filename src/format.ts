@@ -4,7 +4,7 @@
  *
  * 核心架构特性：
  * - 全部函数无副作用、不依赖运行时可变状态，供 sanitize / model / novel-markdown / view-* / component / index 复用
- * - 终端宽度一律经 `visibleWidth` / `truncateToWidth` / `wrapTextWithAnsi`，禁止 `string.length` 直算
+ * - 终端宽度一律经 `visibleWidth` / `truncateToWidth` / `wrapTextWithAnsi`，禁止使用 `string.length` 直接计算
  *
  * 依赖方向：format.ts → texts.ts（布局常量与文案字典）
  */
@@ -27,7 +27,7 @@ export function clamp(value: number, min: number, max: number): number {
  * 将视口滚动位移收敛至合法区间，防止越界滚动造成空白视口
  * @param offset - 待收敛的 0-based 起始行位移
  * @param total - 内容总行数
- * @param viewHeight - 可视行数（调用方须传入非负值）
+ * @param viewHeight - 可视行数（调用方必须传入非负值）
  * @returns `[0, max(0, total - viewHeight)]` 内的位移；列表为空或内容不足一屏（`total <= viewHeight`）时恒为 0
  */
 export function clampWindowOffset(offset: number, total: number, viewHeight: number): number {
@@ -55,7 +55,7 @@ export function cleanText(str: string | undefined): string {
 }
 
 /**
- * 剥离终端转义与控制字符（防 ANSI 注入污染 TUI 渲染管线）
+ * 剥离终端转义与控制字符（防止 ANSI 注入污染 TUI 渲染管线）
  * 覆盖 OSC（BEL/ST 终止）、CSI、双字符转义与残余 C0 控制字符；换行符保留，由调用方决定单行化时机
  * @param str - 已由 `cleanText` 规整的字符串（无回车与制表符）
  * @returns 剥离全部转义序列与残余 C0 控制字符（含 DEL `\x7f`）的字符串；换行符 `\n` 保留
@@ -83,7 +83,7 @@ export function cleanOptional(str: string | undefined): string | undefined {
 /**
  * 尝试 `JSON.parse`；非字符串原样返回，解析失败返回 undefined
  * @param value - 待解析值
- * @returns 解析结果或原值；字符串长度（UTF-16 码元）超过 1_000_000 时直接返回 undefined，以规避解析开销与内存放大
+ * @returns 解析结果或原值；字符串长度（UTF-16 码元）超过 1_000_000 时直接返回 undefined
  */
 export function parseJson(value: unknown): unknown {
   if (typeof value === "string") {
@@ -102,7 +102,7 @@ export function parseJson(value: unknown): unknown {
  * 宽度按 CJK 全角与 ANSI 转义精确计算（`visibleWidth` / `wrapTextWithAnsi`）
  * @param prefix - 首行前缀（后续行以同宽空格悬挂缩进）
  * @param text - 待折行文本
- * @param width - 可视总宽度（列）；调用方须传 `>= 1`，`width <= 0` 时不截断前缀
+ * @param width - 可视总宽度（列）；调用方必须传入 `>= 1`，`width <= 0` 时不截断前缀
  * @returns 折行后的行数组；`text` 无法产出任何行时返回 `[prefix]`（前缀非空）或空数组
  */
 function hangText(prefix: string, text: string, width: number): string[] {
@@ -166,9 +166,9 @@ export function divider(width: number, char: string = LAYOUT_CONFIG.dividerThin)
 }
 
 /**
- * 极限压缩正文草稿/分镜为高密度单行 LLM 指令：逐行剥离行首 Markdown 标题标识与引用符，折叠连续空白，各片段以 `TEXTS.markdown.draftSegmentSeparator` 连接
- * @param preview - 原始草稿/分镜文本；缺省或全空白时返回 undefined
- * @returns 单行分镜指令；无有效片段时返回 undefined
+ * 极限压缩正文草稿/分镜头为高密度单行 LLM 指令：逐行剥离行首 Markdown 标题标识与引用符，折叠连续空白，各片段以 `TEXTS.markdown.draftSegmentSeparator` 连接
+ * @param preview - 原始草稿/分镜头文本；缺省或全空白时返回 undefined
+ * @returns 单行分镜头指令；无有效片段时返回 undefined
  */
 export function compressDraftPreview(preview: string | undefined): string | undefined {
   if (!preview) return undefined;

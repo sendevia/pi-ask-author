@@ -11,8 +11,8 @@
  *
  * 索引约定：全文「扁平索引 / 行内列索引」一律指 UTF-16 码元下标，含义与 `String.prototype.length` / `charAt` / `slice` 一致
  *
- * 依赖方向：novel-markdown.ts → format.ts / texts.ts / theme.ts（另取 model.ts 的 `MenuItem` 类型，无回边）；外部依赖 `@earendil-works/pi-tui` 的 `Markdown` / `MarkdownTheme` 与 `@earendil-works/pi-coding-agent` 的 `getMarkdownTheme`
- * 宿主主题耦合：围栏代码块由 `getMarkdownTheme()` 的 `highlightCode` 着色，取色读宿主全局活动主题（须宿主已 `initTheme`，本模块不自持主题）；行内代码仅在未命中哨兵时走同一全局 `code` 取色
+ * 依赖方向：novel-markdown.ts → format.ts / texts.ts / theme.ts（另行引入 model.ts 的 `MenuItem` 类型，无回环依赖）；外部依赖 `@earendil-works/pi-tui` 的 `Markdown` / `MarkdownTheme` 与 `@earendil-works/pi-coding-agent` 的 `getMarkdownTheme`
+ * 宿主主题耦合：围栏代码块由 `getMarkdownTheme()` 的 `highlightCode` 着色，提取颜色读取宿主全局活动主题（须宿主已 `initTheme`，本模块不自行持有主题）；行内代码仅在未命中哨兵时走同一全局 `code` 提取颜色
  */
 
 import { getMarkdownTheme } from "@earendil-works/pi-coding-agent";
@@ -30,7 +30,7 @@ import type { Theme } from "./theme.js";
 
 /**
  * 基于 `getMarkdownTheme()` 定制小说预览主题；`code` 回调兼作哨兵分类器（命中即着色并剥离哨兵，未命中交还原生样式）
- * 覆盖项统一收敛到注入的 TUI 主题前景色族（仅 `code` 未命中哨兵时回退 `getMarkdownTheme()` 的 `mdCode` 取色，即 Pi 运行时全局活动主题）；`codeBlock` 不覆盖——原生 `Markdown` 仅在 `highlightCode` 缺失时才回调它，而 `getMarkdownTheme()` 恒提供 `highlightCode`，覆盖不会生效（代码块走原生语法高亮）；`hr` / `strikethrough` / `underline` / `highlightCode` 取 `getMarkdownTheme()` 的原生实现
+ * 覆盖项统一收敛到注入的 TUI 主题前景色族（仅 `code` 未命中哨兵时回退 `getMarkdownTheme()` 的 `mdCode` 提取颜色，即 Pi 运行时全局活动主题）；取自 `getMarkdownTheme()` 的原生实现（代码块由 `highlightCode` 走原生语法高亮）
  * @param theme - 当前 TUI 主题实例
  * @returns 字段集已由 `getMarkdownTheme()` 展开补齐的完整 `MarkdownTheme`
  */
@@ -53,7 +53,7 @@ function createNovelMarkdownTheme(theme: Theme): MarkdownTheme {
 
 /**
  * 解析行内代码文本中的哨兵序列并按语法模板逐段着色；未命中哨兵返回 undefined 交还原生样式
- * 内容为「`{@link NOVEL_MARKER_PREFIX}` + 哨兵 + 语义原文」的可重复序列，相邻语义片段打包进同一围栏以避免相邻围栏合并歧义
+ * 内容为「`{@link NOVEL_MARKER_PREFIX}` + 哨兵 + 语义原文」的可重复序列，相邻语义片段打包进同一围栏
  * @param theme - 当前 TUI 主题实例
  * @param text - `theme.code` 收到的行内代码原文
  * @returns 逐段着色后的文本（哨兵前缀与哨兵字符已剥离）；文本不以哨兵前缀开头，或哨兵序列损坏（缺失哨兵字符 / 中途再现前缀）时返回 `undefined`，由调用方回退原生行内代码样式
@@ -82,7 +82,7 @@ const FENCE_OPENING_PATTERN = /^ {0,3}(`{3,}|~{3,})/;
 /** 缩进代码行识别正则（≥4 空格缩进后接非空内容） */
 const INDENTED_CODE_PATTERN = /^ {4,}\S/;
 
-/** 原生引擎按原文输出的块级起始行识别正则（HTML 块与表格行），命中即整块放弃标注；`<` 收紧为 CommonMark 合法标签起始以避免正文行误判；单独的 `$` 与 `\[` 由数学区掩码接管（见 {@link maskCodeRegions}） */
+/** 原生引擎按原文输出的块级起始行识别正则（HTML 块与表格行），命中即整块放弃标注；`<` 收紧为 CommonMark 合法标签起始；单独的 `$` 与 `\[` 由数学区掩码接管（见 {@link maskCodeRegions}） */
 const RAW_BLOCK_PATTERN = /^ {0,3}(?:<(?=[/!?a-zA-Z])|\|)/;
 
 /** 块级数学区开启行（行首 `$$` 或 `\[…`），与原生 `tokenizeBlockLatex` 的 `start` 接受范围一致 */
@@ -225,7 +225,7 @@ function maskCodeRegions(source: string, lines: readonly string[], lineStarts: L
   let fenceCloser: RegExp | null = null;
   let rawBlock = false;
   // 块级数学区（`$$…$$` / `\[…\]`）可跨空行，且未闭合时按 pending 语义吞并余下全部源码
-  // （原生 `pendingBracket` 无条件吞并，`pendingDollar` 另需 `looksLikePendingDollarMath` 启发式；本掩码取更宽的保守范围，宁可放弃着色），故独立于「空行即终止」的 rawBlock 状态机
+  // （原生 `pendingBracket` 无条件吞并，`pendingDollar` 另需 `looksLikePendingDollarMath` 启发式；本掩码采用更宽的保守范围），故独立于「空行即终止」的 rawBlock 状态机
   let mathCloser: string | null = null;
   let mathContent = "";
   for (let lineIndex = 0; lineIndex < lines.length; lineIndex++) {
@@ -311,7 +311,7 @@ function maskCodeRegions(source: string, lines: readonly string[], lineStarts: L
       continue;
     }
 
-    // 行内数学（`$x$` / `\(…\)` / 行中 `$$` / `\[…`）：起始符所在文本块整体放弃标注，避免哨兵进入不经主题回调的 `renderLatex` 渲染路径
+    // 行内数学（`$x$` / `\(…\)` / 行中 `$$` / `\[…`）：起始符所在文本块整体放弃标注
     if (containsMathOpener(line)) {
       markLine(lineIndex);
       rawBlock = true;
@@ -468,7 +468,7 @@ function isSpanWithinParagraph(lines: readonly string[], startLine: number, endL
 }
 
 /**
- * 把一组首尾相接的语义片段包装为单个携带哨兵序列的原生行内代码（固定单反引号围栏；相邻片段合并，避免围栏合并破坏配对）
+ * 把一组首尾相接的语义片段包装为单个携带哨兵序列的原生行内代码（固定单反引号围栏；相邻片段合并）
  * @param line - 该行原始文本
  * @param group - 首尾相接的语义片段组（按位置升序，左闭右开且互不重叠）
  * @returns 单反引号围栏包裹的片段序列（每段为「哨兵前缀 + 哨兵字符 + 语义原文」，逐字透传、不插入任何空白）
@@ -497,7 +497,7 @@ function annotateNovelLine(line: string, segments: readonly NovelLineSegment[]):
     const head = segments[index];
     if (!head) break;
     const group: NovelLineSegment[] = [head];
-    // 合并首尾相接的片段为单个行内代码，避免相邻围栏合并
+    // 合并首尾相接的片段为单个行内代码
     let tail = head;
     while (index + 1 < segments.length) {
       const next = segments[index + 1];
@@ -650,7 +650,7 @@ export function buildFullPreviewContentLines(
       mdSource += `${TEXTS.view.sectionTitle(TEXTS.view.storyDescriptionPanelTitle)}\n\n${cleanText(item.description)}\n\n`;
     }
 
-    // 3. 正文草稿/分镜预览
+    // 3. 正文草稿/分镜头预览
     if (item.preview) {
       mdSource += `${TEXTS.view.sectionTitle(TEXTS.view.storyDraftPanelTitle)}\n\n${cleanText(item.preview)}\n\n`;
     } else if (!item.description && !optionNote) {

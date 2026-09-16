@@ -6,7 +6,7 @@
 
 专为作家、轻小说创作者与 AI 协同写作设计的 [Pi](https://github.com/earendil-works/pi-coding-agent) 终端交互式请示扩展。
 
-通过 Markdown 正文草稿预览、剧情因果推导阐述、全维度选项批注以及确定性返回封套，将创意分歧决策与灵感确认体验提升到全新高度。
+通过 Markdown 正文草稿预览、剧情因果推演、题目与选项两级批注以及结构化的返回封套，让创作分歧在同一次询问内得到确认。
 
 ---
 
@@ -15,22 +15,22 @@
 - 🖥️ **双栏响应式 TUI 交互**
   - **左栏选项决策**：直观展示单选/多选状态、完成度指示徽标、选项标签与专属批注标识。
   - **右栏实时预览**：光标移动时即时联动渲染当前选项的**剧情因果推导**与 **Markdown 正文草稿预览**。
-  - **自适应视口**：终端宽度 $\ge 72$ 列自动启用双栏，窄屏环境下优雅降级为单栏内联展开与折叠。
+  - **自适应视口**：终端宽度不小于 72 列时启用双栏，窄屏下改为单栏内联展开与折叠。
 - 📖 **小说级富文本与草稿高亮**
   - 内置紧凑轻量的终端 Markdown 渲染与小说语法高亮，完整支持 bold、italic、删除线、行内代码、引用区块。
-  - 特别优化中文小说台词（引号内对话高亮）与分段排版，让作者在终端即可沉浸式检视行文节奏与语感。
-- 📝 **全维度自由批注体系 (Notes & Annotations)**
+  - 对中文小说台词（引号内对话高亮）与分段排版做了专门处理，作者可以在终端内直接检视行文节奏与语感。
+- 📝 **题目与选项两级批注体系 (Notes & Annotations)**
   - **题目级补充说明 (Question Note)**：对该题整体提出全局创作指令或氛围补充。
-  - **选项专属补充说明 (Option Note)**：光标位于选项行时按 `n` 即可为特定选项追加细化批注（**未勾选的选项同样支持填写补充说明**，以便指导模型汲取未选方案中的闪光点）。
+  - **选项专属补充说明 (Option Note)**：光标位于选项行时按 `n` 即可为特定选项追加细化批注（**未勾选的选项同样可以填写补充说明**，便于模型借鉴未选方案中的可取之处）。
 - 📋 **单题平铺与批量问卷双模式**
   - **单题平铺模式**：快速发起单点决策（如重要剧情分歧、结局走向）。
-  - **多题批量问卷模式**：支持在单次弹窗内汇集多个关联决策（如脱离路线 + 战利品搜刮 + 下章基调），配有顶部 Tab 标签栏与完成度总览页（Summary Tab），作者一次性统筹确认，极大降低打扰。
+  - **多题批量问卷模式**：支持在单次弹窗内汇集多个关联决策（如脱离路线 + 战利品搜刮 + 下章基调），配有顶部 Tab 标签栏与完成度总览页（Summary Tab），作者在一处完成全部确认。
 - 🎯 **确定性 LLM 封套与指令蒸馏 (Deterministic Envelopes)**
-  - 工具返回给 LLM 的文本采用固定的结构化 Markdown 封套（`[Author Decision Finalized]` / `[Author Decision Cancelled]` / `[Author Consultation Error]`），前缀稳定，极度契合 Prompt Cache。
+  - 工具返回给 LLM 的文本采用固定的结构化 Markdown 封套（`[Author Decision Finalized]` / `[Author Decision Cancelled]` / `[Author Consultation Error]`），前缀稳定，便于 Prompt Cache 命中。
   - **草稿指令提取 (Draft Directives)**：选中的选项草稿预览会自动提炼为紧凑的单行 `[Draft directive: ...]` 指令，直接供 LLM 在后续正文执笔中原样复用或参考。
-  - 尾部附带强制执行声明，彻底杜绝大模型的闲聊套话，直接驱动下一步正文输出。
+  - 尾部附带执行指令，要求模型不再寒暄，直接进入下一步正文写作。
 - ⚡ **高性能与极简依赖**
-  - 严格遵守 Pi 官方扩展生态规范，核心依赖 `@earendil-works/pi-coding-agent`、`@earendil-works/pi-tui` 与 `typebox` 均列为 `peerDependencies`，无多余重量级三方包。
+  - 严格遵守 Pi 官方扩展生态规范，核心依赖 `@earendil-works/pi-coding-agent`、`@earendil-works/pi-tui` 与 `typebox` 均列为 `peerDependencies`，不引入其他第三方依赖。
   - 资源回收：生命周期严格绑定 AbortSignal，定时器与事件监听幂等清理，渲染缓存按尺寸与状态键失效。
 
 ---
@@ -87,7 +87,7 @@ pi -e ./path/to/pi-ask-author
 
 ## 🤖 智能体提示词与调用规范 (Agent Guidelines)
 
-在系统提示词或 Skill 中声明以下规则，可引导 LLM 智能、高效地发起创作请示：
+在系统提示词或 Skill 中声明以下规则，可以引导 LLM 按预期调用该工具：
 
 ```markdown
 Whenever plot branches, character decisions, scene atmosphere, or outline directions need confirmation:
@@ -183,19 +183,19 @@ flowchart LR
 箭头由被依赖模块指向依赖它的模块（`A --> B` 表示 `B` 导入 `A`）。
 
 - **`index.ts`**：扩展主入口，注册 `ask_author` 工具与 `/ask-author` 命令，负责结果工厂构造与卡片记忆化渲染。
-- **`component.ts`**：TUI 状态机核心组件，自持按键派生、光标记忆、视口滑动窗口与双栏排版。
-- **`model.ts`**：问卷表单数据模型，负责规范化题目前置推导、选项校验与答案序列化。
+- **`component.ts`**：TUI 状态机核心组件，自行维护按键派生、光标记忆、视口滑动窗口与双栏排版。
+- **`model.ts`**：问卷表单数据模型，负责规范化题目前期推导、选项校验与答案序列化。
 - **`schema.ts`**：基于 TypeBox 构建的静态类型与运行时 Schema 单一数据源。
 - **`texts.ts`**：常量、终端图标、小说语法表与面向作者/LLM 双向文案的集中字典。
-- **`novel-markdown.ts`**：极轻量小说语法终端高亮层，在原生 Markdown 引擎解析前注入语义标记。
+- **`novel-markdown.ts`**：小说语法终端高亮层，在原生 Markdown 引擎解析前注入语义标记。
 - **`sanitize.ts`**：入参防御性清洗与别名兼容。
-- **`view-rows.ts` / `view-summary.ts`**：列表行与总览页的高性能排版生成器。
+- **`view-rows.ts` / `view-summary.ts`**：列表行与总览页的排版生成器。
 
 ---
 
 ## 🧪 开发与质量验证 (Development)
 
-本项目遵循严苛的静态类型检查与生产级编码规范：
+本项目开启 TypeScript 严格模式：
 
 ```bash
 # 安装开发依赖

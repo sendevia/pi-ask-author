@@ -15,9 +15,9 @@ import { TEXTS } from "./texts.js";
 import type { Theme } from "./theme.js";
 
 /**
- * 构建总览页底部按键提示片段（依题目数量动态增删跳题提示）
+ * 构建总览页底部按键提示片段（依据题目数量动态增删跳转题目提示）
  * @param model - 问卷表单数据模型（提供题目总数）
- * @returns 恒含切题 / 滚动 / 提交 / 取消四项，题目数 > 1 时额外插入跳题提示
+ * @returns 包含切换题目 / 滚动 / 提交 / 取消四项，题目数 > 1 时额外插入跳转题目提示
  */
 export function buildSummaryHelpParts(model: AskAuthorFormModel): string[] {
   return [

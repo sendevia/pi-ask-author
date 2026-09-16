@@ -5,8 +5,8 @@
  * 核心架构特性：
  * - 索引约定：内部作答状态 0-based，对外答卷编号 1-based
  * - 两层清洗：`sanitize.ts` 边界归一化 + 本层对文本字段幂等兜底（绕过 sanitize 直接构造模型时同样安全）
- * - 封套防击穿：插值文本经 `sanitizeEnvelopeText` 归一，定界符不可被作者文本击穿
- * - 封套语言单一：自动生成的占位题目/标签在封套编译期换为英文占位（`Question N` / `Option N`），作者界面保留中文占位
+ * - 封套防止击穿：插值文本经由 `sanitizeEnvelopeText` 归一化，定界符不可被作者文本击穿
+ * - 封套语言单一：自动生成的占位题目/标签在封套编译期替换为英文占位（`Question N` / `Option N`），作者界面保留中文占位
  * - 答卷完整性：显式跳过与仅批注提交均产出条目，多选题目恒产出条目，问题不在结果中静默消失
  *
  * 依赖方向：model.ts → format.ts / schema.ts / texts.ts（纯函数工具、Schema 单一类型源与文案字典，无回边）；不引用 `Theme` 与 TUI 组件，渲染细节全部上移组件层
@@ -105,7 +105,7 @@ export interface MenuItem {
   label: string;
   /** 菜单项背景描述推演 */
   description?: string;
-  /** 菜单项正文草稿/分镜预览 */
+  /** 菜单项正文草稿/分镜头预览 */
   preview?: string;
 }
 
@@ -150,7 +150,7 @@ function hasAnyNote(st: QuestionAnswerState): boolean {
 
 /**
  * 只读兜底空作答状态（供 `isQuestionAnswered` 读取尚未懒加载的题目）
- * 约定式只读：不用 `Object.freeze`（冻结仅作用表层，无法阻止内层 `Set`/`Map` 写入而制造只读假象）；本对象的 `selectedIndices` / `optionNotes` 永不写入，可写状态经 `getState` 懒加载
+ * 约定式只读：本对象的 `selectedIndices` / `optionNotes` 永不写入，可写状态经 `getState` 懒加载
  */
 const EMPTY_STATE: QuestionAnswerState = { selectedIndices: new Set<number>(), optionNotes: new Map<number, string>() };
 
@@ -169,7 +169,7 @@ interface SelectBounds {
  * @param minRaw - 原始最少勾选数
  * @param maxRaw - 原始最多勾选数
  * @param optionCount - 题目选项总数
- * @returns 收敛区间：`minSelect` 取值范围为 `[0, optionCount]`、`maxSelect` 取值范围为 `[minSelect, optionCount]`（0 选项题目恒为 `0/0`）；`minSelectExplicit` 标记入参是否显式给出下限
+ * @returns 收敛区间：`minSelect` 取值范围为 `[0, optionCount]`、`maxSelect` 取值范围为 `[minSelect, optionCount]`（0 选项题目恒设置为 `0/0`）；`minSelectExplicit` 标记入参是否显式给出下限
  */
 function clampSelectBounds(minRaw: number | undefined, maxRaw: number | undefined, optionCount: number): SelectBounds {
   const minSelectExplicit = minRaw !== undefined;
@@ -227,7 +227,7 @@ function dedupeQuestionIds(questions: NormalizedQuestion[]): NormalizedQuestion[
 
 /**
  * 封套注入消毒：折叠单行并归一化全部可击穿封套定界符的字符（封套以 ASCII 方括号与 `;` 承载结构语义，插值文本须先归一，否则 LLM 无法定位批注边界，亦可能被伪造令牌误导）
- * 替换顺序：折叠单行 → 弯引号族（`“”„‟«»`）转 `'` → ASCII 方括号转全角 `［］`（`answerLine` 的 `[标题]` 与 `[Author note: …]` / `[Draft directive: …]` 令牌定界符全由模板注入）→ 剥 `【】`（封套选项标签专属定界符）→ ASCII `;` 转全角 `；`（封套以 `; ` 分隔选项片段）
+ * 替换顺序：折叠单行 → 弯引号族（`“”„‟«»`）转换为 `'` → ASCII 方括号转换为全角 `［］`（`answerLine` 的 `[标题]` 与 `[Author note: …]` / `[Draft directive: …]` 令牌定界符全由模板注入）→ 剥除 `【】`（封套选项标签专属定界符）→ ASCII `;` 转换为全角 `；`（封套以 `; ` 分隔选项片段）
  * @param text - 原始批注/描述/标签文本
  * @returns 归一化后的单行文本；半角 `[` / `]` / `;` 与换行均已消除，令牌边界不可能被插值文本提前闭合或伪造
  */
@@ -240,11 +240,11 @@ function sanitizeEnvelopeText(text: string): string {
 }
 
 /**
- * 把自动生成的占位题目标题换为英文占位（非占位标题原样返回）
- * 语言归属：占位文案在 `sanitize.ts` / {@link buildQuestion} 阶段即以中文写入题目对象，结构上无法保留身份标记，故按生成函数的取值比对；作者或模型恰好写出同名字面量时，封套仅换为英文占位，无其他副作用
+ * 把自动生成的占位题目标题替换为英文占位（非占位标题原样返回）
+ * 语言归属：占位文案在 `sanitize.ts` / {@link buildQuestion} 阶段即以中文写入题目对象，结构上无法保留身份标记，故按生成函数的返回值比对；作者或模型写出同名字面量时，封套仅替换为英文占位
  * @param title - 答卷条目的题目标题（可能为 `问题 N` 或 `请选择接下来的创作方案`）
  * @param questionIndex - 题目顺序索引（0-based）；缺省表示无法定位，按非占位原样返回
- * @returns 非占位标题原样；占位标题换为 `TEXTS.markdown.fallbackQuestionTitle(questionIndex + 1)`
+ * @returns 非占位标题保持原样；占位标题替换为 `TEXTS.markdown.fallbackQuestionTitle(questionIndex + 1)`
  */
 function envelopeQuestionTitle(title: string, questionIndex: number | undefined): string {
   if (questionIndex === undefined) return title;
@@ -254,11 +254,11 @@ function envelopeQuestionTitle(title: string, questionIndex: number | undefined)
 }
 
 /**
- * 把自动生成的占位选项标签换为英文占位（非占位标签原样返回）
+ * 把自动生成的占位选项标签替换为英文占位（非占位标签原样返回）
  * 占位来源三选一：`sanitize.ts` 的 `选项 N` / `默认方案`，{@link buildQuestion} 的 `未命名方案`；比对理由同 {@link envelopeQuestionTitle}
  * @param label - 选项标签（可能为自动生成的占位）
  * @param optionIndex1 - 选项序号（1-based，与占位标签的编号一致）；缺省表示无法定位，按非占位原样返回
- * @returns 非占位标签原样；占位标签换为 `TEXTS.markdown.fallbackOptionLabel(optionIndex1)`
+ * @returns 非占位标签保持原样；占位标签替换为 `TEXTS.markdown.fallbackOptionLabel(optionIndex1)`
  */
 function envelopeOptionLabel(label: string, optionIndex1: number | undefined): string {
   if (optionIndex1 === undefined) return label;
@@ -344,7 +344,7 @@ export class AskAuthorFormModel {
    * 获取指定题目的作答状态（懒加载单例初始化）
    * 不校验题目边界：越界索引同样创建并缓存一个空状态对象（调用方须先经 {@link getQuestion} 校验）
    * @param index - 题目顺序索引（0-based）
-   * @returns 该题目的状态引用，可写，同一索引恒返回同一对象；首次创建仅初始化内部缓存，不改变任何可观察作答语义、不推进 `revision`
+   * @returns 该题目的状态引用，可写入，同一索引恒返回同一对象；首次创建仅初始化内部缓存，不改变任何可观察作答语义、不推进 `revision`
    */
   getState(index: number): QuestionAnswerState {
     let st = this.states.get(index);
@@ -478,7 +478,7 @@ export class AskAuthorFormModel {
   }
 
   /**
-   * 确认路径下的选项写入（Enter/Ctrl+S 推进确认；单选直接改选，多选未达上限时补充勾选，已满未勾选静默保持原状，仅真实变更推进 `revision`）
+   * 确认路径下的选项写入（Enter/Ctrl+S 推进确认；单选直接更改选择，多选未达上限时补充勾选，已满未勾选静默保持原状，仅真实变更推进 `revision`）
    * @param qIndex - 题目顺序索引（0-based）
    * @param optionIndex - 目标选项索引（0-based）
    */
@@ -522,7 +522,7 @@ export class AskAuthorFormModel {
   }
 
   /**
-   * 保存或清空选项专属批注（空文本视为清除；单选无选中项时随批注勾选，已有其他选中项仅挂批注不改选；多选已满且未勾选仅存批注）
+   * 保存或清空选项专属批注（空文本视为清除；单选无选中项时随批注勾选，已有其他选中项仅附加批注不更改选择；多选已满且未勾选仅保存批注）
    * @param qIndex - 题目顺序索引（0-based）
    * @param optionIndex - 目标选项索引（0-based）
    * @param text - 批注内容（空视为清除）
@@ -556,7 +556,7 @@ export class AskAuthorFormModel {
 
   /**
    * 保存或清空题目整体补充说明（空文本视为清空）
-   * 与 {@link setOptionNote} 不同，本方法不校验题目边界：越界索引同样经 {@link getState} 创建并写入状态对象
+   * 本方法不校验题目边界：越界索引同样经 {@link getState} 创建并写入状态对象
    * @param qIndex - 题目顺序索引（0-based）
    * @param text - 批注内容（经 `cleanOptional` 归一，空串或全空白视为清空）
    * @returns `saved`（存入非空文本）/ `cleared`（清空）；无论是否发生实际变更均推进 `revision`
@@ -597,7 +597,7 @@ export class AskAuthorFormModel {
   }
 
   /**
-   * 收集全部非空选项批注（含未选中选项上的孤立批注），键转为 1-based；与总览页展示保持一致，避免作者可见的批注在提交结果中静默丢失
+   * 收集全部非空选项批注（含未选中选项上的孤立批注），键转换为 1-based；与总览页展示保持一致
    * @param q - 归一化题目对象
    * @param st - 题目作答状态（可选）
    * @returns 1-based 选项索引 → 批注内容的映射表
@@ -617,7 +617,7 @@ export class AskAuthorFormModel {
   /**
    * 编译全部作答状态为结果答案条目列表
    * 产出规则：多选题目恒产出条目（未作答时 `selectedOptions` / `selectedIndices` 为空）；单选题目仅在已作答时才产出条目（已选一项、`allowEmpty` 主动跳过或仅批注提交）
-   * 两种模式均杜绝问题在结果封套中静默消失；0-based 内部索引统一转为 1-based
+   * 两种模式均杜绝问题在结果封套中静默消失；0-based 内部索引统一转换为 1-based
    * @returns 与题目顺序一致的答卷条目列表（未产出的单选题目不占位）；题干无任何作答且非多选时为空数组
    */
   compileAnswers(): AuthorAnswerItem[] {
@@ -673,7 +673,7 @@ export class AskAuthorFormModel {
    * 编译答案为确定性标准 Markdown 封套文本（固定前缀与收尾指令最大化 Prompt Cache 命中率并驱动下游工作流）
    * 全部插值文本经 {@link sanitizeEnvelopeText} 消毒（半角 `[` / `]` / `;` 与换行一并归一，模板注入的令牌边界不可被插值文本提前闭合或伪造）
    * 确定性来源：片段顺序固定为「已选项（`getSelectedIndices` 升序）→ 未选中选项的孤立批注（`Record` 整数键升序）→ 题目级批注」，不依赖哈希序与时间
-   * 语言归属：自动生成的占位题目/标签经 {@link envelopeQuestionTitle} / {@link envelopeOptionLabel} 换为英文占位，其余插值文本原样保留（作者文本不翻译）
+   * 语言归属：自动生成的占位题目/标签经由 {@link envelopeQuestionTitle} / {@link envelopeOptionLabel} 替换为英文占位，其余插值文本原样保留（作者文本不翻译）
    * @param answers - 答卷列表（通常来自 {@link compileAnswers}）
    * @returns `envelopePrefix` + 逐题一行（1-based 序号 + 标题 + `; ` 连接的片段）+ `envelopeSuffix`；`answers` 为空时退化为空答卷封套
    */
@@ -709,7 +709,7 @@ export class AskAuthorFormModel {
           : TEXTS.markdown.optionWithoutDesc(label, directiveToken(compressedDraft), optNote);
       });
 
-      // 附带未选中选项上的孤立批注（与总览页展示一致，防止作者批注在封套中丢失）
+      // 附带未选中选项上的孤立批注（与总览页展示一致）
       const q = questionsById.get(ans.questionId);
       if (q && ans.optionNotes) {
         const selectedIdxSet = new Set(

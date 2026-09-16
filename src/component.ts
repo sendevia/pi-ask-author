@@ -5,11 +5,11 @@
  * 核心架构特性：
  * - 宽屏双栏 / 窄屏单栏自适应：`renderWidth >= LAYOUT_CONFIG.splitViewMinWidth` 且题目含富内容时走双栏，否则降级单栏紧凑列表；预览与总览视口行数随终端高度收缩
  * - 多级缓存失效：整屏（尺寸键 + 状态突变清空）、总览 / Tab 栏 / 左栏 / 菜单项（`revision` 键）、预览池（内容键）；视口切片 O(1)；`render()` 无 I/O，Markdown 渲染仅发生在派生缓存未命中时
- * - 逐题独立光标记忆与 `1~9` 跳题；内置编辑器透传 Focusable 以定位 IME 候选框
+ * - 逐题独立光标记忆与 `1~9` 跳转题目；内置编辑器透传 Focusable 以定位 IME 候选框
  * - Esc / Ctrl+C 双通道取消（输入模式二次确认）；定时器、Abort 监听与缓存池全量回收
  *
- * 渲染纯度不变量：`render()` 及其可达被调函数禁写语义状态（`currentTab`、光标与各 `*ScrollOffset`、`inputMode`、`editTarget`、`editorEscArmed`、`statusMessage`、`isFinished`）；滚动位移归一化一律归属输入路径
- * 可写透明备忘：`cached*`、`previewCache`、`tabCache`、`leftColCache`、`summaryCachedLines`、`menuCache`、`previewViewportObservation` 均为「渲染输入的纯函数」缓存
+ * 渲染纯度不变量：`render()` 及其可达被调函数禁止写入语义状态（`currentTab`、光标与各 `*ScrollOffset`、`inputMode`、`editTarget`、`editorEscArmed`、`statusMessage`、`isFinished`）；滚动位移归一化一律归属输入路径
+ * 可写入透明备忘：`cached*`、`previewCache`、`tabCache`、`leftColCache`、`summaryCachedLines`、`menuCache`、`previewViewportObservation` 均为「渲染输入的纯函数」缓存
  *
  * 依赖方向：component.ts → theme / texts / format / model / novel-markdown / view-rows / view-summary；本组件只做按键路由、视口切片与整屏缓存编排
  */
@@ -45,7 +45,7 @@ const PREVIEW_CACHE_CAPACITY = 32;
 
 /**
  * `ask_author` 交互式 TUI 组件（问卷作答与答卷总览）
- * 状态机：作答突变经 `AskAuthorFormModel`，`revision` 驱动两级缓存失效；`render()` 只写透明备忘 / 观察缓存，绝不回写滚动位移等语义状态；`dispose()` 幂等且只置 `disposed`，`finish()` 以 `isFinished` 保证 `done` 至多投递一次
+ * 状态机：作答突变经 `AskAuthorFormModel`，`revision` 驱动两级缓存失效；`render()` 只写入透明备忘 / 观察缓存，绝不写回滚动位移等语义状态；`dispose()` 幂等且只设置 `disposed`，`finish()` 以 `isFinished` 保证 `done` 至多投递一次
  */
 export class AskAuthorComponent implements Component, Focusable {
   /** Focusable 接口要求：输入模式焦点指示 */
@@ -62,7 +62,7 @@ export class AskAuthorComponent implements Component, Focusable {
     if (this._focused === value) return;
     this._focused = value;
     this.editor.focused = this.inputMode && value;
-    // Editor 的 IME 光标标记仅经 renderInputMode 进整屏缓存；两栏一并失效以防御后续布局把标记带入其他行
+    // Editor 的 IME 光标标记仅经由 renderInputMode 进入整屏缓存；两栏一并失效以防御后续布局把标记带入其他行
     this.touch();
     this.tabCache = undefined;
     this.leftColCache = undefined;
@@ -108,7 +108,7 @@ export class AskAuthorComponent implements Component, Focusable {
 
   /** 整屏缓存键：调用方真实列宽（输出截断依据） */
   private cachedWidth?: number;
-  /** 整屏缓存键：布局列宽 `max(20, width)`（折行依据，20 列为窄终端地板） */
+  /** 整屏缓存键：布局列宽 `max(20, width)`（折行依据，20 列为窄终端宽度下限） */
   private cachedLayoutWidth?: number;
   /** 整屏缓存键：终端行数（视口行数随之自适应） */
   private cachedHeight?: number;
@@ -180,7 +180,7 @@ export class AskAuthorComponent implements Component, Focusable {
       if (target.type === "option") {
         const q = this.model.getQuestion(this.currentTab);
         const optIdx = target.optionIndex;
-        // 输入模式下题目与选项集合不可变更，q 缺失仅可能来自异常状态，此时保持自动标签使提示可读
+        // 输入模式下题目与选项集合不可变更，q 缺失仅可能来自异常状态，此时保持自动标签使提示内容易于阅读
         const optLabel = q ? optionLabelOf(q, optIdx) : TEXTS.fallbacks.autoOptionLabel(optIdx + 1);
         const result = this.model.setOptionNote(this.currentTab, optIdx, text);
         if (result === "cleared") this.setStatus(TEXTS.status.optionNoteCleared(optLabel));
@@ -215,7 +215,7 @@ export class AskAuthorComponent implements Component, Focusable {
 
   /**
    * 清理定时器、Abort 监听与全部缓存池（幂等）
-   * 只置 `disposed`、不置 `isFinished`（资源回收 ≠ `done` 已投递），否则宿主先卸载而 `done` 未投递时挂起
+   * 只设置 `disposed`、不设置 `isFinished`（资源回收 ≠ `done` 已投递），否则宿主先卸载而 `done` 未投递时挂起
    */
   dispose(): void {
     if (this.disposed) return;
@@ -268,7 +268,7 @@ export class AskAuthorComponent implements Component, Focusable {
     this.editor.invalidate();
   }
 
-  /** 清理临时状态定时器（置空引用以便后续 setStatus 重新计时） */
+  /** 清理临时状态定时器（清空引用以便后续 setStatus 重新计时） */
   private clearStatusTimer(): void {
     if (this.statusTimer) {
       clearTimeout(this.statusTimer);
@@ -293,7 +293,7 @@ export class AskAuthorComponent implements Component, Focusable {
 
   /**
    * 终结作答流程并触发 `done`（至多投递一次）
-   * `isFinished` 单守卫防重复投递；不以 `disposed` 阻断（资源已回收但 `done` 未投递时仍须结算），转入 {@link dispose}
+   * `isFinished` 单守卫防止重复投递；不以 `disposed` 阻断（资源已回收但 `done` 未投递时仍须结算），跳转入 {@link dispose}
    * @param cancelled - 是否用户主动取消
    */
   finish(cancelled: boolean): void {
@@ -490,7 +490,7 @@ export class AskAuthorComponent implements Component, Focusable {
 
     const isCancelKey = matchesKey(data, Key.escape) || matchesKey(data, Key.ctrl("c"));
 
-    // 1. 输入模式委托内置 Editor；Esc/Ctrl+C 二次确认防误触
+    // 1. 输入模式委托内置 Editor；Esc/Ctrl+C 二次确认防止误触
     if (this.inputMode) {
       if (isCancelKey) {
         if (this.editor.getText() !== "" && !this.editorEscArmed) {
@@ -517,7 +517,7 @@ export class AskAuthorComponent implements Component, Focusable {
       return;
     }
 
-    // 3. 数字键 1~9 快捷跳题（10 题以上经 Tab/hl 循环或总览页跳转）
+    // 3. 数字键 1~9 快捷跳转题目（10 题以上经 Tab/hl 循环或总览页跳转）
     if (/^[1-9]$/.test(data)) {
       const targetIndex = parseInt(data, 10) - 1;
       if (targetIndex < this.model.questionCount) {
@@ -526,7 +526,7 @@ export class AskAuthorComponent implements Component, Focusable {
       }
     }
 
-    // 4. Tab / 方向键左右 / h / l Vim 风格切题
+    // 4. Tab / 方向键左右 / h / l Vim 风格切换题目
     if (matchesKey(data, Key.tab) || matchesKey(data, Key.right) || data === "l") {
       this.switchTab((this.currentTab + 1) % this.totalTabs);
       return;
@@ -622,7 +622,7 @@ export class AskAuthorComponent implements Component, Focusable {
 
   /**
    * 预览区垂直滚动键（PgUp / PgDn / 方括号 / Alt+上下）
-   * 滚动位移归一化归属输入路径：以渲染帧写入的 {@link previewViewportObservation} 为界经 `clampWindowOffset` 收敛（缺观察元数据时退化，不用无界兜底值）
+   * 滚动位移归一化归属输入路径：以渲染帧写入的 {@link previewViewportObservation} 为界经 `clampWindowOffset` 收敛（缺观察元数据时按单栏预览高度退化）
    * @param data - 按键序列
    * @returns 是否已消费该按键
    */
@@ -708,7 +708,7 @@ export class AskAuthorComponent implements Component, Focusable {
 
   /**
    * 总览页键路由（滚动与回车提交；`Ctrl+S` 同义提交）
-   * 空格改作下滚（防习惯性翻页误提交）；位移归一化归属本路径，上界取 `summaryCachedLines` 总行数与 `summaryPageSize`，`End` 仅置超大值由后续输入收敛
+   * 空格更改为向下滚动（防止习惯性翻页误提交）；位移归一化归属本路径，上界获取自 `summaryCachedLines` 总行数与 `summaryPageSize`，`End` 仅设置超大值，由后续输入收敛
    * @param data - 按键序列
    */
   private handleSummaryInput(data: string): void {
@@ -770,7 +770,7 @@ export class AskAuthorComponent implements Component, Focusable {
 
   /**
    * Component 接口约定：渲染整屏行（带整屏缓存）
-   * 缓存键绑定真实列宽、布局列宽与终端行数（20 列地板下二者截断不同，仅绑 layoutWidth 会串帧；行数变化须整体重算）；本方法及可达被调函数绝不写语义状态，仅刷新透明备忘 / 观察缓存
+   * 缓存键绑定真实列宽、布局列宽与终端行数（窄于 20 列时二者截断范围不同，仅绑定 layoutWidth 会串帧；行数变化必须整体重新计算）；本方法及可达被调函数绝不写入语义状态，仅刷新透明备忘 / 观察缓存
    * @param width - 终端真实可视宽度（布局宽度下限 20 列）
    * @returns 不超过 width 的终端行数组（命中缓存时直接返回）
    */
@@ -806,7 +806,7 @@ export class AskAuthorComponent implements Component, Focusable {
       this.renderQuestionView(lines, layoutWidth);
     }
 
-    // 3. 严格终极行宽安全保护（按调用方真实列宽截断）与缓存固化
+    // 3. 最终行宽保护（按调用方真实列宽截断）与缓存写入
     this.cachedWidth = width;
     this.cachedLayoutWidth = layoutWidth;
     this.cachedHeight = renderHeight;
@@ -815,7 +815,7 @@ export class AskAuthorComponent implements Component, Focusable {
   }
 
   /**
-   * 原地追加底部状态通知行（无文案时不追加，仅通知行与前置空行）
+   * 原地追加底部状态通知行（无文案时不追加，仅包含通知行与前面的空行）
    * @param lines - 输出行数组（原地追加）
    */
   private pushStatusMessage(lines: string[]): void {
@@ -826,7 +826,7 @@ export class AskAuthorComponent implements Component, Focusable {
 
   /**
    * 渲染答卷总览与确认提交页（完成状态 / 已选项 / 补充说明 / 提交指引）
-   * 内容行由 `view-summary.ts` 构建并按 `(列宽, revision)` 缓存于 `summaryCachedLines`，本方法只做 O(1) 切片；位移在本地收敛，绝不回写 `summaryScrollOffset`（写回只发生在输入路径）
+   * 内容行由 `view-summary.ts` 构建并按 `(列宽, revision)` 缓存于 `summaryCachedLines`，本方法只做 O(1) 切片；位移在本地收敛，绝不写回 `summaryScrollOffset`（写入只发生在输入路径）
    * @param lines - 输出行数组
    * @param renderWidth - 终端布局列宽
    */
@@ -956,7 +956,7 @@ export class AskAuthorComponent implements Component, Focusable {
     }
     lines.push("");
 
-    // 3. 智能分屏 / 紧凑单栏（富内容按可视列宽判定，避免 CJK 描述被低估）
+    // 3. 智能分屏 / 紧凑单栏（富内容按可视列宽判定）
     const hasRichContent = q.options.some(
       (o, idx) => Boolean(o.preview) || visibleWidth(o.description ?? "") > 30 || Boolean(st.optionNotes.get(idx)),
     );
@@ -1001,7 +1001,7 @@ export class AskAuthorComponent implements Component, Focusable {
   }
 
   /**
-   * 取聚焦条目的预渲染完整内容行（`previewCache` 透明备忘缓存，跨条目 / 切题零重复解析）
+   * 获取聚焦条目的预渲染完整内容行（`previewCache` 透明备忘缓存，跨条目 / 切换题目零重复解析）
    * @param item - 目标菜单项
    * @param customText - 题目整体补充说明
    * @param optionNote - 选项专属补充说明
@@ -1040,7 +1040,7 @@ export class AskAuthorComponent implements Component, Focusable {
   }
 
   /**
-   * 计算并切片本帧预览框行（纯计算，不回写语义状态）
+   * 计算并切片本帧预览框行（纯计算，不写回语义状态）
    * 位移由 `previewScrollOffset` 与本帧总行数在本地收敛；本帧观察元数据写入 {@link previewViewportObservation} 供输入路径归一化位移
    * @param item - 目标菜单项
    * @param customText - 题目整体补充说明
@@ -1135,7 +1135,7 @@ export class AskAuthorComponent implements Component, Focusable {
         ? st.optionNotes.get(currentItem.optionIndex)
         : undefined;
 
-    // 位移以本条目本帧总行数为界在本地夹取，绝不回写 previewScrollOffset
+    // 位移以本条目本帧总行数为界在本地收敛，绝不写回 previewScrollOffset
     const rightLines = this.buildPreviewBox(
       currentItem,
       st.customText,
@@ -1198,7 +1198,7 @@ export class AskAuthorComponent implements Component, Focusable {
         lines.push("");
         const itemOptNote =
           item.type === "option" && item.optionIndex !== undefined ? st.optionNotes.get(item.optionIndex) : undefined;
-        // 位移以本条目本帧实时总行数在本地夹取，绝不回写 previewScrollOffset
+        // 位移以本条目本帧实时总行数在本地收敛，绝不写回 previewScrollOffset
         const previewLines = this.buildPreviewBox(
           item,
           st.customText,

@@ -17,7 +17,7 @@ import type { QuestionInput, QuestionOption, RawParams } from "./schema.js";
 /** 字段别名提取源对象形状（不可信边界，统一经 `pickString` 收敛） */
 type LooseRecord = Record<string, unknown>;
 
-/** `pickString` 别名表类型：按声明顺序取第一个命中的字符串字段 */
+/** `pickString` 别名表类型：按声明顺序获取第一个命中的字符串字段 */
 type StringAliases = readonly string[];
 
 /**
@@ -30,7 +30,7 @@ function isPlainRecord(value: unknown): value is LooseRecord {
 }
 
 /**
- * 解包 `raw` 包装键（载荷为可用对象时整体取代外层，否则在浅拷贝上摘除该键）
+ * 解包 `raw` 包装键（载荷为可用对象时整体替换外层，否则在浅拷贝上摘除该键）
  * @param source - 外层参数对象浅拷贝
  * @returns 权威对象（`raw` 载荷或已摘除 `raw` 的外层对象）
  */
@@ -177,7 +177,7 @@ function sanitizeQuestionEntry(value: unknown, index: number): QuestionInput {
 
 /**
  * 归一化题目列表（兼容 JSON 串包裹 / 单题对象包裹 / 数组，上限 `MAX_QUESTIONS`）
- * 边界：空列表或无法识别为题目结构的输入视为未提供，避免残留空数组触发 `questions` 的 `minItems: 1` 校验
+ * 边界：空列表或无法识别为题目结构的输入视为未提供
  * @param value - `questions` / `form` / `survey` 容器键的原始值
  * @returns 规整后的题目数组（至少一项）；入参为 undefined / 空列表 / 无法识别时返回 undefined
  */
@@ -190,7 +190,7 @@ function normalizeQuestions(value: unknown): QuestionInput[] | undefined {
 }
 
 /**
- * 空选项数组兜底为单个默认方案，避免触发 `minItems` 校验失败
+ * 空选项数组兜底为单个默认方案
  * @param options - 已规整的选项数组
  * @returns 原数组（非空时）或单元素默认方案数组（恒非空，满足 Schema `minItems: 1`）
  */
@@ -228,7 +228,7 @@ export function sanitizeAskAuthorArgs(args: unknown): RawParams {
     return { formTitle: TEXTS.fallbacks.defaultFormTitle };
   }
 
-  // 0. 权威对象：浅拷贝外层后解开 `raw` 包装（载荷可用时整体取代外层）
+  // 0. 权威对象：浅拷贝外层后解开 `raw` 包装（载荷可用时整体替换外层）
   const p: LooseRecord = unwrapRawPayload({ ...source });
 
   // 1. 表单标题别名链：formTitle → title / taskTitle → 缺省兜底（aliasFormTitle 留作平铺题干回退）

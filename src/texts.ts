@@ -3,7 +3,7 @@
  * @description 布局常量、终端图标、小说语法模板表与全局双向文案字典的单一来源，禁止各层直接书写文案字面量
  *
  * 核心架构特性：
- * - 全插件唯一文案来源：任何可见字符串均须经本模块取值，其余各层只做取值、组合与排版
+ * - 全插件唯一文案来源：任何可见字符串均必须经由本模块获取数值，其余各层只做获取数值、组合与排版
  * - `LAYOUT_CONFIG` / `ICONS` / `MAX_*` 集中声明可调参数与强制上限，便于统一调整参数与验证边界
  * - `NOVEL_TEMPLATES` 以「定界符 → 语义哨兵 → 原生 Markdown 载体 → 主题样式」单表声明小说语法，新增语法只需在表尾追加一项
  * - `TEXTS` 按受众严格分区，LLM 面恒为英文，作者面恒为中文，两侧文案不得互相渗透
@@ -193,11 +193,11 @@ export const TEXTS = {
   /** LLM 端 TypeBox 字段描述字典（单句浓缩英文，仅声明语义、必要性与省略规则；数量约束来自 {@link MAX_OPTIONS} / {@link MAX_QUESTIONS} 插值） */
   schema: {
     // ===== 选项字段（OptionSchema） =====
-    /** 选项标签（必填；要求简明动作导向，禁占位式命名） */
+    /** 选项标签（必须填写；要求简明动作导向，禁止占位式命名） */
     optionLabel: "Concise, descriptive label summarizing the action or choice",
     /** 选项情节推演（可选；作者端渲染为「情节设定推演」预览面板） */
     optionDesc: "Plot consequences, rationale, or deduction (optional)",
-    /** 选项草稿预览（可选；作者端渲染为「正文草稿/分镜试写」预览面板） */
+    /** 选项草稿预览（可选；作者端渲染为「正文草稿/分镜头试撰写」预览面板） */
     optionPreview: "Draft prose excerpt or scene storyboard preview (optional, Markdown)",
     /** 选项批注占位符（可选；作者端作为选项补充说明编辑器的输入框占位文本） */
     optionCustomPlaceholder: "Placeholder text for option note input (optional)",
@@ -205,7 +205,7 @@ export const TEXTS = {
     // ===== 题目字段（QuestionSchema） =====
     /** 题目 ID（可选；供批量模式与返回封套稳定引用） */
     questionId: "Question identifier (optional, omit unless needed)",
-    /** 题目标题（必填；作者端呈现为 Tab 标签与题头） */
+    /** 题目标题（必须填写；作者端呈现为 Tab 标签与题头） */
     questionTitle: "Question title (e.g., 'Choose the next route')",
     /** 题目背景说明（可选；作者端呈现为题头下方的上下文行） */
     questionDesc: "Context or background for this question (optional)",
@@ -217,7 +217,7 @@ export const TEXTS = {
     questionMaxSelect: "Maximum selections allowed (default: all options)",
     /** 零勾选提交开关（可选；默认 false，仅多选生效，开启后作者端标注可不选） */
     questionAllowEmpty: "Allow submitting with zero selections (default false)",
-    /** 候选选项列表（必填；1~{@link MAX_OPTIONS} 项；建议 2~10 项） */
+    /** 候选选项列表（必须填写；1~{@link MAX_OPTIONS} 项；建议 2~10 项） */
     questionOptions: `Candidate options (1-${MAX_OPTIONS}, 2-10 recommended)`,
     /** 自由批注开关（可选；默认 true，开启后作者端可额外提交非选项文本） */
     questionAllowCustom: "Allow author free-form custom notes (default true)",
@@ -225,7 +225,7 @@ export const TEXTS = {
     questionCustomPlaceholder: "Placeholder text for author note input (optional)",
 
     // ===== 表单层字段（AskAuthorSchema 批量模式） =====
-    /** 问卷标题（必填；作者端呈现为卡片标题与总览页标题） */
+    /** 问卷标题（必须填写；作者端呈现为卡片标题与总览页标题） */
     formTitle: "Concise title describing the overall consultation task",
     /** 问卷背景（可选；作者端呈现为问卷级上下文） */
     formDesc: "Overall context or background for the consultation (optional)",
@@ -293,17 +293,17 @@ export const TEXTS = {
     notePrefix: "[Author note: ",
     /** 行内批注令牌右定界符 */
     noteSuffix: "]",
-    /** 分镜草稿指令令牌左定界符（尾随 1 空格，与 `draftDirectiveSuffix` 成对） */
+    /** 分镜头草稿指令令牌左定界符（尾随 1 空格，与 `draftDirectiveSuffix` 成对） */
     draftDirectivePrefix: "[Draft directive: ",
-    /** 分镜草稿指令令牌右定界符 */
+    /** 分镜头草稿指令令牌右定界符 */
     draftDirectiveSuffix: "]",
 
     // ===== 作答行组装 =====
     /** 构建封套单题作答行（`index` 为 1-based 题号，`title` 为题目标题，`body` 为单行正文） */
     answerLine: (index: number, title: string, body: string) => `${index}. [${title}]: ${body}`,
-    /** 同一作答行内多个片段（选项推演 / 批注令牌 / 草稿指令）的分隔符（纯 ASCII；作者文本中的 `;` 已在 `sanitizeEnvelopeText` 归一为全角 `；` 以免歧义） */
+    /** 同一作答行内多个片段（选项推演 / 批注令牌 / 草稿指令）的分隔符（纯 ASCII；作者文本中的 `;` 已在 `sanitizeEnvelopeText` 归一为全角 `；` 消除歧义） */
     partSeparator: "; ",
-    /** 正文草稿 / 分镜压缩为单行指令时的分镜片段分隔符（LLM 端纯 ASCII） */
+    /** 正文草稿 / 分镜头草稿压缩为单行指令时的分镜头片段分隔符（LLM 端纯 ASCII） */
     draftSegmentSeparator: " / ",
     /**
      * 构建带情节推演的选项片段：`【标签】推演 [Author note: …] [Draft directive: …]`
@@ -325,7 +325,7 @@ export const TEXTS = {
     optionWithoutDesc: (label: string, draftDirective?: string, note?: string) =>
       `【${label}】${note ? ` ${note}` : ""}${draftDirective ? ` ${draftDirective}` : ""}`,
     /**
-     * 构建未选中选项上的孤立批注片段（英文前缀 + 标签 + 批注令牌，防止作者批注在封套中丢失）
+     * 构建未选中选项上的孤立批注片段（英文前缀 + 标签 + 批注令牌）
      * @param label - 选项标签原文（调用方已过 `sanitizeEnvelopeText`）
      * @param note - 已包装的 `[Author note: …]` 令牌（非原文）
      */
@@ -364,7 +364,7 @@ export const TEXTS = {
   tabs: {
     /** 渲染题目页标签（`index` 为 1-based 题号） */
     questionTab: (index: number) => `第${index}题`,
-    /** 答卷提交页标签（末尾固定页，前置完成徽标） */
+    /** 答卷提交页标签（末尾固定页，前面附带完成徽标） */
     submitTab: `${ICONS.check} 提交答卷`,
   },
 
@@ -389,9 +389,9 @@ export const TEXTS = {
       return `${tag}]`;
     },
     /** 渲染题目级补充说明横幅（`text` 为补充说明原文，位于题头下方） */
-    attachedNoteBanner: (text: string) => `${ICONS.note} 题目补充：${text}`,
+    attachedNoteBanner: (text: string) => `${ICONS.note} 题目补充说明：${text}`,
     /** 渲染选项级补充说明横幅（`label` 为选项标签，位于对应选项行下方） */
-    optionAttachedNoteBanner: (label: string, text: string) => `${ICONS.note} [${label}] 选项补充：${text}`,
+    optionAttachedNoteBanner: (label: string, text: string) => `${ICONS.note} [${label}] 选项补充说明：${text}`,
 
     // ===== 选项列表滚动提示 =====
     /** 渲染列表上方剩余项数提示（`count` 为剩余项数） */
@@ -404,8 +404,8 @@ export const TEXTS = {
     optionNotePanelTitle: "选项补充说明",
     /** 选项情节推演面板标题 */
     storyDescriptionPanelTitle: "情节设定推演",
-    /** 选项正文草稿 / 分镜面板标题 */
-    storyDraftPanelTitle: "正文草稿/分镜试写",
+    /** 选项正文草稿 / 分镜头面板标题 */
+    storyDraftPanelTitle: "正文草稿/分镜头试撰写",
     /** 题目补充说明面板标题 */
     customNotePanelTitle: "题目补充说明",
     /** 确认入口的按键说明面板标题 */
@@ -422,7 +422,7 @@ export const TEXTS = {
     customNotePanelTips: [
       `${BULLET_PREFIX}随时按「N」或选择此项按「Enter」填写/修改本题补充说明`,
       `${BULLET_PREFIX}按「x」清空本题补充说明`,
-      `${BULLET_PREFIX}补充说明将随所选选项及选项专属补充一并提交给 AI 助手`,
+      `${BULLET_PREFIX}补充说明将随所选选项及选项专属补充说明一并提交给 AI 助手`,
     ],
     /** 确认面板的按键提示行集合 */
     confirmPanelTips: [
@@ -453,7 +453,7 @@ export const TEXTS = {
       `已选 ${selectedCount}${selectedCount < minSelect ? `/${minSelect}` : ""} 项`,
     /** 渲染确认本题按钮标签（`detail` 取自 `confirmDetailMulti`，空串时不显示括号；`hasNote` 为真时追加补充标记） */
     confirmLabel: (detail: string, hasNote: boolean) =>
-      `${ICONS.check} 确认本题 (${detail}${hasNote ? " + 补充" : ""})`,
+      `${ICONS.check} 确认本题 (${detail}${hasNote ? " + 补充说明" : ""})`,
     /** 确认按钮的下方说明（声明确认后的跳转目标） */
     confirmDesc: "确认并前往下一题或总览页",
   },
@@ -511,19 +511,19 @@ export const TEXTS = {
     /** Esc / Ctrl+C：取消并关闭当前界面 */
     cancel: "Esc/Ctrl+C 取消",
     /** x：清空光标所在位置的补充说明 */
-    clearNote: "x 清空补充",
+    clearNote: "x 清空补充说明",
     /** Enter：多选模式下确认本题并推进 */
     confirmQuestion: "Enter 确认",
     /** Enter：总览页提交整份答卷 */
     confirmSubmit: "Enter 提交",
     /** n：编辑题目补充说明（光标位于题目补充说明菜单项时） */
-    editNote: "n 补充",
+    editNote: "n 补充说明",
     /** n：编辑当前选项的专属批注（光标位于选项行时） */
-    editOptionNote: "n 选项补充",
+    editOptionNote: "n 选项补充说明",
     /** N：直接编辑题目补充说明（光标位于选项行时的大写入口） */
-    editQuestionNote: "N 题目补充",
-    /** 1~9：按题号直接跳题（题目数大于 1 时展示） */
-    jumpQuestion: "1~9 跳题",
+    editQuestionNote: "N 题目补充说明",
+    /** 1~9：按题号直接跳转题目（题目数大于 1 时展示） */
+    jumpQuestion: "1~9 跳转题目",
     /** ↑↓ / jk：上下移动光标 */
     moveCursor: "↑↓/jk 移动",
     /** PgUp / PgDn：作答页滚动草稿预览（存在预览内容时展示） */
@@ -533,7 +533,7 @@ export const TEXTS = {
     /** 空格 / Enter：单选模式下选定当前项 */
     selectOptionSingle: "空格/Enter 选定",
     /** Tab / ←→ / hl：切换题目或总览页 */
-    switchQuestion: "Tab/←→/hl 切题",
+    switchQuestion: "Tab/←→/hl 切换题目",
     /** a：多选模式下全选或清空 */
     toggleAll: "a 全选/清空",
     /** 空格：多选模式下勾选或取消当前项 */
@@ -553,11 +553,11 @@ export const TEXTS = {
     /** 已选选项行标签 */
     selectedLabel: "已选：",
     /** 已选选项行尾的批注存在角标 */
-    optionNoteBadge: `(${ICONS.note} 附)`,
+    optionNoteBadge: `(${ICONS.note} 批注)`,
     /** 渲染选项级批注行标签（`optLabel` 为所属选项标签） */
-    optionNotePrefix: (optLabel: string) => `${ICONS.note} 选项补充（${optLabel}）：`,
+    optionNotePrefix: (optLabel: string) => `${ICONS.note} 选项补充说明（${optLabel}）：`,
     /** 题目级补充说明行标签 */
-    customNoteLabel: `${ICONS.note} 题目补充：`,
+    customNoteLabel: `${ICONS.note} 题目补充说明：`,
     /** 全部完成时的提交引导行 */
     allDonePrompt: ` ${ICONS.check} 全部完成，按 Enter/Ctrl+S 提交答卷，Tab/hl/1-9 返回修改`,
     /** 存在未完成题目时的阻断提示行 */
@@ -594,7 +594,7 @@ export const TEXTS = {
     /** 渲染带专属批注的选项标签角标（`label` 为选项标签，`note` 为批注原文；形如 `选项 [note 批注]`） */
     optionWithNote: (label: string, note: string) => `${label} [${ICONS.note} ${note}]`,
     /** 渲染题目补充说明角标（`text` 为补充说明原文，追加于作答行行尾） */
-    questionNoteTag: (text: string) => ` (${ICONS.note} 题目: ${text})`,
+    questionNoteTag: (text: string) => ` (${ICONS.note} 题目补充说明: ${text})`,
     /** 渲染展开态错误原因行（`err` 为宿主异常摘要） */
     errorBullet: (err: string) => `${BULLET_PREFIX}错误原因：${err}`,
   },
@@ -622,7 +622,7 @@ export const TEXTS = {
     unnamedOptionLabel: "未命名方案",
 
     // ===== 空答占位 =====
-    /** 零勾选且无补充说明时的展示占位（总览页与结果卡片共用；封套中由 `markdown.noSelection` 承担同义英文） */
+    /** 未勾选且无补充说明时的展示占位（总览页与结果卡片共用；封套中由 `markdown.noSelection` 承担同义英文） */
     unselectedOption: "未选",
 
     // ===== 自动命名派生 =====
