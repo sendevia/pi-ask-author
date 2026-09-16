@@ -1,8 +1,8 @@
 # pi-ask-author
 
-[![pi-package](https://img.shields.io/badge/pi--package-extension-blue.svg)](https://pi.dev/packages)
-[![TypeScript](https://img.shields.io/badge/TypeScript-Strict-blue.svg)](https://www.typescriptlang.org/)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+![NPM Version](https://img.shields.io/npm/v/%40sendevia%2Fpi-ask-author?style=flat-square&link=https%3A%2F%2Fwww.npmjs.com%2Fpackage%2F%40sendevia%2Fpi-ask-author)
+[![TypeScript](https://img.shields.io/badge/TypeScript-Strict-blue.svg?style=flat-square)](https://www.typescriptlang.org/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg?style=flat-square)](https://opensource.org/licenses/MIT)
 
 专为作家、轻小说创作者与 AI 协同写作设计的 [Pi](https://github.com/earendil-works/pi-coding-agent) 终端交互式请示扩展。
 
