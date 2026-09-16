@@ -23,7 +23,7 @@
     "dist"
   ],
   "scripts": {
-    "build": "tsc --emitDeclarationOnly --declaration --outDir dist && esbuild src/index.ts --bundle --format=esm --platform=node --target=ESNext --external:@earendil-works/* --external:typebox --minify --tree-shaking=true --legal-comments=none --drop:debugger --drop:console --outfile=dist/index.js",
+    "build": "tsc && esbuild src/index.ts --bundle --format=esm --platform=node --target=ESNext --external:@earendil-works/* --external:typebox --minify --tree-shaking=true --legal-comments=none --drop:debugger --drop:console --outfile=dist/index.js && terser dist/index.js --compress passes=3,pure_getters=true --mangle --output dist/index.js",
     "prepack": "pnpm build",
     "check": "tsc --noEmit -p tsconfig.json"
   },
@@ -31,6 +31,7 @@
     "@earendil-works/pi-coding-agent": "^0.85.1",
     "@earendil-works/pi-tui": "^0.85.1",
     "esbuild": "^0.28.2",
+    "terser": "^5.51.2",
     "typebox": "^1.3.31",
     "typescript": "^7.0.2"
   },
