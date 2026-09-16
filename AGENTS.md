@@ -71,3 +71,94 @@
 - 在任何思考、回复、文档里面不允许出现`That's a lot`, `This is a substantial rewrite`等对工作量的评判。你只是一个工具，就像计算器不会评价要计算的数太大了一样，你没有资格评判工作量。你没有资格把你自己当做我的同事。禁止简化任何设计。
 
 ## 二、插件开发
+
+### 2.1 项目结构
+
+本项目属于面向终端文字创作者交互式决策的 Pi 扩展插件，基于 TypeScript 与 ESM 规范构建。代码组织如下：
+
+- `package.json`：定义扩展元数据、依赖项与入口声明，通过 `pi.extensions` 字段导出 `./src/index.ts`。
+- `tsconfig.json`：配置 TypeScript 严格模式编译选项。
+- `src/index.ts`：插件主入口模块。注册 `ask_author` 工具与 `/ask-author` 辅助命令；编排工具生命周期流程，挂载执行函数 `execute`、调用卡片渲染 `renderCall` 与结果卡片渲染 `renderResult`；统一通过结果工厂产出完成、取消、错误与异常四种结构化结果。
+- `src/schema.ts`：工具参数的单一源头。基于 TypeBox 声明参数结构与校验规则，导出 `AskAuthorParams` 以及派生类型 `RawParams`、`QuestionInput`、`QuestionOption`。
+- `src/model.ts`：问卷状态机与数据模型。定义 `AskAuthorFormModel`，负责题目数据归一化、作答状态流转、`revision` 版本推进、答卷结果编译以及 Markdown 封套文本生成。
+- `src/component.ts`：交互式 TUI 核心组件。实现 `AskAuthorComponent`，支撑宽屏双栏与窄屏单栏自适应布局、键盘事件路由、内置 `Editor` 文本编辑器集成、视口滚动计算以及多层级渲染缓存管理。
+- `src/sanitize.ts`：入参防御性清洗模块。提供 `sanitizeAskAuthorArgs` 函数，执行不可信入参边界的类型收敛、别名映射、数据纠错与白名单字段过滤。
+- `src/format.ts`：纯函数排版与算法工具模块。提供视口边界限制、可见列宽测量、ANSI 文本折行、文本清洗以及草稿摘要压缩等无状态工具函数。
+- `src/novel-markdown.ts`：小说语法高亮引擎。通过声明式语法模板表将对话台词与心理旁白转换为携带语义哨兵的行内代码，由定制 Markdown 主题完成样式渲染。
+- `src/texts.ts`：文案字典、终端图标与布局几何常量的单一源头。集中声明 `LAYOUT_CONFIG`、`ICONS`、`NOVEL_TEMPLATES` 与全局双语文字字典 `TEXTS`。
+- `src/theme.ts`：主题类型定义模块。导出 `Theme` 类型别名，作为无运行时依赖的叶层节点。
+- `src/view-rows.ts`：纯函数视图排版模块。负责题目选项菜单行、顶部 Tab 标签栏、分割线与底部帮助栏的格式化排版。
+- `src/view-summary.ts`：纯函数视图排版模块。负责答卷提交总览确认页的内容行与操作提示排版。
+
+### 2.2 模块依赖关系
+
+项目各个模块遵循严格的单向依赖规则，禁止出现循环引用：
+
+```mermaid
+graph TD
+    theme["src/theme.ts"] --> texts["src/texts.ts"]
+    texts --> format["src/format.ts"]
+    texts --> schema["src/schema.ts"]
+    format --> sanitize["src/sanitize.ts"]
+    schema --> sanitize
+    format --> model["src/model.ts"]
+    schema --> model
+    texts --> model
+    format --> novelMarkdown["src/novel-markdown.ts"]
+    theme --> novelMarkdown
+    texts --> novelMarkdown
+    model --> novelMarkdown
+    format --> viewRows["src/view-rows.ts"]
+    model --> viewRows
+    texts --> viewRows
+    theme --> viewRows
+    format --> viewSummary["src/view-summary.ts"]
+    model --> viewSummary
+    texts --> viewSummary
+    theme --> viewSummary
+    novelMarkdown --> component["src/component.ts"]
+    viewRows --> component
+    viewSummary --> component
+    model --> component
+    format --> component
+    texts --> component
+    theme --> component
+    component --> index["src/index.ts"]
+    sanitize --> index
+    model --> index
+    schema --> index
+    format --> index
+    texts --> index
+```
+
+### 2.3 编码规范
+
+#### 2.3.1 架构设计与依赖管理
+
+- 单向依赖原则：底层模块严禁反向导入上层模块。`component.ts` 作为排版协调器，排版纯函数模块（`view-rows.ts`、`view-summary.ts`）禁止反向导入 `component.ts`。
+- 零额外第三方依赖：生产环境仅依赖 `@earendil-works/pi-coding-agent`、`@earendil-works/pi-tui` 与 `typebox`，禁止引入未授权的外部依赖库。
+- 纯类型模块隔离：`theme.ts` 仅保留类型导出，编译为 JavaScript 后无运行期实体，维持叶层纯净。
+
+#### 2.3.2 文案与常量单一源头
+
+- 集中声明原则：禁止在组件层或者排版层直接书写任何用户可见的字符串字面量、按键提示、图标符号或者几何数值。全部文案、图标（`ICONS`）以及几何配置（`LAYOUT_CONFIG`）必须定义在 `texts.ts` 模块中。
+- 受众边界划分：`TEXTS` 字典严格区分使用受众。面向大语言模型的文本（`tool` 描述、`schema` 描述、`markdown` 封套）统一使用英文编写；面向人类作者的界面文本（提示语、操作指南、选项标签占位符）统一使用中文编写，两者界限清晰。
+
+#### 2.3.3 参数校验与类型系统
+
+- TypeBox 单一源头：参数 Schema 与 TypeScript 静态类型必须严格一致，运行时参数类型一律经由 `Static<typeof AskAuthorParams>` 派生，禁止重复手动编写平行的类型定义。
+- 纵深防御清洗：不可信输入在 `prepareArguments` 钩子中经由 `sanitizeAskAuthorArgs` 进行第一道清洗，收敛为白名单结构；`AskAuthorFormModel` 在构建时进行第二道数据规范化与默认值补全。
+- 快速失败策略：运行时检测到非法数据或者不可逆错误时，立即抛出明确异常或者返回结构化错误结果，禁止捕获异常后静默忽略。
+
+#### 2.3.4 TUI 渲染与状态机设计
+
+- 终端宽度安全计算：涉及终端列宽计算、截断或者折行时，必须调用 `@earendil-works/pi-tui` 导出的 `visibleWidth`、`truncateToWidth` 与 `wrapTextWithAnsi`，禁止使用 JavaScript 原生 `string.length` 计算字符宽度。
+- 渲染函数纯度约定：`AskAuthorComponent.prototype.render` 及其调用的排版函数必须保持纯净，禁止在渲染周期内修改任何语义状态（例如当前选中项、滚动位移、输入模式标记）。修改语义状态的操作仅允许在键盘事件分发路径中执行。
+- 多级缓存失效控制：模型层通过 `revision` 版本计数器标记作答状态突变；视图层根据版本计数器与视口尺寸键使对应缓存失效，避免重复执行高开销的 Markdown 解析与文本排版。
+- 资源生命周期释放：组件实现 `dispose` 方法并保持幂等性。在组件销毁或者执行结束时，必须彻底清理计时器、注销 `AbortSignal` 监听器并清空缓存容器。
+
+#### 2.3.5 封套生成与确定性输出
+
+- 固定格式封套：工具执行完成、取消或者错误时，输出内容必须严格遵循预定义的 Markdown 封套结构（`[Author Decision Finalized]`、`[Author Decision Cancelled]`、`[Author Consultation Error]`），前缀格式固定，提升模型前缀缓存命中概率。
+- 草稿指令提炼：当选中的选项包含 Markdown 正文草稿预览时，模型层需将其压缩提炼为单行 `[Draft directive: ...]` 指令，便于大语言模型在后续生成中直接读取与遵循。
+- 防止击穿处理：拼装封套时，针对来自不可信源的文本执行清洗与单行化处理，防止恶意输入击穿封套结构。
