@@ -9,7 +9,7 @@
  * - 折行、嵌套与配色全部由原生 Markdown 引擎回填，插件不触碰任何 ANSI 转义流
  * - 零文本改动不变量：输出剥离哨兵与新增反引号后与输入完全等价
  *
- * 索引约定：全文「扁平索引 / 行内列索引」一律指 UTF-16 码元下标，与 `String.prototype.length` / `charAt` / `slice` 对齐，非 Unicode 码点或字节偏移
+ * 索引约定：全文「扁平索引 / 行内列索引」一律指 UTF-16 码元下标，含义与 `String.prototype.length` / `charAt` / `slice` 一致
  *
  * 依赖方向：novel-markdown.ts → format.ts / texts.ts / theme.ts（另取 model.ts 的 `MenuItem` 类型，无回边）；外部依赖 `@earendil-works/pi-tui` 的 `Markdown` / `MarkdownTheme` 与 `@earendil-works/pi-coding-agent` 的 `getMarkdownTheme`
  * 宿主主题耦合：围栏代码块由 `getMarkdownTheme()` 的 `highlightCode` 着色，取色读宿主全局活动主题（须宿主已 `initTheme`，本模块不自持主题）；行内代码仅在未命中哨兵时走同一全局 `code` 取色
@@ -82,7 +82,7 @@ const FENCE_OPENING_PATTERN = /^ {0,3}(`{3,}|~{3,})/;
 /** 缩进代码行识别正则（≥4 空格缩进后接非空内容） */
 const INDENTED_CODE_PATTERN = /^ {4,}\S/;
 
-/** 原生引擎按原文输出的块级起始行识别正则（HTML 块与表格行），命中即整块放弃标注；`<` 收紧为 CommonMark 合法标签起始以避免正文行误判；裸 `$` 与 `\[` 由数学区掩码接管（见 {@link maskCodeRegions}） */
+/** 原生引擎按原文输出的块级起始行识别正则（HTML 块与表格行），命中即整块放弃标注；`<` 收紧为 CommonMark 合法标签起始以避免正文行误判；单独的 `$` 与 `\[` 由数学区掩码接管（见 {@link maskCodeRegions}） */
 const RAW_BLOCK_PATTERN = /^ {0,3}(?:<(?=[/!?a-zA-Z])|\|)/;
 
 /** 块级数学区开启行（行首 `$$` 或 `\[…`），与原生 `tokenizeBlockLatex` 的 `start` 接受范围一致 */
@@ -90,7 +90,7 @@ const BLOCK_MATH_OPENING_PATTERN = /^ {0,3}(?:\$\$|\\\[)/;
 
 /**
  * 判定行内是否存在行内数学起始定界符（`$x$` / `$$…` / `\(…` / `\[…`）
- * 原生 `tokenizeInlineLatex` 区段经 `renderLatex` 按原文渲染、绕过 `theme.code` 回调，哨兵落入即泄漏到终端，故一律放弃标注
+ * 原生 `tokenizeInlineLatex` 区段经 `renderLatex` 按原文渲染、绕过 `theme.code` 回调，哨兵进入其中即泄漏到终端，故一律放弃标注
  * `\$` 转义与 `$` 后紧跟空白（原生按字面量处理）不触发
  * @param line - 待判定行
  * @returns 命中未闭合数学起始符（`$$` 或 `\[`）时为 true
@@ -114,7 +114,7 @@ function containsMathOpener(line: string): boolean {
 /** 块引用前缀识别正则（兼容 `> ` 与嵌套 `> > ` 写法） */
 const QUOTE_PREFIX_PATTERN = /^(?: {0,3}>[ \t]?)+/;
 
-/** 链接定义行识别正则（`def` 令牌不带 `text` 字段，原生 `renderToken` 的 default 分支不会输出该行；哨兵落入即随令牌一并丢失，故整行屏蔽） */
+/** 链接定义行识别正则（`def` 令牌不带 `text` 字段，原生 `renderToken` 的 default 分支不会输出该行；哨兵进入其中即随令牌一并消失，故整行屏蔽） */
 const LINK_DEFINITION_PATTERN = /^ {0,3}\[[^\]\n]*\]:/;
 
 /**
@@ -152,7 +152,7 @@ type LineStartIndex = readonly number[];
 /** 代码上下文掩码：长度等于 `source.length`（UTF-16 码元数，逐码元 1:1 对应），`1` 表示该码元处于代码块、行内代码或原生引擎按原文渲染的块级上下文中 */
 type NovelCodeMask = Uint8Array;
 
-/** 待闭合的语义栈帧 */
+/** 待闭合的语义帧（记录语法模板与开始定界符位置） */
 interface NovelOpenFrame {
   /** 命中的语法模板 */
   readonly template: NovelSyntaxTemplate;
@@ -203,7 +203,7 @@ function indexLineStarts(lines: readonly string[]): LineStartIndex {
 
 /**
  * 计算源码的「代码上下文」掩码：围栏代码块整行、缩进代码行、行内代码片段，以及会被原生引擎按原文输出的块级上下文（表格 / HTML / LaTeX / 链接定义行）
- * 分词与标注一律跳过被标记字符：既不会改动作者书写的代码，也杜绝哨兵落入不经主题回调的渲染路径（代价是表格内放弃着色）
+ * 分词与标注一律跳过被标记字符：既不会改动作者书写的代码，也杜绝哨兵进入不经主题回调的渲染路径（代价是表格内放弃着色）
  * @param source - 完整源码（行间以 `\n` 连接）
  * @param lines - 源码行数组
  * @param lineStarts - 行首扁平索引表
@@ -246,7 +246,7 @@ function maskCodeRegions(source: string, lines: readonly string[], lineStarts: L
       if (closerIndex >= 0) {
         const remainder = line.slice(closerIndex + mathCloser.length);
         mathCloser = null;
-        // 闭合后同行余段若仍含数学起始符，后续段落继续按原文渲染，保持段落级屏蔽
+        // 闭合后同行余段若仍含数学起始符，后续文本块继续按原文渲染，保持整块屏蔽
         if (containsMathOpener(remainder)) rawBlock = true;
       }
       continue;
@@ -311,7 +311,7 @@ function maskCodeRegions(source: string, lines: readonly string[], lineStarts: L
       continue;
     }
 
-    // 行内数学（`$x$` / `\(…\)` / 行中 `$$` / `\[…`）：起始符所在段落整体放弃标注，避免哨兵落入不经主题回调的 `renderLatex` 渲染路径
+    // 行内数学（`$x$` / `\(…\)` / 行中 `$$` / `\[…`）：起始符所在文本块整体放弃标注，避免哨兵进入不经主题回调的 `renderLatex` 渲染路径
     if (containsMathOpener(line)) {
       markLine(lineIndex);
       rawBlock = true;
@@ -357,7 +357,7 @@ function findInlineCodeClosing(source: string, mask: NovelCodeMask, from: number
 }
 
 /**
- * 对源码执行小说语法定界符栈式配对
+ * 对源码执行小说语法定界符嵌套配对
  * 逐字符线性扫描并跳过掩码命中字符；闭合帧时按 `startFlat >= frame.start` 回退剔除其内层已入列跨距（等价于「外层优先」的区间包含语义，且跨距互不重叠）
  * 超长 / 跨空行或块级结构行 / 内容含行内标记字符（详见 {@link MARKDOWN_SENSITIVE_PATTERN}）的跨距一律放弃高亮
  * @param source - 完整源码
@@ -422,10 +422,10 @@ function pairNovelSyntax(
 }
 
 /**
- * 在语义栈中自顶向下查找可被指定闭定界符闭合的栈帧深度
- * @param stack - 未闭合开定界符栈（自底向上）
+ * 在未闭合语义帧列表中自顶向下查找可被指定闭定界符闭合的帧层级
+ * @param stack - 未闭合开定界符列表（自底向上）
  * @param closer - 待匹配的闭定界符
- * @returns 栈帧深度（0-based）；无匹配帧返回 `-1`
+ * @returns 帧层级深度（0-based）；无匹配帧返回 `-1`
  */
 function findClosingDepth(stack: readonly NovelOpenFrame[], closer: string): number {
   for (let depth = stack.length - 1; depth >= 0; depth--) {
@@ -452,7 +452,7 @@ function resolveLineIndex(lineStarts: LineStartIndex, flatIndex: number): number
 }
 
 /**
- * 判定语义跨距是否完全落在同一段落内（内部无空行且无块级结构行）
+ * 判定语义跨距是否完全位于同一文本块内（内部无空行且无块级结构行）
  * @param lines - 源码行数组
  * @param startLine - 起始行索引（0-based）
  * @param endLine - 结束行索引（0-based，含）
@@ -512,7 +512,7 @@ function annotateNovelLine(line: string, segments: readonly NovelLineSegment[]):
     const leading = line.slice(cursor, start);
     const body = line.slice(start, end);
     // 防御性兜底：片段紧邻反引号时插入围栏会与之合并而破坏配对；正常情况下掩码层已排除此情形，
-    // 此分支仅在掩码与原生解析存在边界偏差时生效——宁可不标注也不改文本
+    // 此分支仅在掩码与原生解析存在边界差异时生效——宁可不标注也不改文本
     const touchingBacktick = line.charAt(start - 1) === "`" || line.charAt(end) === "`";
 
     chunks.push(leading, touchingBacktick ? body : wrapNovelCode(line, group));
@@ -540,7 +540,7 @@ function hasCodeCharacter(mask: NovelCodeMask, from: number, to: number): boolea
 
 /**
  * 把已配对的语义跨距逐行标注为携带哨兵的原生行内代码并重组源码
- * 跨行跨距按源码行拆分标注，换行语义、块级结构与折行行为保持原样，并天然获得原生引擎对折行片段的样式续色
+ * 跨行跨距按源码行分别标注，换行语义、块级结构与折行行为保持原样，并天然获得原生引擎对折行片段的样式续色
  * 与代码上下文重叠的行片段一律放弃标注（行内代码无法嵌套），作者书写的反引号仍由原生引擎呈现
  * @param lines - 源码行数组
  * @param lineStarts - 行首扁平索引表
@@ -585,10 +585,10 @@ function annotateNovelSource(
 
 /**
  * 小说语法原生化 transform：把源码中的语义跨距标注为携带哨兵的原生行内代码
- * 作为 `MarkdownOptions.transform` 传入原生 `Markdown` 组件，在 marked 解析前执行「代码上下文掩码 → 定界符栈式配对 → 逐行行内标注」三步扫描，折行、缩进与配色由原生引擎回填
+ * 作为 `MarkdownOptions.transform` 传入原生 `Markdown` 组件，在 marked 解析前执行「代码上下文掩码 → 定界符嵌套配对 → 逐行行内标注」三步扫描，折行、缩进与配色由原生引擎回填
  *
  * 复杂度：掩码与标注均摊 O(n)（n 为源码 UTF-16 码元数，区间标记与分行切片的扫描区间互不重叠）；
- * 配对扫描为 O(n·d)，d 为同时未闭合的开定界符栈深——闭定界符查找 {@link findClosingDepth} 对每个非开定界符码元自顶向下遍历整个栈，
+ * 配对扫描为 O(n·d)，d 为同时未闭合的开定界符层级深度——闭定界符查找 {@link findClosingDepth} 对每个非开定界符码元自顶向下遍历整个列表，
  * 故「大量未闭合 `「` / `（` 之后接续正文」的最坏情形退化为平方级，正常成对文本仍为线性
  *
  * 不变量：输出源码剥离哨兵与新增反引号后与输入完全等价，且不改变换行与块级结构语义；为此含未配对反引号时整体放弃标注，

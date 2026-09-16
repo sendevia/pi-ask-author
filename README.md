@@ -13,15 +13,15 @@
 ## 🌟 核心特性 (Key Features)
 
 - 🖥️ **双栏响应式 TUI 交互**
-  - **左栏选项决策**：直观展示单选/多选状态、完成度指示徽标（`✔`/`⏳`）、选项标签与专属批注标识。
+  - **左栏选项决策**：直观展示单选/多选状态、完成度指示徽标、选项标签与专属批注标识。
   - **右栏实时预览**：光标移动时即时联动渲染当前选项的**剧情因果推导**与 **Markdown 正文草稿预览**。
   - **自适应视口**：终端宽度 $\ge 72$ 列自动启用双栏，窄屏环境下优雅降级为单栏内联展开与折叠。
 - 📖 **小说级富文本与草稿高亮**
-  - 内置紧凑轻量的终端 Markdown 解析器，完整支持粗体、斜体、删除线、行内代码、引用区块。
+  - 内置紧凑轻量的终端 Markdown 渲染与小说语法高亮，完整支持 bold、italic、删除线、行内代码、引用区块。
   - 特别优化中文小说台词（引号内对话高亮）与分段排版，让作者在终端即可沉浸式检视行文节奏与语感。
 - 📝 **全维度自由批注体系 (Notes & Annotations)**
   - **题目级补充说明 (Question Note)**：对该题整体提出全局创作指令或氛围补充。
-  - **选项专属补充说明 (Option Note)**：按 `Ctrl+O` 即可为特定选项追加细化批注（**未勾选的选项同样支持填写补充说明**，以便指导模型汲取未选方案中的闪光点）。
+  - **选项专属补充说明 (Option Note)**：光标位于选项行时按 `n` 即可为特定选项追加细化批注（**未勾选的选项同样支持填写补充说明**，以便指导模型汲取未选方案中的闪光点）。
 - 📋 **单题平铺与批量问卷双模式**
   - **单题平铺模式**：快速发起单点决策（如重要剧情分歧、结局走向）。
   - **多题批量问卷模式**：支持在单次弹窗内汇集多个关联决策（如脱离路线 + 战利品搜刮 + 下章基调），配有顶部 Tab 标签栏与完成度总览页（Summary Tab），作者一次性统筹确认，极大降低打扰。
@@ -31,7 +31,7 @@
   - 尾部附带强制执行声明，彻底杜绝大模型的闲聊套话，直接驱动下一步正文输出。
 - ⚡ **高性能与极简依赖**
   - 严格遵守 Pi 官方扩展生态规范，核心依赖 `@earendil-works/pi-coding-agent`、`@earendil-works/pi-tui` 与 `typebox` 均列为 `peerDependencies`，无多余重量级三方包。
-  - 100% 内存安全：生命周期严格绑定 AbortSignal，定时器与事件监听幂等清理，渲染零冗余计算。
+  - 资源回收：生命周期严格绑定 AbortSignal，定时器与事件监听幂等清理，渲染缓存按尺寸与状态键失效。
 
 ---
 
@@ -67,16 +67,21 @@ pi -e ./path/to/pi-ask-author
 
 ## ⌨️ 终端快捷键指南 (Keybindings)
 
-| 按键                   | 功能说明                                                  |
-| :--------------------- | :-------------------------------------------------------- |
-| `Tab` / `Shift+Tab`    | 在多个题目 Tab 与最终提交总览页之间循环切换（仅批量模式） |
-| `↑` / `↓` 或 `k` / `j` | 菜单上下移动高亮选项，右侧预览区实时同步联动刷新          |
-| `Space`                | 勾选 / 取消勾选（单选互斥选中，多选独立切换）             |
-| `Enter`                | 在选项上可进入该选项批注编辑；在总览页上直接提交答卷      |
-| `Ctrl+O` / `Ctrl+K`    | 快捷编辑当前聚焦选项的专属补充说明（Option Note）         |
-| `Ctrl+J` / `Ctrl+N`    | 将滚动焦点移至右侧预览区，可上下翻动长篇 Markdown 草稿    |
-| `PageUp` / `PageDown`  | 快速上下翻页右侧预览长文                                  |
-| `Esc`                  | 取消本次请示（向智能体返回取消封套）                      |
+| 按键                                          | 功能说明                                                                     |
+| :-------------------------------------------- | :--------------------------------------------------------------------------- |
+| `Tab` / `Shift+Tab` 或 `←` / `→` 或 `h` / `l` | 在题目页与提交总览页之间循环切换                                             |
+| `1`~`9`                                       | 直接跳转到第 N 题                                                            |
+| `↑` / `↓` 或 `k` / `j`                        | 作答页移动菜单光标；总览页上下滚动                                           |
+| `Home` / `End`                                | 作答页跳到菜单首项 / 末项；总览页跳到顶部 / 底部                             |
+| `Space`                                       | 作答页勾选或取消勾选当前选项；总览页向下滚动                                 |
+| `Enter` / `Ctrl+S`                            | 作答页确认本题并前进；总览页提交答卷                                         |
+| `n` / `e`                                     | 编辑当前聚焦选项的专属补充说明（光标位于题目补充说明入口时编辑题目补充说明） |
+| `N`                                           | 直接编辑题目整体补充说明                                                     |
+| `x` / `Delete`                                | 清空当前聚焦选项的补充说明，其次清空题目补充说明                             |
+| `a`                                           | 多选模式下全选或清空已选项                                                   |
+| `PgUp` / `[` / `Alt+↑`                        | 作答页向上滚动预览区；总览页向上滚动                                         |
+| `PgDn` / `]` / `Alt+↓`                        | 作答页向下滚动预览区；总览页向下滚动                                         |
+| `Esc` / `Ctrl+C`                              | 取消本次请示（编辑器中首次按下需再次确认丢弃修改）                           |
 
 ---
 
@@ -138,20 +143,51 @@ Execute workflow and writing strictly according to the author decisions and draf
 
 插件采用严格的单向无环依赖图分层构建，保证各个组件职责清晰、高内聚且易于测试：
 
-```text
-theme ───► texts ───► format ───► model ─────────────► view-rows ─────► component ───► index
-                       │           ▲                    ▲                  ▲
-                       ├──► schema ┘                    ├──► novel-markdown┘
-                       │                                │
-                       └──► sanitize ───────────────────┴──► view-summary ┘
+```mermaid
+flowchart LR
+  theme --> texts
+  theme --> novel-markdown
+  theme --> view-rows
+  theme --> view-summary
+  theme --> component
+  texts --> format
+  texts --> schema
+  texts --> model
+  texts --> novel-markdown
+  texts --> view-rows
+  texts --> view-summary
+  texts --> component
+  texts --> index
+  format --> sanitize
+  format --> model
+  format --> novel-markdown
+  format --> view-rows
+  format --> view-summary
+  format --> component
+  format --> index
+  schema --> sanitize
+  schema --> model
+  schema --> index
+  model --> novel-markdown
+  model --> view-rows
+  model --> view-summary
+  model --> component
+  model --> index
+  sanitize --> index
+  novel-markdown --> component
+  view-rows --> component
+  view-summary --> component
+  component --> index
 ```
+
+箭头由被依赖模块指向依赖它的模块（`A --> B` 表示 `B` 导入 `A`）。
 
 - **`index.ts`**：扩展主入口，注册 `ask_author` 工具与 `/ask-author` 命令，负责结果工厂构造与卡片记忆化渲染。
 - **`component.ts`**：TUI 状态机核心组件，自持按键派生、光标记忆、视口滑动窗口与双栏排版。
 - **`model.ts`**：问卷表单数据模型，负责规范化题目前置推导、选项校验与答案序列化。
 - **`schema.ts`**：基于 TypeBox 构建的静态类型与运行时 Schema 单一数据源。
 - **`texts.ts`**：常量、终端图标、小说语法表与面向作者/LLM 双向文案的集中字典。
-- **`novel-markdown.ts`**：极轻量小说语法终端高亮解析器。
+- **`novel-markdown.ts`**：极轻量小说语法终端高亮层，在原生 Markdown 引擎解析前注入语义标记。
 - **`sanitize.ts`**：入参防御性清洗与别名兼容。
 - **`view-rows.ts` / `view-summary.ts`**：列表行与总览页的高性能排版生成器。
 

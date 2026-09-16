@@ -1,10 +1,10 @@
 /**
  * @file texts.ts
- * @description 布局常量、终端图标、小说语法模板表与全局双向文案字典的单一来源，禁止各层硬编码文案碎片
+ * @description 布局常量、终端图标、小说语法模板表与全局双向文案字典的单一来源，禁止各层直接书写文案字面量
  *
  * 核心架构特性：
  * - 全插件唯一文案来源：任何可见字符串均须经本模块取值，其余各层只做取值、组合与排版
- * - `LAYOUT_CONFIG` / `ICONS` / `MAX_*` 集中声明可调参数与硬性上限，便于统一调参与边界测试
+ * - `LAYOUT_CONFIG` / `ICONS` / `MAX_*` 集中声明可调参数与强制上限，便于统一调整参数与验证边界
  * - `NOVEL_TEMPLATES` 以「定界符 → 语义哨兵 → 原生 Markdown 载体 → 主题样式」单表声明小说语法，新增语法只需在表尾追加一项
  * - `TEXTS` 按受众严格分区，LLM 面恒为英文，作者面恒为中文，两侧文案不得互相渗透
  *
@@ -23,9 +23,9 @@ export const LAYOUT_CONFIG = {
   // ===== 分隔线字符 =====
   /** 双栏中间分隔符文本 */
   dividerChar: " │ ",
-  /** 粗框外围分割线字符 */
+  /** 外层框架分割线字符（双横线） */
   dividerThick: "═",
-  /** 细框内部内容分割线字符 */
+  /** 内部内容分割线字符（单横线） */
   dividerThin: "─",
 
   // ===== 分栏几何 =====
@@ -106,11 +106,11 @@ export const MAX_QUESTIONS = 20;
 
 /**
  * 语义哨兵前缀：不可见 NUL 控制字符，仅存在于 transform 产出与 `theme.code` 消费之间的中间态
- * 契约：输入侧已在 `format.ts` 边界剥离，分类时即刻剥离，绝不进入终端输出
+ * 约定：输入侧已在 `format.ts` 边界剥离，分类时立即剥离，绝不进入终端输出
  */
 export const NOVEL_MARKER_PREFIX = "\u0000";
 
-/** 小说语法模板的字段契约（定界符 → 语义哨兵 → 原生 Markdown 载体 → 主题样式） */
+/** 小说语法模板的字段规范（定界符 → 语义哨兵 → 原生 Markdown 载体 → 主题样式） */
 export interface NovelSyntaxTemplate {
   /** 开始定界符 */
   readonly opener: string;
@@ -122,7 +122,7 @@ export interface NovelSyntaxTemplate {
   readonly maxSpanLength: number;
   /**
    * 依据当前主题绘制语义文本
-   * @param theme - 当前 TUI 主题实例（类型契约定义于叶层 `theme.ts`）
+   * @param theme - 当前 TUI 主题实例（类型定义于叶层 `theme.ts`）
    * @param text - 已剥离哨兵的语义原文（含定界符）
    * @returns 应用语义样式后的富文本
    */
@@ -131,7 +131,7 @@ export interface NovelSyntaxTemplate {
 
 /** 小说语法模板表（模块内部资产，仅由下方两个派生索引对外服务） */
 const NOVEL_TEMPLATES: readonly NovelSyntaxTemplate[] = [
-  /** 对话台词（`「」`）：accent 强调色直排 */
+  /** 对话台词（`「」`）：以 accent 强调色着色 */
   { opener: "「", closer: "」", marker: "d", maxSpanLength: 400, paint: (theme, text) => theme.fg("accent", text) },
   /** 内心独白与旁白（`（）`）：muted 柔和色叠加斜体 */
   {
@@ -160,7 +160,7 @@ const BULLET_PREFIX = "• ";
 
 // ===== 文案字典 =====
 
-/** 全局双向文案字典：统一定义面向大模型 (LLM) 的提示词契约与面向用户 (TUI) 的界面文案 */
+/** 全局双向文案字典：统一定义面向大模型 (LLM) 的提示词规范与面向用户 (TUI) 的界面文案 */
 export const TEXTS = {
   // ===== LLM 面（恒为英文） =====
 
@@ -176,8 +176,8 @@ export const TEXTS = {
     /** `Available tools` 区块单行条目（LLM 端英文；动词引导，无句末标点，缺省则工具不进入该区块） */
     promptSnippet: "Consult author on novel creative decisions, plot branches, scene drafting, or story settings",
     /**
-     * `Guidelines` 区块附加条目（LLM 端英文；分类标签前缀 + 行为契约）
-     * 契约：宿主把条目扁平追加进 `Guidelines` 且不加工具名前缀，故每条首词必须显式点名 `ask_author`
+     * `Guidelines` 区块附加条目（LLM 端英文；分类标签前缀 + 行为要求）
+     * 约定：宿主把条目扁平追加进 `Guidelines` 且不加工具名前缀，故每条首词必须显式点名 `ask_author`
      */
     promptGuidelines: [
       "Invoke ask_author DIRECTLY without conversational preambles or greetings whenever author confirmation is needed for plot, characters, scenes, branches, or settings.",
@@ -211,7 +211,7 @@ export const TEXTS = {
     questionDesc: "Context or background for this question (optional)",
     /** 多选开关（可选；默认 false，开启后作者端展示多选模式标签与方框勾选指示符） */
     questionMultiSelect: "Allow multiple selections (default false)",
-    /** 最小勾选数（可选；默认 1，仅多选生效，作者端据此标注硬性下限） */
+    /** 最小勾选数（可选；默认 1，仅多选生效，作者端据此标注强制下限） */
     questionMinSelect: "Minimum selections required (default 1)",
     /** 最大勾选数（可选；默认全部选项，仅多选生效，小于选项总数时作者端追加上限标注） */
     questionMaxSelect: "Maximum selections allowed (default: all options)",
@@ -235,16 +235,16 @@ export const TEXTS = {
     // ===== 单题平铺模式 =====
     /** 平铺模式的题目标题（可选；与批量模式的 `questionTitle` 同义） */
     formSingleQuestion: "Question title for flat single-question mode",
-    /** 平铺单题模式字段描述的统一消歧前缀（LLM 端英文，`schema.ts` 逐字段拼接） */
+    /** 平铺单题模式字段描述的统一区分前缀（LLM 端英文，`schema.ts` 逐字段拼接） */
     flatPrefix: "(Flat single-question mode only) ",
     /** 平铺模式候选选项列表（可选；1~{@link MAX_OPTIONS} 项；建议 2~10 项） */
     flatQuestionOptions: `Candidate options for flat single-question mode (1-${MAX_OPTIONS}, 2-10 recommended)`,
   },
 
   /**
-   * LLM 端返回封套与纠偏指令模板（全英文确定性结构，提升 Prompt Cache 命中率）
+   * LLM 端返回封套与纠正指令模板（全英文确定性结构，提升 Prompt Cache 命中率）
    *
-   * 契约：首行方括号封套令牌 `[Author Decision Finalized]` / `[Author Decision Cancelled]` / `[Author Consultation Error]`；行内令牌 `[Author note: …]` / `[Draft directive: …]`；选项标签定界符 `【】`
+   * 约定：首行方括号封套令牌 `[Author Decision Finalized]` / `[Author Decision Cancelled]` / `[Author Consultation Error]`；行内令牌 `[Author note: …]` / `[Draft directive: …]`；选项标签定界符 `【】`
    * 语言归属：`【】` 是本区段唯一的非英文片段，`model.ts` 的 `sanitizeEnvelopeText` 剥离作者文本中的 `【】` 并把 ASCII `;` 归一为全角 `；`，插值文本无法击穿上述定界符
    */
   markdown: {
@@ -260,7 +260,7 @@ export const TEXTS = {
     /**
      * 构建错误封套（固定三行：标识行 + 原因行 + 指引行）
      * @param reason - 面向 LLM 的英文失败原因（取自 `errorReasons`）
-     * @param guidance - 面向 LLM 的英文纠偏指引（取自 `errorGuidances`）
+     * @param guidance - 面向 LLM 的英文纠正指引（取自 `errorGuidances`）
      */
     envelopeError: (reason: string, guidance: string) =>
       `[Author Consultation Error]\nFailed to consult author: ${reason}\nGuidance: ${guidance}`,
@@ -273,13 +273,13 @@ export const TEXTS = {
       /** 构建执行期异常的原因行（`details` 为宿主异常摘要，对应作者端 {@link TEXTS.status.errorExecutionFailed}） */
       runtimeError: (details: string) => `Runtime error during consultation UI execution: ${details}`,
     },
-    /** 错误封套纠偏指引行字典（英文单句，与 `errorReasons` 一一对应） */
+    /** 错误封套纠正指引行字典（英文单句，与 `errorReasons` 一一对应） */
     errorGuidances: {
-      /** `nonTui` 的纠偏指引 */
+      /** `nonTui` 的纠正指引 */
       nonTui: "Proceed using defaults or ask user via standard chat/message if crucial.",
-      /** `noQuestions` 的纠偏指引 */
+      /** `noQuestions` 的纠正指引 */
       noQuestions: "Provide at least one question with concrete options.",
-      /** `runtimeError` 的纠偏指引 */
+      /** `runtimeError` 的纠正指引 */
       runtimeError: "Check arguments format and retry with valid questions and options.",
     },
     /** 空答卷封套正文（作者未作答时的英文处置指令，位于首尾标识之间） */
@@ -379,7 +379,7 @@ export const TEXTS = {
      * @param max - 模型收敛后的最大勾选数（区间 `min ~ optionCount`）
      * @param optionCount - 本题候选选项数
      * @param allowEmpty - 是否允许零勾选提交
-     * @returns `min > 1` 时标注硬性下限；`min === 0` 或 `allowEmpty` 时标注可不选；`max` 小于选项总数时追加上限标注，等于总数则视为无额外上限而省略
+     * @returns `min > 1` 时标注强制下限；`min === 0` 或 `allowEmpty` 时标注可不选；`max` 小于选项总数时追加上限标注，等于总数则视为无额外上限而省略
      */
     modeMulti: (min: number, max: number, optionCount: number, allowEmpty: boolean) => {
       let tag = "[多选";
@@ -433,7 +433,7 @@ export const TEXTS = {
     // ===== Markdown 构建器 =====
     /** 构建预览面板 Markdown 三级小节标题（`title` 为小节标题原文） */
     sectionTitle: (title: string) => `### ${title}`,
-    /** 构建预览面板 Markdown 粗体字段标签（`label` 为字段标签原文） */
+    /** 构建预览面板 Markdown bold 字段标签（`label` 为字段标签原文） */
     fieldLabel: (label: string) => `**${label}**`,
     /** 构建预览面板 Markdown 斜体提示行（`text` 为提示行原文） */
     italicLine: (text: string) => `_${text}_`,
@@ -469,7 +469,7 @@ export const TEXTS = {
     footerHelp: " [Enter] 保存并返回 • [Esc/Ctrl+C] 取消",
   },
 
-  /** 底部临时状态栏通知（操作结果、阻断原因与阻断后的纠偏操作路径） */
+  /** 底部临时状态栏通知（操作结果、阻断原因与阻断后的纠正操作路径） */
   status: {
     // ===== 补充说明的保存与清空反馈 =====
     /** 题目补充说明已保存 */
@@ -602,7 +602,7 @@ export const TEXTS = {
   /**
    * 兜底文案与自动命名派生：任一缺失 / 越界输入的最终回退，保证界面与封套永不空白
    * 语言归属：本组为作者端中文占位，作者界面始终呈现中文
-   * 契约：`model.ts` 在封套编译期把 `autoQuestionTitle` / `defaultQuestionTitle` / `autoOptionLabel` / `unnamedOptionLabel` / `defaultOptionLabel` 替换为 `markdown.fallbackQuestionTitle` / `markdown.fallbackOptionLabel` 的英文占位
+   * 约定：`model.ts` 在封套编译期把 `autoQuestionTitle` / `defaultQuestionTitle` / `autoOptionLabel` / `unnamedOptionLabel` / `defaultOptionLabel` 替换为 `markdown.fallbackQuestionTitle` / `markdown.fallbackOptionLabel` 的英文占位
    */
   fallbacks: {
     // ===== 缺省填充 =====

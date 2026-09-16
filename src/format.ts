@@ -3,14 +3,12 @@
  * @description 纯函数算法与排版工具层：视口计算、文本折行、ANSI 宽度测量、文本规整
  *
  * 核心架构特性：
- * - 除 `safeKeyHint` 外全部函数无副作用、不依赖运行时可变状态，供 sanitize / model / novel-markdown / view-* / component / index 复用
- * - `safeKeyHint` 为本层唯一宿主耦合点：经 Pi `keyHint` 读取全局主题与按键表，故以 try/catch 兜底
+ * - 全部函数无副作用、不依赖运行时可变状态，供 sanitize / model / novel-markdown / view-* / component / index 复用
  * - 终端宽度一律经 `visibleWidth` / `truncateToWidth` / `wrapTextWithAnsi`，禁止 `string.length` 直算
  *
- * 依赖方向：format.ts → texts.ts（布局常量与文案字典）；另引用宿主 `keyHint`
+ * 依赖方向：format.ts → texts.ts（布局常量与文案字典）
  */
 
-import { keyHint } from "@earendil-works/pi-coding-agent";
 import { truncateToWidth, visibleWidth, wrapTextWithAnsi } from "@earendil-works/pi-tui";
 import { LAYOUT_CONFIG, TEXTS } from "./texts.js";
 
@@ -19,18 +17,18 @@ import { LAYOUT_CONFIG, TEXTS } from "./texts.js";
  * @param value - 待收敛数值
  * @param min - 区间下界
  * @param max - 区间上界
- * @returns 落在 `[min, max]` 内的数值；`min > max` 时恒返回 `min`
+ * @returns 位于 `[min, max]` 区间内的数值；`min > max` 时恒返回 `min`
  */
 export function clamp(value: number, min: number, max: number): number {
   return Math.max(min, Math.min(value, max));
 }
 
 /**
- * 将视口滚动偏移收敛至合法区间，防止越界滚动造成空白视口
- * @param offset - 待收敛的 0-based 起始行偏移
+ * 将视口滚动位移收敛至合法区间，防止越界滚动造成空白视口
+ * @param offset - 待收敛的 0-based 起始行位移
  * @param total - 内容总行数
  * @param viewHeight - 可视行数（调用方须传入非负值）
- * @returns `[0, max(0, total - viewHeight)]` 内的偏移；列表为空或内容不足一屏（`total <= viewHeight`）时恒为 0
+ * @returns `[0, max(0, total - viewHeight)]` 内的位移；列表为空或内容不足一屏（`total <= viewHeight`）时恒为 0
  */
 export function clampWindowOffset(offset: number, total: number, viewHeight: number): number {
   return clamp(offset, 0, Math.max(0, total - viewHeight));
@@ -39,7 +37,7 @@ export function clampWindowOffset(offset: number, total: number, viewHeight: num
 /**
  * 截取视口可视行切片（仅复制可视区，不遍历非可视区数据）
  * @param lines - 完整内容行数组（只读，不修改入参）
- * @param offset - 0-based 起始行偏移（须先经 {@link clampWindowOffset} 收敛；负值退化为从尾部切片）
+ * @param offset - 0-based 起始行位移（须先经 {@link clampWindowOffset} 收敛；负值退化为从尾部切片）
  * @param viewHeight - 可视行数
  * @returns 至多 `viewHeight` 行的新数组；`lines` 为空、`viewHeight <= 0` 或 `offset` 越过末行时返回空数组
  */
@@ -72,7 +70,7 @@ function stripControlSequences(str: string): string {
 
 /**
  * 裁剪空白并剥离终端控制序列；纯空白或剥离后为空的输入均返回 undefined
- * 契约：返回值要么是非空字符串，要么是 undefined——调用方的 `?? 兜底` 不会漏接空串
+ * 约定：返回值要么是非空字符串，要么是 undefined——调用方的 `?? 兜底` 不会漏接空串
  * 边界：仅用于不可信输入边界（工具参数、编辑器文本）；渲染路径用 `cleanText` / `safeLine`
  * @param str - 原始不可信文本；缺省时返回 undefined
  * @returns 清洗后的非空字符串；纯空白或剥离控制序列后为空时返回 undefined
@@ -100,9 +98,9 @@ export function parseJson(value: unknown): unknown {
 }
 
 /**
- * 悬挂缩进折行：首行携带前缀，后续折行左缘按前缀可见宽度对齐
+ * 悬挂缩进折行：首行携带前缀，后续折行左缘与前缀可见宽度一致
  * 宽度按 CJK 全角与 ANSI 转义精确计算（`visibleWidth` / `wrapTextWithAnsi`）
- * @param prefix - 首行前缀（后续行以同宽空格悬挂对齐）
+ * @param prefix - 首行前缀（后续行以同宽空格悬挂缩进）
  * @param text - 待折行文本
  * @param width - 可视总宽度（列）；调用方须传 `>= 1`，`width <= 0` 时不截断前缀
  * @returns 折行后的行数组；`text` 无法产出任何行时返回 `[prefix]`（前缀非空）或空数组
@@ -125,7 +123,7 @@ function hangText(prefix: string, text: string, width: number): string[] {
  * @param lines - 目标行数组（原地追加）
  * @param text - 待追加文本
  * @param width - 可视总宽度
- * @param prefix - 首行前缀（后续折行等宽悬挂缩进对齐）
+ * @param prefix - 首行前缀（后续折行等宽悬挂缩进）
  */
 export function pushWrapped(lines: string[], text: string, width: number, prefix = ""): void {
   lines.push(...hangText(prefix, text, width));
@@ -182,7 +180,7 @@ export function compressDraftPreview(preview: string | undefined): string | unde
     .map((line) => {
       let l = line.trim();
       if (!l) return "";
-      // 单次交替剥离行首任意层级的 Markdown 标题标识与引用符（`> # 标题` 需同时去除两类前缀，故不可拆成两次行首替换）
+      // 单次交替剥离行首任意层级的 Markdown 标题标识与引用符（`> # 标题` 需同时去除两类前缀，故不可分成两次行首替换）
       l = l.replace(/^(?:[>#]+\s*)+/, "");
       l = l.replace(/\s+/g, " ");
       return l;
@@ -200,19 +198,4 @@ export function compressDraftPreview(preview: string | undefined): string | unde
  */
 export function toSingleLine(text: string): string {
   return text.replace(/\s+/g, " ").trim();
-}
-
-/**
- * 安全获取快捷键提示（本模块唯一宿主耦合点）
- * `keyHint` 会读取宿主全局 `theme` 代理（未 `initTheme()` 时抛错）与全局按键表，故以 try/catch 退化
- * @param id - 命名空间化按键绑定 ID（如 `app.tools.expand`）
- * @param description - 兜底说明文案（取自 `TEXTS`）
- * @returns 宿主格式化后的按键提示（含 ANSI 着色）；宿主不可用时返回 `description`
- */
-export function safeKeyHint(id: Parameters<typeof keyHint>[0], description: string): string {
-  try {
-    return keyHint(id, description);
-  } catch {
-    return description;
-  }
 }

@@ -3,7 +3,7 @@
  * @description 问卷数据模型与状态机：题目归一化、作答状态流转、答卷编译与封套输出
  *
  * 核心架构特性：
- * - 索引约定：内部作答状态 0-based，对外答卷契约 1-based
+ * - 索引约定：内部作答状态 0-based，对外答卷编号 1-based
  * - 两层清洗：`sanitize.ts` 边界归一化 + 本层对文本字段幂等兜底（绕过 sanitize 直接构造模型时同样安全）
  * - 封套防击穿：插值文本经 `sanitizeEnvelopeText` 归一，定界符不可被作者文本击穿
  * - 封套语言单一：自动生成的占位题目/标签在封套编译期换为英文占位（`Question N` / `Option N`），作者界面保留中文占位
@@ -28,7 +28,7 @@ export interface NormalizedQuestion {
   multiSelect: boolean;
   /** 收敛后的最少勾选数（`0 ~ options.length`） */
   minSelect: number;
-  /** 是否显式给出 `minSelect`（显式即硬性下限，隐式为软下限） */
+  /** 是否显式给出 `minSelect`（显式即强制下限，隐式为缺省下限） */
   minSelectExplicit: boolean;
   /** 收敛后的最多勾选数（`minSelect ~ options.length`） */
   maxSelect: number;
@@ -76,7 +76,7 @@ export interface AuthorAnswerItem {
   optionNotes?: Record<number, string>;
 }
 
-/** 工具执行完成返回的持久化结果契约 */
+/** 工具执行完成返回的持久化结果结构 */
 export interface AskAuthorResult {
   /** 问卷总标题 */
   formTitle: string;
@@ -158,7 +158,7 @@ const EMPTY_STATE: QuestionAnswerState = { selectedIndices: new Set<number>(), o
 interface SelectBounds {
   /** 收敛后的最少勾选数下限 */
   minSelect: number;
-  /** 是否显式给出最少勾选数（区分软下限与硬下限） */
+  /** 是否显式给出最少勾选数（区分缺省下限与强制下限） */
   minSelectExplicit: boolean;
   /** 收敛后的最多勾选数上限 */
   maxSelect: number;
@@ -169,7 +169,7 @@ interface SelectBounds {
  * @param minRaw - 原始最少勾选数
  * @param maxRaw - 原始最多勾选数
  * @param optionCount - 题目选项总数
- * @returns 收敛区间：`minSelect` 落 `[0, optionCount]`、`maxSelect` 落 `[minSelect, optionCount]`（0 选项题目恒为 `0/0`）；`minSelectExplicit` 标记入参是否显式给出下限
+ * @returns 收敛区间：`minSelect` 取值范围为 `[0, optionCount]`、`maxSelect` 取值范围为 `[minSelect, optionCount]`（0 选项题目恒为 `0/0`）；`minSelectExplicit` 标记入参是否显式给出下限
  */
 function clampSelectBounds(minRaw: number | undefined, maxRaw: number | undefined, optionCount: number): SelectBounds {
   const minSelectExplicit = minRaw !== undefined;
@@ -205,7 +205,7 @@ function buildQuestion(q: QuestionInput, index: number): NormalizedQuestion {
 }
 
 /**
- * 去重题目 ID（LLM 跨题重复 id 会导致 `formatAnswers` 按 id 归属查询串题；重复项回退为顺序自动生成 id，仍冲突追加序号后缀）
+ * 去重题目 ID（LLM 跨题重复 id 会导致 `formatAnswers` 按 id 归属查询时错误归题；重复项回退为顺序自动生成 id，仍冲突追加序号后缀）
  * @param questions - 归一化题目列表
  * @returns ID 全局唯一的题目列表
  */
@@ -417,7 +417,7 @@ export class AskAuthorFormModel {
   /**
    * 判定指定题目是否满足作答下限提交要求
    * 单选：已选一项、`allowEmpty`，或 `allowCustom` 开启且存在任意非空批注；多选：勾选数达 `minSelect`、`allowEmpty` 下 0 选，
-   * 或软下限未勾选（`minSelect` 未显式给出时收敛为 `min(1, 选项数)`，故此时 `count < minSelect` 等价于 `count === 0`）且 `allowCustom` 开启并存在任意非空批注
+   * 或缺省下限未勾选（`minSelect` 未显式给出时收敛为 `min(1, 选项数)`，故此时 `count < minSelect` 等价于 `count === 0`）且 `allowCustom` 开启并存在任意非空批注
    * @param qIndex - 题目顺序索引（0-based）
    * @returns 题目越界恒为 false；作答状态尚未懒加载时按只读空状态（{@link EMPTY_STATE}）判定，不写入任何状态
    */
@@ -433,7 +433,7 @@ export class AskAuthorFormModel {
     const count = st.selectedIndices.size;
     if (count >= q.minSelect) return true;
     if (count === 0 && q.allowEmpty) return true;
-    // 软下限（未显式指定 minSelect）未勾选时，填写批注可直接提交
+    // 缺省下限（未显式指定 minSelect）未勾选时，填写批注可直接提交
     if (!q.minSelectExplicit && count === 0 && q.allowCustom && hasAnyNote(st)) return true;
 
     return false;
@@ -478,7 +478,7 @@ export class AskAuthorFormModel {
   }
 
   /**
-   * 确认路径下的选项落实（Enter/Ctrl+S 推进确认；单选直接改选，多选未达上限补勾，已满未勾选静默保持原状，仅真实变更推进 `revision`）
+   * 确认路径下的选项写入（Enter/Ctrl+S 推进确认；单选直接改选，多选未达上限时补充勾选，已满未勾选静默保持原状，仅真实变更推进 `revision`）
    * @param qIndex - 题目顺序索引（0-based）
    * @param optionIndex - 目标选项索引（0-based）
    */
@@ -615,7 +615,7 @@ export class AskAuthorFormModel {
   }
 
   /**
-   * 编译全部作答状态为契约答案条目列表
+   * 编译全部作答状态为结果答案条目列表
    * 产出规则：多选题目恒产出条目（未作答时 `selectedOptions` / `selectedIndices` 为空）；单选题目仅在已作答时才产出条目（已选一项、`allowEmpty` 主动跳过或仅批注提交）
    * 两种模式均杜绝问题在结果封套中静默消失；0-based 内部索引统一转为 1-based
    * @returns 与题目顺序一致的答卷条目列表（未产出的单选题目不占位）；题干无任何作答且非多选时为空数组

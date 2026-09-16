@@ -147,7 +147,7 @@ function isQuestionLike(value: unknown): value is LooseRecord {
  * 规整单题条目为符合 Schema 的输入结构（兼容别名字段；字符串条目直接充当标题，其余非对象条目回退自动标题 + 默认选项）
  * @param value - 单题输入
  * @param index - 题目顺序索引
- * @returns 字段集与 `QuestionSchema` 完全对齐的单题对象（`options` 为空时至少含一个默认方案）
+ * @returns 字段集与 `QuestionSchema` 完全一致的单题对象（`options` 为空时至少含一个默认方案）
  */
 function sanitizeQuestionEntry(value: unknown, index: number): QuestionInput {
   if (typeof value === "string") {

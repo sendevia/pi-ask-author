@@ -62,7 +62,7 @@ export const AskAuthorParams = Type.Object({
     Type.Array(QuestionSchema, { description: TEXTS.schema.formQuestions, minItems: 1, maxItems: MAX_QUESTIONS }),
   ),
 
-  // ===== 单题平铺模式（描述统一带 flat-mode 消歧前缀） =====
+  // ===== 单题平铺模式（描述统一带 flat-mode 区分前缀） =====
   /** 单题平铺模式题目标题（可选；仅在携带非空 `options` 时参与选题，缺省回退 `TEXTS.fallbacks.defaultQuestionTitle`） */
   question: Type.Optional(Type.String({ description: TEXTS.schema.formSingleQuestion })),
   /** 单题平铺模式是否允许多选（可选；默认 false） */

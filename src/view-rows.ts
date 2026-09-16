@@ -4,8 +4,8 @@
  *
  * 核心架构特性：
  * - 全部导出函数为无状态纯函数（无 `this` / 缓存 / IO），输出仅由入参决定，可独立单测与跨视图复用
- * - 文案与几何常量一律取自 `texts.ts`，本层不硬编码任何可见字符
- * - 折行与对齐一律经 `visibleWidth` / `wrapTextWithAnsi` / `safeLine`，禁止 `string.length` 直算
+ * - 文案与几何常量一律取自 `texts.ts`，本层不直接书写任何可见字符
+ * - 折行与补齐一律经 `visibleWidth` / `wrapTextWithAnsi` / `safeLine`，禁止 `string.length` 直算
  *
  * 依赖方向：view-rows.ts → format.ts / model.ts / texts.ts / theme.ts；禁止反向导入 `component.ts`
  */
@@ -73,7 +73,7 @@ function optionCheckMark(theme: Theme, q: NormalizedQuestion, st: QuestionAnswer
  * 格式化单个菜单条目行
  *
  * 排版不变量：
- * - 首行携带「光标 + 勾选」前缀，后续折行等宽悬挂缩进、左缘对齐；聚焦项全部折行反白加粗至 `targetWidth`
+ * - 首行携带「光标 + 勾选」前缀，后续折行等宽悬挂缩进、左缘与前缀一致；聚焦项全部折行套用 `selectedBg` 与 `bold` 样式至 `targetWidth`
  * - 非聚焦未选中预设选项淡化 `dim`（其余 `text`）且不超限；带专属补充说明的选项追加 `ICONS.note`
  * - 快路径：标签可见宽度未超限时直接复用单行，跳过 `wrapTextWithAnsi` 正则解析
  *
@@ -125,14 +125,14 @@ export function formatMenuItemRow(
 }
 
 /**
- * 渲染完整 Tab 导航栏区块（各题标签 + 提交页标签 + 末尾细分隔线）
+ * 渲染完整 Tab 导航栏区块（各题标签 + 提交页标签 + 末尾单横分隔线）
  *
  * 算法不变量：
  * - 题目标签以 `ICONS.checked` / `ICONS.unchecked` 与 `success` / `muted` 配色表达完成度，激活题页恒为
- *   `selectedBg` + `accent` 加粗反白（激活提交页为 `selectedBg` + `success`）
+ *   `selectedBg` + `accent` 的 `bold` 反白（激活提交页为 `selectedBg` + `success`）
  * - 提交页标签在全部作答完成时用 `success`，否则 `dim`；激活判定为 `currentTab === model.questionCount`
  * - 分段按 `renderWidth` 贪心折行（段间单空格连接），超宽分段独占一行而不被丢弃；末尾恒追加一条
- *   `dim` 配色的细分隔线（`LAYOUT_CONFIG.dividerThin`）
+ *   `dim` 配色的单横分隔线（`LAYOUT_CONFIG.dividerThin`）
  *
  * @param theme - 主题样式提供者
  * @param model - 问卷表单数据模型（提供题目数、作答完成度）
@@ -207,7 +207,7 @@ export function pushHelpFooter(lines: string[], parts: readonly string[], theme:
 }
 
 /**
- * 原地追加一条粗框水平分隔线（`accent` 配色）
+ * 原地追加一条外层框架水平分隔线（`accent` 配色）
  * @param lines - 输出行数组（原地追加）
  * @param theme - 主题样式提供者
  * @param width - 分隔线可视宽度（`<= 0` 时追加空串，不产出超宽行）
