@@ -1,7 +1,7 @@
 {
   "name": "@sendevia/pi-ask-author",
   "version": "1.0.1",
-  "description": "面向文字创作者的创作决策询问 Pi 扩展：交互式双栏 TUI 问卷、Markdown 草稿预览与题目/选项两级批注",
+  "description": "面向文字创作者的决策询问 Pi 扩展",
   "keywords": [
     "pi-package",
     "pi-extension",
