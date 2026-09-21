@@ -10,7 +10,7 @@
  * 依赖方向：index.ts 为 11 模块单向依赖图（theme → texts → {format, schema} → {model, sanitize} → {novel-markdown, view-rows, view-summary} → component → index）的入口；旁支 `sanitize.ts` 仅由本文件装配（`prepareArguments` 与 `renderCall` 两处）
  */
 
-import { keyHint, type AgentToolResult, type ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { type AgentToolResult, type ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Text, type Component } from "@earendil-works/pi-tui";
 import { AskAuthorComponent } from "./component.js";
 import { cleanOptional } from "./format.js";
@@ -359,10 +359,7 @@ export default function askAuthorExtension(pi: ExtensionAPI): void {
       if (details.error) {
         const errorTitle = `${theme.fg("error", theme.bold(TEXTS.card.resultErrorShort))} ${theme.fg("muted", `${TEXTS.common.bulletPrefix}${details.error}`)}`;
         if (!expanded) {
-          return renderCardText(
-            `${errorTitle} (${keyHint("app.tools.expand", TEXTS.card.expandHint)})`,
-            context.lastComponent,
-          );
+          return renderCardText(errorTitle, context.lastComponent);
         }
         return renderCardText(
           `${errorTitle}\n${TEXTS.card.errorBullet(theme.fg("error", details.error))}`,
@@ -379,10 +376,7 @@ export default function askAuthorExtension(pi: ExtensionAPI): void {
         `${TEXTS.common.bulletPrefix}${TEXTS.card.resultCount(details.answers.length)}`,
       )}`;
       if (!expanded) {
-        return renderCardText(
-          `${countLabel} (${keyHint("app.tools.expand", TEXTS.card.expandHint)})`,
-          context.lastComponent,
-        );
+        return renderCardText(countLabel, context.lastComponent);
       }
 
       const lines: string[] = [
@@ -416,3 +410,4 @@ export { AskAuthorFormModel, type AskAuthorResult, type AuthorAnswerItem, type N
 export { AskAuthorParams, type RawParams } from "./schema.js";
 export { sanitizeAskAuthorArgs } from "./sanitize.js";
 export { TEXTS, LAYOUT_CONFIG, ICONS } from "./texts.js";
+export { cleanOptional, cleanText, padToVisibleWidth, safeLine } from "./format.js";

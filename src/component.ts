@@ -14,6 +14,7 @@
  * 依赖方向：component.ts → theme / texts / format / model / novel-markdown / view-rows / view-summary；本组件只做按键路由、视口切片与整屏缓存编排
  */
 
+import { getSelectListTheme } from "@earendil-works/pi-coding-agent";
 import {
   Editor,
   Key,
@@ -154,13 +155,7 @@ export class AskAuthorComponent implements Component, Focusable {
 
     const editorTheme: EditorTheme = {
       borderColor: (s) => this.theme.fg("accent", s),
-      selectList: {
-        selectedPrefix: (t) => this.theme.fg("accent", t),
-        selectedText: (t) => this.theme.fg("accent", t),
-        description: (t) => this.theme.fg("muted", t),
-        scrollInfo: (t) => this.theme.fg("dim", t),
-        noMatch: (t) => this.theme.fg("warning", t),
-      },
+      selectList: getSelectListTheme(),
     };
 
     this.editor = new Editor(this.tui, editorTheme);
@@ -527,11 +522,11 @@ export class AskAuthorComponent implements Component, Focusable {
     }
 
     // 4. Tab / 方向键左右 / h / l Vim 风格切换题目
-    if (matchesKey(data, Key.tab) || matchesKey(data, Key.right) || data === "l") {
+    if (matchesKey(data, Key.tab) || matchesKey(data, Key.right) || matchesKey(data, "l")) {
       this.switchTab((this.currentTab + 1) % this.totalTabs);
       return;
     }
-    if (matchesKey(data, Key.shift("tab")) || matchesKey(data, Key.left) || data === "h") {
+    if (matchesKey(data, Key.shift("tab")) || matchesKey(data, Key.left) || matchesKey(data, "h")) {
       this.switchTab((this.currentTab - 1 + this.totalTabs) % this.totalTabs);
       return;
     }
@@ -590,19 +585,19 @@ export class AskAuthorComponent implements Component, Focusable {
     if (!q.allowCustom) return false;
 
     // 1. 大写 'N'：随时打开题目整体补充说明编辑器
-    if (data === "N") {
+    if (matchesKey(data, Key.shift("n"))) {
       this.openCustomEditor({ type: "question" });
       return true;
     }
 
     // 2. 小写 'n' / 'e'：针对当前聚焦项打开编辑器（选项专属或题目整体）
-    if (data === "n" || data === "e") {
+    if (matchesKey(data, "n") || matchesKey(data, "e")) {
       this.openCustomEditor();
       return true;
     }
 
     // 3. 'x' / Delete：清空补充说明（选项专属优先，其次题目整体）
-    if (data === "x" || matchesKey(data, Key.delete)) {
+    if (matchesKey(data, "x") || matchesKey(data, Key.delete)) {
       const currentItem = this.currentMenuItem();
       if (currentItem?.type === "option" && currentItem.optionIndex !== undefined) {
         const optIdx = currentItem.optionIndex;
@@ -628,9 +623,13 @@ export class AskAuthorComponent implements Component, Focusable {
    */
   private handlePreviewScroll(data: string): boolean {
     let step = 0;
-    if (matchesKey(data, Key.pageUp) || data === "[" || matchesKey(data, Key.alt("up"))) {
+    if (matchesKey(data, Key.pageUp) || matchesKey(data, Key.leftbracket) || matchesKey(data, Key.alt("up"))) {
       step = -LAYOUT_CONFIG.previewScrollStep;
-    } else if (matchesKey(data, Key.pageDown) || data === "]" || matchesKey(data, Key.alt("down"))) {
+    } else if (
+      matchesKey(data, Key.pageDown) ||
+      matchesKey(data, Key.rightbracket) ||
+      matchesKey(data, Key.alt("down"))
+    ) {
       step = LAYOUT_CONFIG.previewScrollStep;
     }
     if (step === 0) return false;
@@ -648,11 +647,11 @@ export class AskAuthorComponent implements Component, Focusable {
    * @returns 是否已消费该按键
    */
   private handleCursorNavigation(data: string): boolean {
-    if (matchesKey(data, Key.up) || data === "k") {
+    if (matchesKey(data, Key.up) || matchesKey(data, "k")) {
       this.moveCursor({ delta: -1 });
       return true;
     }
-    if (matchesKey(data, Key.down) || data === "j") {
+    if (matchesKey(data, Key.down) || matchesKey(data, "j")) {
       this.moveCursor({ delta: 1 });
       return true;
     }
@@ -674,7 +673,7 @@ export class AskAuthorComponent implements Component, Focusable {
    * @returns 是否已消费该按键
    */
   private handleSelectAllShortcut(q: NormalizedQuestion, data: string): boolean {
-    if (!q.multiSelect || data !== "a") return false;
+    if (!q.multiSelect || !matchesKey(data, "a")) return false;
     const result = this.model.selectAllOrClear(this.currentTab);
     if (result === "filled" && q.maxSelect < q.options.length) {
       this.setStatus(TEXTS.status.selectedUpToLimit(q.maxSelect));
@@ -757,12 +756,12 @@ export class AskAuthorComponent implements Component, Focusable {
    * @returns 行位移（正下负上，0 为无动作）
    */
   private summaryScrollStep(data: string): number {
-    if (matchesKey(data, Key.pageUp) || data === "[" || matchesKey(data, Key.alt("up")))
+    if (matchesKey(data, Key.pageUp) || matchesKey(data, Key.leftbracket) || matchesKey(data, Key.alt("up")))
       return -LAYOUT_CONFIG.summaryScrollStep;
-    if (matchesKey(data, Key.pageDown) || data === "]" || matchesKey(data, Key.alt("down")))
+    if (matchesKey(data, Key.pageDown) || matchesKey(data, Key.rightbracket) || matchesKey(data, Key.alt("down")))
       return LAYOUT_CONFIG.summaryScrollStep;
-    if (matchesKey(data, Key.up) || data === "k") return -1;
-    if (matchesKey(data, Key.down) || data === "j") return 1;
+    if (matchesKey(data, Key.up) || matchesKey(data, "k")) return -1;
+    if (matchesKey(data, Key.down) || matchesKey(data, "j")) return 1;
     return 0;
   }
 

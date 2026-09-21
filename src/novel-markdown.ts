@@ -44,8 +44,6 @@ function createNovelMarkdownTheme(theme: Theme): MarkdownTheme {
     listBullet: (text) => theme.fg("accent", text),
     code: (text) => classifyNovelCode(theme, text) ?? base.code(text),
     codeBlockBorder: (text) => theme.fg("dim", text),
-    bold: (text) => theme.bold(text),
-    italic: (text) => theme.italic(text),
     link: (text) => theme.fg("accent", text),
     linkUrl: (text) => theme.fg("dim", text),
   };

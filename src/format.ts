@@ -9,7 +9,7 @@
  * 依赖方向：format.ts → texts.ts（布局常量与文案字典）
  */
 
-import { truncateToWidth, visibleWidth, wrapTextWithAnsi } from "@earendil-works/pi-tui";
+import { stripTerminalSequences, truncateToWidth, visibleWidth, wrapTextWithAnsi } from "@earendil-works/pi-tui";
 import { LAYOUT_CONFIG, TEXTS } from "./texts.js";
 
 /**
@@ -56,16 +56,12 @@ export function cleanText(str: string | undefined): string {
 
 /**
  * 剥离终端转义与控制字符（防止 ANSI 注入污染 TUI 渲染管线）
- * 覆盖 OSC（BEL/ST 终止）、CSI、双字符转义与残余 C0 控制字符；换行符保留，由调用方决定单行化时机
+ * 经由 Pi 原生 `stripTerminalSequences` 剥离终端控制序列，并过滤残余 C0 控制字符；换行符保留
  * @param str - 已由 `cleanText` 规整的字符串（无回车与制表符）
  * @returns 剥离全部转义序列与残余 C0 控制字符（含 DEL `\x7f`）的字符串；换行符 `\n` 保留
  */
 function stripControlSequences(str: string): string {
-  return str
-    .replace(/\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)/g, "")
-    .replace(/\x1b\[[0-?]*[ -/]*[@-~]/g, "")
-    .replace(/\x1b[@-_]/g, "")
-    .replace(/[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]/g, "");
+  return stripTerminalSequences(str).replace(/[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]/g, "");
 }
 
 /**
@@ -137,22 +133,19 @@ export function pushWrapped(lines: string[], text: string, width: number, prefix
  */
 export function safeLine(str: string, maxWidth: number): string {
   if (maxWidth <= 0) return "";
-  const cleaned = cleanText(str);
-  return visibleWidth(cleaned) > maxWidth ? truncateToWidth(cleaned, maxWidth) : cleaned;
+  return truncateToWidth(cleanText(str), maxWidth);
 }
 
 /**
  * 按可见宽度填充至指定宽度（支持 CJK 与 ANSI）
+ * 委托 Pi 原生 `truncateToWidth` 的 `pad = true` 特性，精准计算可见宽度并用空格补齐
  * @param str - 原始文本（先经 `cleanText` 清除回车与制表符）
  * @param targetWidth - 目标可见宽度（列）；`<= 0` 时返回空串
- * @returns 可见宽度不超过 `targetWidth` 的单行文本：不足则右补空格，超宽则截断并以默认省略号 `...` 收尾（含全角字符时结果可能略窄于 `targetWidth`）
+ * @returns 可见宽度不超过 `targetWidth` 的单行文本：不足则右补空格，超宽则截断并以默认省略号 `...` 收尾
  */
 export function padToVisibleWidth(str: string, targetWidth: number): string {
   if (targetWidth <= 0) return "";
-  const cleaned = cleanText(str);
-  const w = visibleWidth(cleaned);
-  if (w >= targetWidth) return truncateToWidth(cleaned, targetWidth);
-  return cleaned + " ".repeat(targetWidth - w);
+  return truncateToWidth(cleanText(str), targetWidth, "...", true);
 }
 
 /**

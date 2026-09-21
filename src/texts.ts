@@ -585,8 +585,6 @@ export const TEXTS = {
     resultCompleted: `${ICONS.check} 已完成`,
     /** 渲染结果态已作答题目数（`n` 为题目数；形如 `3 项`，经 `common.bulletPrefix` 拼接） */
     resultCount: (n: number) => `${n} 项`,
-    /** 折叠态展开提示（键位取自宿主 `app.tools.expand`） */
-    expandHint: "展开查看明细",
 
     // ===== 展开态明细 =====
     /** 渲染展开态单条作答行（`title` 为题目标题，`content` 为明细正文） */
