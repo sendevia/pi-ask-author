@@ -4,7 +4,7 @@
 [![TypeScript](https://img.shields.io/badge/TypeScript-Strict-blue.svg?style=flat-square)](https://www.typescriptlang.org/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg?style=flat-square)](https://opensource.org/licenses/MIT)
 
-专为作家、轻小说创作者与 AI 协同写作设计的 [Pi](https://github.com/earendil-works/pi-coding-agent) 终端交互式提问请示扩展。
+专为作家、轻小说创作者与 AI 协同写作设计的 Pi 终端交互式提问请示扩展。
 
 通过在问题中提供带有 Markdown 渲染的正文草稿预览、剧情因果推演与灵活的批注系统，让创作分歧在同一次询问内得到确认。
 
