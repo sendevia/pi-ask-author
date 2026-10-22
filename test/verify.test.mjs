@@ -1,7 +1,10 @@
 import assert from "node:assert/strict";
 import {
+  ACTIVE_LOCALE,
   AskAuthorFormModel,
+  TEXTS,
   cleanOptional,
+  detectLocale,
   padToVisibleWidth,
   safeLine,
   sanitizeAskAuthorArgs,
@@ -128,7 +131,7 @@ import { visibleWidth } from "@earendil-works/pi-tui";
   );
 
   const collapsedText = collapsedComponent.render(80).join("\n");
-  assert.ok(collapsedText.includes("已完成"), "折叠态应包含完成状态");
+  assert.ok(collapsedText.includes(TEXTS.card.resultCompleted), "折叠态应包含完成状态");
   assert.ok(!collapsedText.includes("展开查看明细"), "折叠态不应包含显式展开快捷键提示");
 
   const expandedComponent = registeredToolDef.renderResult(
@@ -148,6 +151,20 @@ import { visibleWidth } from "@earendil-works/pi-tui";
 
   const expandedText = expandedComponent.render(80).join("\n");
   assert.ok(expandedText.includes("测试题"), "展开态应展示题目详细作答明细");
+}
+
+// 5. 语言探测与文案装载验证
+{
+  assert.equal(detectLocale({ LC_ALL: "zh_CN.UTF-8", LANG: "en_US.UTF-8" }), "zh_CN", "LC_ALL 应优先于 LANG");
+  assert.equal(detectLocale({ LANG: "en_GB.UTF-8" }), "en_US", "应回退到同族语言 en_US");
+  assert.equal(detectLocale({ LANGUAGE: "zh_TW:en_GB" }), "zh_CN", "LANGUAGE 冒号列表应按顺序探测并回退同族语言");
+  assert.equal(detectLocale({ LANG: "ja_JP.UTF-8" }), "en_US", "无同族语言时应回退规范语言");
+  assert.equal(detectLocale({ LANG: "C" }, "en-US"), "en_US", "C locale 应跳过并采用系统语言");
+  assert.equal(detectLocale({}, "zh-Hans-CN"), "zh_CN", "系统语言应作为最后一位候选");
+  assert.ok(["en_US", "zh_CN"].includes(ACTIVE_LOCALE), "当前界面语言应为已注册语言");
+  assert.ok(TEXTS.tabs.questionTab(2).includes("2"), "语言模板应按形参插值");
+  assert.throws(() => TEXTS.tabs.questionTab(), /形参数量不匹配/, "语言模板形参不足时应立即抛出");
+  assert.ok(TEXTS.view.customNotePanelTips.length > 0, "文案列表应完整装载");
 }
 
 console.log("全部功能自检顺利通过。");

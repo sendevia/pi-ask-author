@@ -25,7 +25,8 @@
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "files": [
-    "dist"
+    "dist",
+    "lang"
   ],
   "scripts": {
     "build": "tsc && esbuild src/index.ts --bundle --format=esm --platform=node --target=ESNext --external:@earendil-works/* --external:typebox --minify --tree-shaking=true --legal-comments=none --drop:debugger --drop:console --outfile=dist/index.js && terser dist/index.js --compress passes=3,pure_getters=true --mangle --output dist/index.js",

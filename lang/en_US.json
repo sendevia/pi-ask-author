@@ -1,0 +1,167 @@
+{
+  "tool": { "label": "Consult Author" },
+  "command": {
+    "name": "ask-author",
+    "description": "Show the ask_author consultation tool reference",
+    "notify": "Ask the AI to call ask_author in your prompt to consult you on creative decisions"
+  },
+  "common": { "optionSeparator": ", ", "bulletPrefix": "• ", "helpSeparator": " • " },
+  "tabs": {
+    "questionTab": { "template": "Q{index}", "params": ["index"] },
+    "submitTab": { "template": "{icon.check} Submit" }
+  },
+  "view": {
+    "modeSingle": "[Single]",
+    "modeMultiAtLeast": { "template": "[Multi, at least {min}{maxPart}]", "params": ["min", "maxPart"] },
+    "modeMultiOptional": { "template": "[Multi, optional{maxPart}]", "params": ["maxPart"] },
+    "modeMultiUnconstrained": { "template": "[Multi{maxPart}]", "params": ["maxPart"] },
+    "modeMultiMaxPart": { "template": ", up to {max}", "params": ["max"] },
+    "attachedNoteBanner": { "template": "{icon.note} Question note: {text}", "params": ["text"] },
+    "optionAttachedNoteBanner": {
+      "template": "{icon.note} [{label}] option note: {text}",
+      "params": ["label", "text"]
+    },
+    "listTopMore": { "template": "  {icon.scrollUp} {count} more above", "params": ["count"] },
+    "listBottomMore": { "template": "  {icon.scrollDown} {count} more below", "params": ["count"] },
+    "optionNotePanelTitle": "Option Note",
+    "storyDescriptionPanelTitle": "Plot Deduction",
+    "storyDraftPanelTitle": "Draft / Storyboard Preview",
+    "customNotePanelTitle": "Question Note",
+    "confirmPanelTitle": "Controls",
+    "customNotePanelCurrent": "Current content:",
+    "previewScrollInfo": {
+      "template": "(lines {start}-{end}/{total}, PgUp/PgDn to scroll)",
+      "params": ["start", "end", "total"]
+    },
+    "previewNoDraft": "(nothing to preview)",
+    "customNotePanelTips": [
+      "• Press \"N\", or select this item and press \"Enter\", to write or edit the question note",
+      "• Press \"x\" to clear the question note",
+      "• The note is submitted together with the selected options and their option notes"
+    ],
+    "confirmPanelTips": [
+      "• Press `Enter` to confirm this question and move on to the next one",
+      "• Confirming the last question opens the summary and submit page"
+    ],
+    "sectionTitle": { "template": "### {title}", "params": ["title"] },
+    "fieldLabel": { "template": "**{label}**", "params": ["label"] },
+    "italicLine": { "template": "_{text}_", "params": ["text"] }
+  },
+  "menu": {
+    "customNoteLabel": { "template": "{icon.note} Question note" },
+    "customNoteLabelFilled": { "template": "{icon.note} Question note (filled)" },
+    "confirmDetailMulti": { "template": "{selectedCount} selected", "params": ["selectedCount", "minSelect"] },
+    "confirmDetailMultiBelowMin": {
+      "template": "{selectedCount}/{minSelect} selected",
+      "params": ["selectedCount", "minSelect"]
+    },
+    "confirmLabel": {
+      "template": "{icon.check} Confirm question ({detail}{noteSuffix})",
+      "params": ["detail", "noteSuffix"]
+    },
+    "confirmNoteSuffix": " + note",
+    "confirmDesc": "Confirm and continue to the next question or the summary"
+  },
+  "editor": {
+    "title": { "template": " {icon.note} Question note ({questionTitle})", "params": ["questionTitle"] },
+    "optionTitle": {
+      "template": " {icon.note} Option note ({optionLabel} - {questionTitle})",
+      "params": ["questionTitle", "optionLabel"]
+    },
+    "footerHelp": " [Enter] save and return • [Esc/Ctrl+C] cancel"
+  },
+  "status": {
+    "questionNoteSaved": "Question note saved",
+    "noteCleared": "Question note cleared",
+    "optionNoteSaved": { "template": "Saved note for {label}", "params": ["label"] },
+    "optionNoteSavedUnselected": {
+      "template": "Saved note for {label} (option not selected; submitted as a note only)",
+      "params": ["label"]
+    },
+    "optionNoteSavedAtLimit": {
+      "template": "Limit reached (up to {max} options): note saved, option left unselected",
+      "params": ["max"]
+    },
+    "optionNoteCleared": { "template": "Cleared note for {label}", "params": ["label"] },
+    "selectedUpToLimit": { "template": "Selection limit reached (up to {limit} items)", "params": ["limit"] },
+    "maxSelectExceeded": {
+      "template": "Limit reached (up to {max} items): press \"Space\" to deselect an item first",
+      "params": ["max"]
+    },
+    "minSelectRequired": {
+      "template": "Below minimum (at least {min} required): press \"Space\" to select more, or press \"n/N\" to write a note",
+      "params": ["min"]
+    },
+    "pleaseAnswerBeforeSubmit": "Question not answered: press \"Space/Enter\" to pick an option, or press \"n/N\" to write a note",
+    "editorDiscardConfirm": "Press Esc/Ctrl+C again to discard changes (unsaved content will be lost); keep typing to cancel",
+    "errorNonTui": "The current environment is not an interactive terminal, so the interface cannot start; retry in an interactive TUI session",
+    "errorNoQuestions": "No valid question or option was provided; provide at least one question with options",
+    "errorExecutionFailed": {
+      "template": "Component failure: {reason} (fix the arguments and retry)",
+      "params": ["reason"]
+    }
+  },
+  "help": {
+    "cancel": "Esc/Ctrl+C cancel",
+    "clearNote": "x clear note",
+    "confirmQuestion": "Enter confirm",
+    "confirmSubmit": "Enter submit",
+    "editNote": "n question note",
+    "editOptionNote": "n option note",
+    "editQuestionNote": "N question note",
+    "jumpQuestion": "1-9 jump to question",
+    "moveCursor": "↑↓/jk move",
+    "scrollDraft": "PgUp/PgDn scroll draft",
+    "scrollSummary": "↑↓/PgUp/PgDn scroll",
+    "selectOptionSingle": "Space/Enter select",
+    "switchQuestion": "Tab/←→/hl switch question",
+    "toggleAll": "a select/clear all",
+    "toggleCheckMulti": "Space toggle"
+  },
+  "summary": {
+    "title": "[Answer Summary]",
+    "statusDone": "[Done]",
+    "statusPending": "[Pending]",
+    "questionPrefix": { "template": "Q{index}: {title}", "params": ["index", "title"] },
+    "selectedLabel": "Selected:",
+    "optionNoteBadge": { "template": "({icon.note} note)" },
+    "optionNotePrefix": { "template": "{icon.note} Option note ({optLabel}):", "params": ["optLabel"] },
+    "customNoteLabel": { "template": "{icon.note} Question note:" },
+    "allDonePrompt": {
+      "template": " {icon.check} All questions answered; press Enter/Ctrl+S to submit, Tab/hl/1-9 to revise"
+    },
+    "pendingWarning": {
+      "template": " {icon.unchecked} Some questions are unanswered; press Enter to answer, Tab/hl/1-9 to switch"
+    },
+    "topMore": { "template": "  {icon.scrollUp} {count} more lines above", "params": ["count"] },
+    "bottomMore": { "template": "  {icon.scrollDown} {count} more lines below", "params": ["count"] }
+  },
+  "card": {
+    "callQuestionAndOptionCount": {
+      "template": "{qCount} questions • {optCount} options",
+      "params": ["qCount", "optCount"]
+    },
+    "callOptionCountOnly": { "template": "{optCount} options", "params": ["optCount"] },
+    "resultCancelled": { "template": "{icon.cancel} Cancelled" },
+    "resultErrorShort": { "template": "{icon.error} Failed" },
+    "resultCompleted": { "template": "{icon.check} Completed" },
+    "resultCount": { "template": "{n} items", "params": ["n"] },
+    "optionBullet": { "template": "• {title}: {content}", "params": ["title", "content"] },
+    "optionWithNote": { "template": "{label} [{icon.note} {note}]", "params": ["label", "note"] },
+    "questionNoteTag": { "template": " ({icon.note} question note: {text})", "params": ["text"] },
+    "errorBullet": { "template": "• Error: {err}", "params": ["err"] }
+  },
+  "fallbacks": {
+    "defaultFormTitle": "Creative Decision",
+    "defaultQuestionTitle": "Choose the next creative option",
+    "defaultCustomPlaceholder": "Enter overall requirements, foreshadowing details, or revision notes for this question...",
+    "defaultOptionCustomPlaceholder": "Enter specific requirements or revision details for this option...",
+    "defaultCustomChoiceName": "Custom option",
+    "defaultOptionLabel": "Default option",
+    "unnamedOptionLabel": "Unnamed option",
+    "unselectedOption": "Not selected",
+    "autoQuestionId": { "template": "q_{n}", "params": ["n"] },
+    "autoQuestionTitle": { "template": "Question {n}", "params": ["n"] },
+    "autoOptionLabel": { "template": "Option {n}", "params": ["n"] }
+  }
+}

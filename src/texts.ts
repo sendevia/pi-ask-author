@@ -6,14 +6,15 @@
  * - 全插件唯一文案来源：任何可见字符串均必须经由本模块获取数值，其余各层只做获取数值、组合与排版
  * - `LAYOUT_CONFIG` / `ICONS` / `MAX_*` 集中声明可调参数与强制上限，便于统一调整参数与验证边界
  * - `NOVEL_TEMPLATES` 以「定界符 → 语义哨兵 → 原生 Markdown 载体 → 主题样式」单表声明小说语法，新增语法只需在表尾追加一项
- * - `TEXTS` 按受众严格分区，LLM 面恒为英文，作者面恒为中文，两侧文案不得互相渗透
+ * - `TEXTS` 按受众严格分区：LLM 面恒为英文并直接声明于本模块，作者面文案由 `lang/` 语言文件装载，两侧文案不得互相渗透
  *
- * 分区导航（与文件自上而下的顺序一致）：终端呈现常量 → 载荷上限 → 小说语法资产 → 共享排版字面量 → 文案字典 `TEXTS`
- * 受众划分：`tool`（`label` 除外）/ `schema` / `markdown` 面向 LLM，唯一非英文片段为封套定界符 `【】`；`tool.label` / `command` / `common` / `tabs` / `view` / `menu` / `editor` / `status` / `help` / `summary` / `card` / `fallbacks` 面向作者
+ * 分区导航（与文件自上而下的顺序一致）：终端呈现常量 → 载荷上限 → 小说语法资产 → LLM 面文案 → 作者面文案装载与组装
+ * 受众划分：`tool`（`label` 除外）/ `schema` / `markdown` 面向 LLM，唯一非英文片段为封套定界符 `【】`；`tool.label` / `command` / `common` / `tabs` / `view` / `menu` / `editor` / `status` / `help` / `summary` / `card` / `fallbacks` 面向作者，取自当前系统语言对应的语言文件
  *
- * 依赖方向：texts.ts → theme.ts（仅类型）；作为叶层被 format / schema / model / novel-markdown / view-rows / view-summary / component / index 消费，禁止任何反向导入
+ * 依赖方向：texts.ts → theme.ts（仅类型）、i18n.ts（语言资源装载）；作为叶层被 format / schema / model / novel-markdown / view-rows / view-summary / component / index 消费，禁止任何反向导入
  */
 
+import { loadTexts } from "./i18n.js";
 import type { Theme } from "./theme.js";
 
 // ===== 终端呈现常量 =====
@@ -59,7 +60,7 @@ export const LAYOUT_CONFIG = {
   statusDurationMs: 3000,
 } as const;
 
-/** Nerd Font 状态与操作语义图标字典（按语义分区排列；四个选择指示符自带 1 空格尾随填充以拉开与标签的间距） */
+/** Nerd Font 状态与操作语义图标字典（按语义分区排列；四个选择指示符自带 1 空格尾随填充以拉开与标签的间距；语言文件通过 `{icon.<键>}` 占位符引用） */
 export const ICONS = {
   // ===== 状态与确认徽标 =====
   /** 取消 / 中止 */
@@ -77,7 +78,7 @@ export const ICONS = {
 
   // ===== 光标与滚动 =====
   /** 菜单行首聚焦指示 */
-  cursor: "",
+  cursor: "\u{e49c}",
   /** 列表与总览页向上方向提示 */
   scrollUp: "",
   /** 列表与总览页向下方向提示 */
@@ -153,23 +154,14 @@ export const NOVEL_TEMPLATE_BY_MARKER: ReadonlyMap<string, NovelSyntaxTemplate> 
   NOVEL_TEMPLATES.map((template) => [template.marker, template]),
 );
 
-// ===== 共享排版字面量 =====
+// ===== LLM 面文案（恒为英文，不参与语言切换） =====
 
-/** 列表条目统一圆点前缀（`TEXTS.common.bulletPrefix` 与各预览面板提示行的唯一字面量来源） */
-const BULLET_PREFIX = "• ";
-
-// ===== 文案字典 =====
-
-/** 全局双向文案字典：统一定义面向大模型 (LLM) 的提示词规范与面向用户 (TUI) 的界面文案 */
-export const TEXTS = {
-  // ===== LLM 面（恒为英文） =====
-
-  /** 工具注册元数据：`name` / `description` / `promptSnippet` / `promptGuidelines` 面向 LLM（英文高信噪比），`label` 面向作者（TUI 工具行中文名） */
+/** 面向大模型的提示词、字段描述与返回封套：作为协议常量固定为英文，提升前缀缓存命中率 */
+const LLM_TEXTS = {
+  /** 工具注册元数据（`label` 面向作者，取自语言文件，故在此缺席） */
   tool: {
     /** 工具调用名（LLM 协议标识，注册为 `ask_author`；不出现在作者界面） */
     name: "ask_author",
-    /** 工具展示名（作者端中文，经 `index.ts` 渲染为会话调用卡片标题） */
-    label: "向作者请示",
     /** 工具说明（LLM 端英文；业务能力概要与调用场景） */
     description:
       "Consult the author on novel creative decisions, plot branches, scene drafting, or story settings. Supports single and batched questions with plot deductions and draft previews.",
@@ -266,11 +258,11 @@ export const TEXTS = {
       `[Author Consultation Error]\nFailed to consult author: ${reason}\nGuidance: ${guidance}`,
     /** 错误封套原因行字典（英文单句，按失败路径枚举） */
     errorReasons: {
-      /** 非交互式终端环境无法启动 TUI（对应作者端 {@link TEXTS.status.errorNonTui}） */
+      /** 非交互式终端环境无法启动 TUI（对应作者端 `status.errorNonTui`） */
       nonTui: "Interactive TUI is unavailable in the current execution mode.",
-      /** 入参无有效题目或选项（对应作者端 {@link TEXTS.status.errorNoQuestions}） */
+      /** 入参无有效题目或选项（对应作者端 `status.errorNoQuestions`） */
       noQuestions: "No valid questions or options were provided in arguments.",
-      /** 构建执行期异常的原因行（`details` 为宿主异常摘要，对应作者端 {@link TEXTS.status.errorExecutionFailed}） */
+      /** 构建执行期异常的原因行（`details` 为宿主异常摘要，对应作者端 `status.errorExecutionFailed`） */
       runtimeError: (details: string) => `Runtime error during consultation UI execution: ${details}`,
     },
     /** 错误封套纠正指引行字典（英文单句，与 `errorReasons` 一一对应） */
@@ -331,304 +323,93 @@ export const TEXTS = {
      */
     unselectedOptionNote: (label: string, note: string) => `[Author note on unselected option 【${label}】] ${note}`,
 
-    // ===== 封套编译期英文替换（覆盖作者端中文占位） =====
-    /** 生成题目标题的英文占位（`index` 为 1-based 题号；仅封套编译期替换 `fallbacks.autoQuestionTitle` 与 `fallbacks.defaultQuestionTitle`，作者界面保留中文占位） */
+    // ===== 封套编译期英文替换（覆盖作者端占位） =====
+    /** 生成题目标题的英文占位（`index` 为 1-based 题号；仅封套编译期替换 `fallbacks.autoQuestionTitle` 与 `fallbacks.defaultQuestionTitle`，作者界面保留语言文件中的占位） */
     fallbackQuestionTitle: (index: number) => `Question ${index}`,
-    /** 生成选项标签的英文占位（`index` 为 1-based 选项序号；仅封套编译期替换 `fallbacks.autoOptionLabel` / `fallbacks.unnamedOptionLabel` / `fallbacks.defaultOptionLabel`，作者界面保留中文占位） */
+    /** 生成选项标签的英文占位（`index` 为 1-based 选项序号；仅封套编译期替换 `fallbacks.autoOptionLabel` / `fallbacks.unnamedOptionLabel` / `fallbacks.defaultOptionLabel`，作者界面保留语言文件中的占位） */
     fallbackOptionLabel: (index: number) => `Option ${index}`,
   },
+} as const;
 
-  // ===== 作者面（恒为中文，按界面交互流程排列） =====
+// ===== 作者面文案装载 =====
+
+/** 语言资源占位符 `{icon.<键>}` 的解析器；非图标占位符返回 undefined 交由模板形参处理 */
+const resolveTemplateConstant = (name: string): string | undefined =>
+  name.startsWith("icon.") ? (ICONS as Readonly<Record<string, string>>)[name.slice(5)] : undefined;
+
+/** 当前系统语言对应的作者面文案字典（结构以 `lang/en_US.json` 为规范） */
+const LOCALE_TEXTS = loadTexts(resolveTemplateConstant);
+
+/**
+ * 渲染多选模式标签（形如 `[多选 可不选 至多3项]` / `[Multi, optional, up to 3]`）
+ * @param min - 模型收敛后的最小勾选数（区间 `0 ~ optionCount`）
+ * @param max - 模型收敛后的最大勾选数（区间 `min ~ optionCount`）
+ * @param optionCount - 本题候选选项数
+ * @param allowEmpty - 是否允许零勾选提交
+ * @returns `min > 1` 时标注强制下限；`min === 0` 或 `allowEmpty` 时标注可不选；`max` 小于选项总数时追加上限标注，等于总数则视为无额外上限而省略
+ */
+const modeMultiLabel = (min: number, max: number, optionCount: number, allowEmpty: boolean): string => {
+  const maxPart = max < optionCount ? LOCALE_TEXTS.view.modeMultiMaxPart(max) : "";
+  if (min > 1) return LOCALE_TEXTS.view.modeMultiAtLeast(min, maxPart);
+  if (min === 0 || allowEmpty) return LOCALE_TEXTS.view.modeMultiOptional(maxPart);
+  return LOCALE_TEXTS.view.modeMultiUnconstrained(maxPart);
+};
+
+/**
+ * 渲染多选确认按钮的已选计数明细
+ * @param selectedCount - 已选数
+ * @param minSelect - 本题下限
+ * @returns 未达下限时呈现为 `已选 n/min 项`，否则呈现为 `已选 n 项`
+ */
+const confirmDetailMulti = (selectedCount: number, minSelect: number): string =>
+  selectedCount < minSelect
+    ? LOCALE_TEXTS.menu.confirmDetailMultiBelowMin(selectedCount, minSelect)
+    : LOCALE_TEXTS.menu.confirmDetailMulti(selectedCount, minSelect);
+
+/**
+ * 渲染确认本题按钮标签
+ * @param detail - 已选计数明细（取自 `confirmDetailMulti`）
+ * @param hasNote - 是否已填写题目补充说明
+ * @returns 形如 `󰄬 确认本题 (已选 2 项 + 补充说明)`
+ */
+const confirmLabel = (detail: string, hasNote: boolean): string =>
+  LOCALE_TEXTS.menu.confirmLabel(detail, hasNote ? LOCALE_TEXTS.menu.confirmNoteSuffix : "");
+
+// ===== 文案字典 =====
+
+/** 全局双向文案字典：LLM 面固定英文协议常量，作者面取自当前系统语言对应的语言文件 */
+export const TEXTS = {
+  // ===== LLM 面（恒为英文） =====
+
+  /** 工具注册元数据：`name` / `description` / `promptSnippet` / `promptGuidelines` 面向 LLM（英文高信噪比），`label` 面向作者（TUI 工具行标题） */
+  tool: { ...LLM_TEXTS.tool, label: LOCALE_TEXTS.tool.label },
+  /** LLM 端 TypeBox 字段描述字典 */
+  schema: LLM_TEXTS.schema,
+  /** LLM 端返回封套与纠正指令模板 */
+  markdown: LLM_TEXTS.markdown,
+
+  // ===== 作者面（取自语言文件，按界面交互流程排列） =====
 
   /** `/ask-author` 辅助命令的注册元数据与作者可见提示文案 */
-  command: {
-    /** 命令名（注册为 `ask-author`，作者输入 `/ask-author` 触发） */
-    name: "ask-author",
-    /** 命令说明（命令面板与补全列表展示） */
-    description: "查看 ask_author 创作请示工具说明",
-    /** 命令执行后的提示通知（引导作者改用自然语言指示 AI 调用工具） */
-    notify: "在提示词中指示 AI 调用 ask_author，即可向您请示创作决策",
-  },
-
+  command: LOCALE_TEXTS.command,
   /** 跨视图共享的通用排版片段（枚举分隔符、列表条目前缀与按键帮助分隔符） */
-  common: {
-    /** 选项标签并列展示时的中文枚举分隔符（总览页与结果卡片共用） */
-    optionSeparator: "、",
-    /** 列表条目统一前缀（作者端圆点标记；卡片行与预览面板提示行的唯一字面量来源） */
-    bulletPrefix: BULLET_PREFIX,
-    /** 底部按键帮助行各片段之间的分隔符 */
-    helpSeparator: " • ",
-  },
-
+  common: LOCALE_TEXTS.common,
   /** Tab 导航栏标签文案（各题目页与答卷提交页） */
-  tabs: {
-    /** 渲染题目页标签（`index` 为 1-based 题号） */
-    questionTab: (index: number) => `第${index}题`,
-    /** 答卷提交页标签（末尾固定页，前面附带完成徽标） */
-    submitTab: `${ICONS.check} 提交答卷`,
-  },
-
-  /** 作答视图与预览面板的结构化文案（题目标签、补充横幅、滚动信息与 Markdown 区块构建器，按界面渲染顺序排列） */
-  view: {
-    // ===== 题目头与模式标签 =====
-    /** 单选模式标签 */
-    modeSingle: "[单选]",
-    /**
-     * 按勾选数量上下限渲染多选模式标签（形如 `[多选 可不选 至多3项]`）
-     * @param min - 模型收敛后的最小勾选数（区间 `0 ~ optionCount`）
-     * @param max - 模型收敛后的最大勾选数（区间 `min ~ optionCount`）
-     * @param optionCount - 本题候选选项数
-     * @param allowEmpty - 是否允许零勾选提交
-     * @returns `min > 1` 时标注强制下限；`min === 0` 或 `allowEmpty` 时标注可不选；`max` 小于选项总数时追加上限标注，等于总数则视为无额外上限而省略
-     */
-    modeMulti: (min: number, max: number, optionCount: number, allowEmpty: boolean) => {
-      let tag = "[多选";
-      if (min > 1) tag += ` 至少${min}项`;
-      else if (min === 0 || allowEmpty) tag += " 可不选";
-      if (max < optionCount) tag += ` 至多${max}项`;
-      return `${tag}]`;
-    },
-    /** 渲染题目级补充说明横幅（`text` 为补充说明原文，位于题头下方） */
-    attachedNoteBanner: (text: string) => `${ICONS.note} 题目补充说明：${text}`,
-    /** 渲染选项级补充说明横幅（`label` 为选项标签，位于对应选项行下方） */
-    optionAttachedNoteBanner: (label: string, text: string) => `${ICONS.note} [${label}] 选项补充说明：${text}`,
-
-    // ===== 选项列表滚动提示 =====
-    /** 渲染列表上方剩余项数提示（`count` 为剩余项数） */
-    listTopMore: (count: number) => `  ${ICONS.scrollUp} 向上还有 ${count} 项`,
-    /** 渲染列表下方剩余项数提示（`count` 为剩余项数） */
-    listBottomMore: (count: number) => `  ${ICONS.scrollDown} 向下还有 ${count} 项`,
-
-    // ===== 预览面板标题（按面板渲染顺序排列） =====
-    /** 选项补充说明面板标题 */
-    optionNotePanelTitle: "选项补充说明",
-    /** 选项情节推演面板标题 */
-    storyDescriptionPanelTitle: "情节设定推演",
-    /** 选项正文草稿 / 分镜头面板标题 */
-    storyDraftPanelTitle: "正文草稿/分镜头试撰写",
-    /** 题目补充说明面板标题 */
-    customNotePanelTitle: "题目补充说明",
-    /** 确认入口的按键说明面板标题 */
-    confirmPanelTitle: "操作说明",
-
-    // ===== 预览面板正文片段 =====
-    /** 已填写的题目补充说明字段标签（下方接说明原文） */
-    customNotePanelCurrent: "当前填写内容：",
-    /** 渲染草稿预览的行区间与滚动提示（`start` / `end` / `total` 均为 1-based 行号与总行数） */
-    previewScrollInfo: (start: number, end: number, total: number) => `(行 ${start}-${end}/${total}，PgUp/PgDn 滚动)`,
-    /** 草稿预览缺省占位（无内容可预览时） */
-    previewNoDraft: "(无内容预览)",
-    /** 题目补充说明面板的按键提示行集合 */
-    customNotePanelTips: [
-      `${BULLET_PREFIX}随时按「N」或选择此项按「Enter」填写/修改本题补充说明`,
-      `${BULLET_PREFIX}按「x」清空本题补充说明`,
-      `${BULLET_PREFIX}补充说明将随所选选项及选项专属补充说明一并提交给 AI 助手`,
-    ],
-    /** 确认面板的按键提示行集合 */
-    confirmPanelTips: [
-      `${BULLET_PREFIX}按 \`Enter\` 确认本题并前往下一题`,
-      `${BULLET_PREFIX}最后一题确认后自动进入总览提交页`,
-    ],
-
-    // ===== Markdown 构建器 =====
-    /** 构建预览面板 Markdown 三级小节标题（`title` 为小节标题原文） */
-    sectionTitle: (title: string) => `### ${title}`,
-    /** 构建预览面板 Markdown bold 字段标签（`label` 为字段标签原文） */
-    fieldLabel: (label: string) => `**${label}**`,
-    /** 构建预览面板 Markdown 斜体提示行（`text` 为提示行原文） */
-    italicLine: (text: string) => `_${text}_`,
-  },
-
-  /** 题目菜单条目文案（补充说明入口与确认推进按钮） */
-  menu: {
-    // ===== 补充说明入口 =====
-    /** 补充说明入口标签（未填写态） */
-    customNoteLabel: `${ICONS.note} 题目补充说明`,
-    /** 补充说明入口标签（已填写态） */
-    customNoteLabelFilled: `${ICONS.note} 题目补充说明 (已填写)`,
-
-    // ===== 确认按钮 =====
-    /** 渲染多选确认按钮的已选计数明细（`selectedCount` 为已选数，`minSelect` 为下限；未达下限时呈现为 `已选 n/min`） */
-    confirmDetailMulti: (selectedCount: number, minSelect: number) =>
-      `已选 ${selectedCount}${selectedCount < minSelect ? `/${minSelect}` : ""} 项`,
-    /** 渲染确认本题按钮标签（`detail` 取自 `confirmDetailMulti`，空串时不显示括号；`hasNote` 为真时追加补充标记） */
-    confirmLabel: (detail: string, hasNote: boolean) =>
-      `${ICONS.check} 确认本题 (${detail}${hasNote ? " + 补充说明" : ""})`,
-    /** 确认按钮的下方说明（声明确认后的跳转目标） */
-    confirmDesc: "确认并前往下一题或总览页",
-  },
-
+  tabs: LOCALE_TEXTS.tabs,
+  /** 作答视图与预览面板的结构化文案（`modeMulti` 由多选模式片段组合而成） */
+  view: { ...LOCALE_TEXTS.view, modeMulti: modeMultiLabel },
+  /** 题目菜单条目文案（`confirmDetailMulti` / `confirmLabel` 由已选数片段组合而成） */
+  menu: { ...LOCALE_TEXTS.menu, confirmDetailMulti, confirmLabel },
   /** 全屏补充说明编辑器的标题与页脚按键帮助文案 */
-  editor: {
-    /** 渲染题目补充说明编辑器标题（`questionTitle` 为题目标题） */
-    title: (questionTitle: string) => ` ${ICONS.note} 填写题目补充说明（${questionTitle}）`,
-    /** 渲染选项补充说明编辑器标题（`optionLabel` 为选项标签，`questionTitle` 为题目标题） */
-    optionTitle: (questionTitle: string, optionLabel: string) =>
-      ` ${ICONS.note} 填写选项补充说明（${optionLabel} - ${questionTitle}）`,
-    /** 编辑器页脚按键帮助（保存与取消） */
-    footerHelp: " [Enter] 保存并返回 • [Esc/Ctrl+C] 取消",
-  },
-
+  editor: LOCALE_TEXTS.editor,
   /** 底部临时状态栏通知（操作结果、阻断原因与阻断后的纠正操作路径） */
-  status: {
-    // ===== 补充说明的保存与清空反馈 =====
-    /** 题目补充说明已保存 */
-    questionNoteSaved: "已保存本题补充说明",
-    /** 题目补充说明已清空 */
-    noteCleared: "已清空本题补充说明",
-    /** 提示选项批注已保存（`label` 为选项标签；该选项已勾选） */
-    optionNoteSaved: (label: string) => `已保存「${label}」补充说明`,
-    /** 提示选项批注已保存但该选项未勾选（`label` 为选项标签；批注仅作批注提交） */
-    optionNoteSavedUnselected: (label: string) => `已保存「${label}」批注（该选项未勾选，仅作批注提交）`,
-    /** 提示已达批注选项数量上限（`max` 为上限值，批注保留但该选项不再勾选） */
-    optionNoteSavedAtLimit: (max: number) => `已达上限（至多 ${max} 项）：批注已保存，但该选项未勾选`,
-    /** 提示选项批注已清空（`label` 为选项标签） */
-    optionNoteCleared: (label: string) => `已清空「${label}」补充说明`,
-
-    // ===== 勾选数量约束与未完成阻断 =====
-    /** 提示单选已达上限（`limit` 为本题勾选上限；再次勾选被拒） */
-    selectedUpToLimit: (limit: number) => `已达选择上限（至多 ${limit} 项）`,
-    /** 提示多选已达上限（`max` 为本题勾选上限；引导取消已选项后重选） */
-    maxSelectExceeded: (max: number) => `已达上限（至多 ${max} 项）：请按「空格」取消已选项后重选`,
-    /** 提示多选未达下限（`min` 为本题勾选下限；引导继续勾选或改用补充说明） */
-    minSelectRequired: (min: number) => `未达下限（至少需 ${min} 项）：请按「空格」继续勾选，或按「n/N」填写说明`,
-    /** 提交时本题仍无任何作答：并列给出两条通过路径 */
-    pleaseAnswerBeforeSubmit: "本题未完成：请按「空格/Enter」选定选项，或按「n/N」填写补充说明",
-
-    // ===== 编辑器与执行期异常 =====
-    /** 编辑器放弃修改的二次确认（首次 Esc/Ctrl+C 触发） */
-    editorDiscardConfirm: "再次按 Esc/Ctrl+C 放弃修改（未保存内容将丢失），继续输入可撤销",
-    /** 非交互式终端环境无法启动交互界面（与 `markdown.errorReasons.nonTui` 对应） */
-    errorNonTui: "当前为非交互式终端环境，无法启动交互界面，请在交互式 TUI 会话中重试",
-    /** 入参无有效题目或选项（与 `markdown.errorReasons.noQuestions` 对应） */
-    errorNoQuestions: "未提供有效的问题或选项，请提供至少一个带选项的问题",
-    /** 生成组件执行期异常通知（`reason` 为宿主异常摘要，与 `markdown.errorReasons.runtimeError` 对应） */
-    errorExecutionFailed: (reason: string) => `组件执行异常：${reason}（可修正参数后重试）`,
-  },
-
-  /** 底部按键帮助行片段（标准键名 + 动宾结构，经 {@link TEXTS.common.helpSeparator} 拼接；条目按按键字母序排列） */
-  help: {
-    /** Esc / Ctrl+C：取消并关闭当前界面 */
-    cancel: "Esc/Ctrl+C 取消",
-    /** x：清空光标所在位置的补充说明 */
-    clearNote: "x 清空补充说明",
-    /** Enter：多选模式下确认本题并推进 */
-    confirmQuestion: "Enter 确认",
-    /** Enter：总览页提交整份答卷 */
-    confirmSubmit: "Enter 提交",
-    /** n：编辑题目补充说明（光标位于题目补充说明菜单项时） */
-    editNote: "n 补充说明",
-    /** n：编辑当前选项的专属批注（光标位于选项行时） */
-    editOptionNote: "n 选项补充说明",
-    /** N：直接编辑题目补充说明（光标位于选项行时的大写入口） */
-    editQuestionNote: "N 题目补充说明",
-    /** 1~9：按题号直接跳转题目（题目数大于 1 时展示） */
-    jumpQuestion: "1~9 跳转题目",
-    /** ↑↓ / jk：上下移动光标 */
-    moveCursor: "↑↓/jk 移动",
-    /** PgUp / PgDn：作答页滚动草稿预览（存在预览内容时展示） */
-    scrollDraft: "PgUp/PgDn 滚动草稿",
-    /** ↑↓ / PgUp / PgDn：总览页滚动内容 */
-    scrollSummary: "↑↓/PgUp/PgDn 滚动",
-    /** 空格 / Enter：单选模式下选定当前项 */
-    selectOptionSingle: "空格/Enter 选定",
-    /** Tab / ←→ / hl：切换题目或总览页 */
-    switchQuestion: "Tab/←→/hl 切换题目",
-    /** a：多选模式下全选或清空 */
-    toggleAll: "a 全选/清空",
-    /** 空格：多选模式下勾选或取消当前项 */
-    toggleCheckMulti: "空格 勾选",
-  },
-
-  /** 答卷总览确认页文案（完成状态徽标、已选项标签、选项批注角标与滚动提示，按页面自上而下的渲染顺序排列） */
-  summary: {
-    /** 页标题 */
-    title: "【答卷总览与确认】",
-    /** 单题完成徽标 */
-    statusDone: "[已完成]",
-    /** 单题未完成徽标 */
-    statusPending: "[未完成]",
-    /** 渲染题目块标题（`index` 为 1-based 题号，`title` 为题目标题） */
-    questionPrefix: (index: number, title: string) => `第${index}题：${title}`,
-    /** 已选选项行标签 */
-    selectedLabel: "已选：",
-    /** 已选选项行尾的批注存在角标 */
-    optionNoteBadge: `(${ICONS.note} 批注)`,
-    /** 渲染选项级批注行标签（`optLabel` 为所属选项标签） */
-    optionNotePrefix: (optLabel: string) => `${ICONS.note} 选项补充说明（${optLabel}）：`,
-    /** 题目级补充说明行标签 */
-    customNoteLabel: `${ICONS.note} 题目补充说明：`,
-    /** 全部完成时的提交引导行 */
-    allDonePrompt: ` ${ICONS.check} 全部完成，按 Enter/Ctrl+S 提交答卷，Tab/hl/1-9 返回修改`,
-    /** 存在未完成题目时的阻断提示行 */
-    pendingWarning: ` ${ICONS.unchecked} 尚有题目未完成，按 Enter 前往作答，Tab/hl/1-9 切换修改`,
-    /** 渲染总览页上方剩余行数提示（`count` 为剩余行数） */
-    topMore: (count: number) => `  ${ICONS.scrollUp} 向上还有 ${count} 行`,
-    /** 渲染总览页下方剩余行数提示（`count` 为剩余行数） */
-    bottomMore: (count: number) => `  ${ICONS.scrollDown} 向下还有 ${count} 行`,
-  },
-
+  status: LOCALE_TEXTS.status,
+  /** 底部按键帮助行片段（经 `common.helpSeparator` 拼接；条目按按键字母序排列） */
+  help: LOCALE_TEXTS.help,
+  /** 答卷总览确认页文案（完成状态徽标、已选项标签、选项批注角标与滚动提示） */
+  summary: LOCALE_TEXTS.summary,
   /** 会话回放卡片文案（调用态摘要、结果态徽标与展开态明细） */
-  card: {
-    // ===== 调用态摘要 =====
-    /** 渲染调用态多题摘要（`qCount` 为题数，`optCount` 为选项总数；形如 `3 题 • 8 选项`） */
-    callQuestionAndOptionCount: (qCount: number, optCount: number) => `${qCount} 题 • ${optCount} 选项`,
-    /** 渲染调用态平铺单题摘要（`optCount` 为选项数；形如 `4 选项`） */
-    callOptionCountOnly: (optCount: number) => `${optCount} 选项`,
-
-    // ===== 结果态徽标 =====
-    /** 作者取消（warning 配色） */
-    resultCancelled: `${ICONS.cancel} 已取消`,
-    /** 执行失败（error 配色；展开态另附错误原因） */
-    resultErrorShort: `${ICONS.error} 执行失败`,
-    /** 正常完成（success 配色） */
-    resultCompleted: `${ICONS.check} 已完成`,
-    /** 渲染结果态已作答题目数（`n` 为题目数；形如 `3 项`，经 `common.bulletPrefix` 拼接） */
-    resultCount: (n: number) => `${n} 项`,
-
-    // ===== 展开态明细 =====
-    /** 渲染展开态单条作答行（`title` 为题目标题，`content` 为明细正文） */
-    optionBullet: (title: string, content: string) => `${BULLET_PREFIX}${title}：${content}`,
-    /** 渲染带专属批注的选项标签角标（`label` 为选项标签，`note` 为批注原文；形如 `选项 [note 批注]`） */
-    optionWithNote: (label: string, note: string) => `${label} [${ICONS.note} ${note}]`,
-    /** 渲染题目补充说明角标（`text` 为补充说明原文，追加于作答行行尾） */
-    questionNoteTag: (text: string) => ` (${ICONS.note} 题目补充说明: ${text})`,
-    /** 渲染展开态错误原因行（`err` 为宿主异常摘要） */
-    errorBullet: (err: string) => `${BULLET_PREFIX}错误原因：${err}`,
-  },
-
-  /**
-   * 兜底文案与自动命名派生：任一缺失 / 越界输入的最终回退，保证界面与封套永不空白
-   * 语言归属：本组为作者端中文占位，作者界面始终呈现中文
-   * 约定：`model.ts` 在封套编译期把 `autoQuestionTitle` / `defaultQuestionTitle` / `autoOptionLabel` / `unnamedOptionLabel` / `defaultOptionLabel` 替换为 `markdown.fallbackQuestionTitle` / `markdown.fallbackOptionLabel` 的英文占位
-   */
-  fallbacks: {
-    // ===== 缺省填充 =====
-    /** 问卷标题缺省（模型未提供 `formTitle` 时） */
-    defaultFormTitle: "创作决策",
-    /** 题目标题缺省（模型未提供标题时的作者端中文占位，封套编译期替换为英文） */
-    defaultQuestionTitle: "请选择接下来的创作方案",
-    /** 题目补充说明编辑器的缺省占位文本 */
-    defaultCustomPlaceholder: "输入本题整体补充要求、伏笔细节或修改意见...",
-    /** 选项补充说明编辑器的缺省占位文本 */
-    defaultOptionCustomPlaceholder: "输入针对该选项的具体补充要求或修改细节...",
-    /** 自由文本作答的选项名（作者填写自定义内容时占位） */
-    defaultCustomChoiceName: "自定义方案",
-    /** 选项标签缺省（模型未提供标签时的作者端中文占位，封套编译期替换为英文） */
-    defaultOptionLabel: "默认方案",
-    /** 选项标签缺失且无序号信息时的占位（封套编译期替换为英文） */
-    unnamedOptionLabel: "未命名方案",
-
-    // ===== 空答占位 =====
-    /** 未勾选且无补充说明时的展示占位（总览页与结果卡片共用；封套中由 `markdown.noSelection` 承担同义英文） */
-    unselectedOption: "未选",
-
-    // ===== 自动命名派生 =====
-    /** 生成自动题目 ID（`n` 为 1-based 序号） */
-    autoQuestionId: (n: number) => `q_${n}`,
-    /** 生成自动题目标题（`n` 为 1-based 序号，作者端中文占位，封套编译期替换为英文） */
-    autoQuestionTitle: (n: number) => `问题 ${n}`,
-    /** 生成自动选项标签（`n` 为 1-based 序号，作者端中文占位，封套编译期替换为英文） */
-    autoOptionLabel: (n: number) => `选项 ${n}`,
-  },
+  card: LOCALE_TEXTS.card,
+  /** 兜底文案与自动命名派生：任一缺失 / 越界输入的最终回退，保证界面与封套永不空白 */
+  fallbacks: LOCALE_TEXTS.fallbacks,
 } as const;

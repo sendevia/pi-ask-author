@@ -1,0 +1,148 @@
+{
+  "tool": { "label": "向作者请示" },
+  "command": {
+    "name": "ask-author",
+    "description": "查看 ask_author 创作请示工具说明",
+    "notify": "在提示词中指示 AI 调用 ask_author，即可向您请示创作决策"
+  },
+  "common": { "optionSeparator": "、", "bulletPrefix": "• ", "helpSeparator": " • " },
+  "tabs": {
+    "questionTab": { "template": "第{index}题", "params": ["index"] },
+    "submitTab": { "template": "{icon.check} 提交答卷" }
+  },
+  "view": {
+    "modeSingle": "[单选]",
+    "modeMultiAtLeast": { "template": "[多选 至少{min}项{maxPart}]", "params": ["min", "maxPart"] },
+    "modeMultiOptional": { "template": "[多选 可不选{maxPart}]", "params": ["maxPart"] },
+    "modeMultiUnconstrained": { "template": "[多选{maxPart}]", "params": ["maxPart"] },
+    "modeMultiMaxPart": { "template": " 至多{max}项", "params": ["max"] },
+    "attachedNoteBanner": { "template": "{icon.note} 题目补充说明：{text}", "params": ["text"] },
+    "optionAttachedNoteBanner": {
+      "template": "{icon.note} [{label}] 选项补充说明：{text}",
+      "params": ["label", "text"]
+    },
+    "listTopMore": { "template": "  {icon.scrollUp} 向上还有 {count} 项", "params": ["count"] },
+    "listBottomMore": { "template": "  {icon.scrollDown} 向下还有 {count} 项", "params": ["count"] },
+    "optionNotePanelTitle": "选项补充说明",
+    "storyDescriptionPanelTitle": "情节设定推演",
+    "storyDraftPanelTitle": "正文草稿/分镜头试撰写",
+    "customNotePanelTitle": "题目补充说明",
+    "confirmPanelTitle": "操作说明",
+    "customNotePanelCurrent": "当前填写内容：",
+    "previewScrollInfo": {
+      "template": "(行 {start}-{end}/{total}，PgUp/PgDn 滚动)",
+      "params": ["start", "end", "total"]
+    },
+    "previewNoDraft": "(无内容预览)",
+    "customNotePanelTips": [
+      "• 随时按「N」或选择此项按「Enter」填写/修改本题补充说明",
+      "• 按「x」清空本题补充说明",
+      "• 补充说明将随所选选项及选项专属补充说明一并提交给 AI 助手"
+    ],
+    "confirmPanelTips": ["• 按 `Enter` 确认本题并前往下一题", "• 最后一题确认后自动进入总览提交页"],
+    "sectionTitle": { "template": "### {title}", "params": ["title"] },
+    "fieldLabel": { "template": "**{label}**", "params": ["label"] },
+    "italicLine": { "template": "_{text}_", "params": ["text"] }
+  },
+  "menu": {
+    "customNoteLabel": { "template": "{icon.note} 题目补充说明" },
+    "customNoteLabelFilled": { "template": "{icon.note} 题目补充说明 (已填写)" },
+    "confirmDetailMulti": { "template": "已选 {selectedCount} 项", "params": ["selectedCount", "minSelect"] },
+    "confirmDetailMultiBelowMin": {
+      "template": "已选 {selectedCount}/{minSelect} 项",
+      "params": ["selectedCount", "minSelect"]
+    },
+    "confirmLabel": { "template": "{icon.check} 确认本题 ({detail}{noteSuffix})", "params": ["detail", "noteSuffix"] },
+    "confirmNoteSuffix": " + 补充说明",
+    "confirmDesc": "确认并前往下一题或总览页"
+  },
+  "editor": {
+    "title": { "template": " {icon.note} 填写题目补充说明（{questionTitle}）", "params": ["questionTitle"] },
+    "optionTitle": {
+      "template": " {icon.note} 填写选项补充说明（{optionLabel} - {questionTitle}）",
+      "params": ["questionTitle", "optionLabel"]
+    },
+    "footerHelp": " [Enter] 保存并返回 • [Esc/Ctrl+C] 取消"
+  },
+  "status": {
+    "questionNoteSaved": "已保存本题补充说明",
+    "noteCleared": "已清空本题补充说明",
+    "optionNoteSaved": { "template": "已保存「{label}」补充说明", "params": ["label"] },
+    "optionNoteSavedUnselected": {
+      "template": "已保存「{label}」批注（该选项未勾选，仅作批注提交）",
+      "params": ["label"]
+    },
+    "optionNoteSavedAtLimit": {
+      "template": "已达上限（至多 {max} 项）：批注已保存，但该选项未勾选",
+      "params": ["max"]
+    },
+    "optionNoteCleared": { "template": "已清空「{label}」补充说明", "params": ["label"] },
+    "selectedUpToLimit": { "template": "已达选择上限（至多 {limit} 项）", "params": ["limit"] },
+    "maxSelectExceeded": { "template": "已达上限（至多 {max} 项）：请按「空格」取消已选项后重选", "params": ["max"] },
+    "minSelectRequired": {
+      "template": "未达下限（至少需 {min} 项）：请按「空格」继续勾选，或按「n/N」填写说明",
+      "params": ["min"]
+    },
+    "pleaseAnswerBeforeSubmit": "本题未完成：请按「空格/Enter」选定选项，或按「n/N」填写补充说明",
+    "editorDiscardConfirm": "再次按 Esc/Ctrl+C 放弃修改（未保存内容将丢失），继续输入可撤销",
+    "errorNonTui": "当前为非交互式终端环境，无法启动交互界面，请在交互式 TUI 会话中重试",
+    "errorNoQuestions": "未提供有效的问题或选项，请提供至少一个带选项的问题",
+    "errorExecutionFailed": { "template": "组件执行异常：{reason}（可修正参数后重试）", "params": ["reason"] }
+  },
+  "help": {
+    "cancel": "Esc/Ctrl+C 取消",
+    "clearNote": "x 清空补充说明",
+    "confirmQuestion": "Enter 确认",
+    "confirmSubmit": "Enter 提交",
+    "editNote": "n 补充说明",
+    "editOptionNote": "n 选项补充说明",
+    "editQuestionNote": "N 题目补充说明",
+    "jumpQuestion": "1~9 跳转题目",
+    "moveCursor": "↑↓/jk 移动",
+    "scrollDraft": "PgUp/PgDn 滚动草稿",
+    "scrollSummary": "↑↓/PgUp/PgDn 滚动",
+    "selectOptionSingle": "空格/Enter 选定",
+    "switchQuestion": "Tab/←→/hl 切换题目",
+    "toggleAll": "a 全选/清空",
+    "toggleCheckMulti": "空格 勾选"
+  },
+  "summary": {
+    "title": "【答卷总览与确认】",
+    "statusDone": "[已完成]",
+    "statusPending": "[未完成]",
+    "questionPrefix": { "template": "第{index}题：{title}", "params": ["index", "title"] },
+    "selectedLabel": "已选：",
+    "optionNoteBadge": { "template": "({icon.note} 批注)" },
+    "optionNotePrefix": { "template": "{icon.note} 选项补充说明（{optLabel}）：", "params": ["optLabel"] },
+    "customNoteLabel": { "template": "{icon.note} 题目补充说明：" },
+    "allDonePrompt": { "template": " {icon.check} 全部完成，按 Enter/Ctrl+S 提交答卷，Tab/hl/1-9 返回修改" },
+    "pendingWarning": { "template": " {icon.unchecked} 尚有题目未完成，按 Enter 前往作答，Tab/hl/1-9 切换修改" },
+    "topMore": { "template": "  {icon.scrollUp} 向上还有 {count} 行", "params": ["count"] },
+    "bottomMore": { "template": "  {icon.scrollDown} 向下还有 {count} 行", "params": ["count"] }
+  },
+  "card": {
+    "callQuestionAndOptionCount": { "template": "{qCount} 题 • {optCount} 选项", "params": ["qCount", "optCount"] },
+    "callOptionCountOnly": { "template": "{optCount} 选项", "params": ["optCount"] },
+    "resultCancelled": { "template": "{icon.cancel} 已取消" },
+    "resultErrorShort": { "template": "{icon.error} 执行失败" },
+    "resultCompleted": { "template": "{icon.check} 已完成" },
+    "resultCount": { "template": "{n} 项", "params": ["n"] },
+    "optionBullet": { "template": "• {title}：{content}", "params": ["title", "content"] },
+    "optionWithNote": { "template": "{label} [{icon.note} {note}]", "params": ["label", "note"] },
+    "questionNoteTag": { "template": " ({icon.note} 题目补充说明: {text})", "params": ["text"] },
+    "errorBullet": { "template": "• 错误原因：{err}", "params": ["err"] }
+  },
+  "fallbacks": {
+    "defaultFormTitle": "创作决策",
+    "defaultQuestionTitle": "请选择接下来的创作方案",
+    "defaultCustomPlaceholder": "输入本题整体补充要求、伏笔细节或修改意见...",
+    "defaultOptionCustomPlaceholder": "输入针对该选项的具体补充要求或修改细节...",
+    "defaultCustomChoiceName": "自定义方案",
+    "defaultOptionLabel": "默认方案",
+    "unnamedOptionLabel": "未命名方案",
+    "unselectedOption": "未选",
+    "autoQuestionId": { "template": "q_{n}", "params": ["n"] },
+    "autoQuestionTitle": { "template": "问题 {n}", "params": ["n"] },
+    "autoOptionLabel": { "template": "选项 {n}", "params": ["n"] }
+  }
+}

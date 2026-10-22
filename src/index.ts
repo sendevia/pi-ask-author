@@ -410,4 +410,5 @@ export { AskAuthorFormModel, type AskAuthorResult, type AuthorAnswerItem, type N
 export { AskAuthorParams, type RawParams } from "./schema.js";
 export { sanitizeAskAuthorArgs } from "./sanitize.js";
 export { TEXTS, LAYOUT_CONFIG, ICONS } from "./texts.js";
+export { ACTIVE_LOCALE, detectLocale } from "./i18n.js";
 export { cleanOptional, cleanText, padToVisibleWidth, safeLine } from "./format.js";

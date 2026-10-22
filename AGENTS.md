@@ -85,7 +85,9 @@
 - `src/sanitize.ts`：入参防御性清洗模块。提供 `sanitizeAskAuthorArgs` 函数，执行不可信入参边界的类型收敛、别名映射、数据纠错与白名单字段过滤。
 - `src/format.ts`：纯函数排版与算法工具模块。提供视口边界限制、可见列宽测量、ANSI 文本折行、文本清洗以及草稿摘要压缩等无状态工具函数。
 - `src/novel-markdown.ts`：小说语法高亮引擎。通过声明式语法模板表将对话台词与心理旁白转换为携带语义哨兵的行内代码，由定制 Markdown 主题完成样式渲染。
-- `src/texts.ts`：文案字典、终端图标与布局几何常量的单一源头。集中声明 `LAYOUT_CONFIG`、`ICONS`、`NOVEL_TEMPLATES` 与全局双语文字字典 `TEXTS`。
+- `src/i18n.ts`：语言资源装载模块。注册可用语言文件、按系统语言环境选择界面语言、以 `en_US` 为规范结构编译文案模板，并对占位符未声明、取值种类不一致等情况快速失败。
+- `lang/en_US.json`、`lang/zh_CN.json`：作者界面文案语言资源。文件名即 locale 标识，采用 JSON 格式，平编时由 `esbuild` 打包进产物；新增语言只需追加同构文件并在 `i18n.ts` 注册。
+- `src/texts.ts`：终端图标、布局几何常量、小说语法模板表与文案字典的组装源头。集中声明 `LAYOUT_CONFIG`、`ICONS`、`NOVEL_TEMPLATES`、面向 LLM 的英文协议文案，并装载当前语言的作者界面文案组装为 `TEXTS`。
 - `src/theme.ts`：主题类型定义模块。导出 `Theme` 类型别名，作为无运行时依赖的叶层节点。
 - `src/view-rows.ts`：纯函数视图排版模块。负责题目选项菜单行、顶部 Tab 标签栏、分割线与底部帮助栏的格式化排版。
 - `src/view-summary.ts`：纯函数视图排版模块。负责答卷提交总览确认页的内容行与操作提示排版。
@@ -96,7 +98,9 @@
 
 ```mermaid
 graph TD
-    theme["src/theme.ts"] --> texts["src/texts.ts"]
+    lang["lang/*.json"] --> i18n["src/i18n.ts"]
+    i18n --> texts["src/texts.ts"]
+    theme["src/theme.ts"] --> texts
     texts --> format["src/format.ts"]
     texts --> schema["src/schema.ts"]
     format --> sanitize["src/sanitize.ts"]
@@ -141,8 +145,8 @@ graph TD
 
 #### 2.3.2 文案与常量单一源头
 
-- 集中声明原则：禁止在组件层或者排版层直接书写任何用户可见的字符串字面量、按键提示、图标符号或者几何数值。全部文案、图标（`ICONS`）以及几何配置（`LAYOUT_CONFIG`）必须定义在 `texts.ts` 模块中。
-- 受众边界划分：`TEXTS` 字典严格区分使用受众。面向大语言模型的文本（`tool` 描述、`schema` 描述、`markdown` 封套）统一使用英文编写；面向人类作者的界面文本（提示语、操作指南、选项标签占位符）统一使用中文编写，两者界限清晰。
+- 集中声明原则：禁止在组件层或者排版层直接书写任何用户可见的字符串字面量、按键提示、图标符号或者几何数值。作者可见文案一律定义在 `lang/*.json` 语言资源中，图标（`ICONS`）与几何配置（`LAYOUT_CONFIG`）定义在 `texts.ts` 模块中，业务逻辑层只做读取与组合。
+- 受众边界划分：`TEXTS` 字典严格区分使用受众。面向大语言模型的文本（`tool` 描述、`schema` 描述、`markdown` 封套）统一使用英文编写并固定声明在 `texts.ts`；面向人类作者的界面文本（提示语、操作指南、选项标签占位符）取自当前语言的资源文件，两者界限清晰。
 
 #### 2.3.3 参数校验与类型系统
 
@@ -162,3 +166,10 @@ graph TD
 - 固定格式封套：工具执行完成、取消或者错误时，输出内容必须严格遵循预定义的 Markdown 封套结构（`[Author Decision Finalized]`、`[Author Decision Cancelled]`、`[Author Consultation Error]`），前缀格式固定，提升模型前缀缓存命中概率。
 - 草稿指令提炼：当选中的选项包含 Markdown 正文草稿预览时，模型层需将其压缩提炼为单行 `[Draft directive: ...]` 指令，便于大语言模型在后续生成中直接读取与遵循。
 - 防止击穿处理：拼装封套时，针对来自不可信源的文本执行清洗与单行化处理，防止恶意输入击穿封套结构。
+
+#### 2.3.6 国际化与语言资源
+
+- 结构定义于语言文件：字符串直接作为文案，字符串数组作为文案列表，`{ "template": "…", "params": ["a"] }` 声明带插值的模板；`params` 声明形参时编译为定参函数，省略 `params` 时在装载期求值为常量文案。
+- 规范语言为 `en_US`：键集合、形参个数与取值种类均以它为凖，其余语言缺失的键回退 `en_US`；模板引用了未声明的占位符或两种语言结构不一致时，在装载期立即抛出异常。
+- 占位符引用共享符号：语言文件通过 `{icon.<ICONS 键>}` 引用终端图标，禁止在语言文件中重复声明图标字形。
+- 语言探测不写死：按 `LANGUAGE` → `LC_ALL` → `LC_MESSAGES` → `LANG` → `Intl` 系统语言的优先级探测，先精确匹配 locale 再匹配同族主语言；禁止在组件层自行读取环境变量或硬编码语言分支，禁止提供手动切换语言的入口。
