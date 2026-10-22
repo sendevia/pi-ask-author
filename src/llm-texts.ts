@@ -18,24 +18,23 @@ export const LLM_TEXTS = {
   tool: {
     /** 工具调用名（LLM 协议标识，注册为 `ask_author`；不出现在作者界面） */
     name: "ask_author",
-    /** 工具说明（LLM 端英文；业务能力概要与调用场景） */
+    /** 工具说明（LLM 端英文；一句话能力概要与适用场景） */
     description:
-      "Consult the author on novel creative decisions, plot branches, scene drafting, or story settings. Supports single and batched questions, including adaptive forms where later questions or options appear only after specific earlier answers.",
+      "Ask the author to choose between concrete narrative directions. Supports one question or a batch of related questions, with options, optional Markdown draft previews, author notes, and conditional follow-ups based on earlier answers.",
     /** `Available tools` 区块单行条目（LLM 端英文；动词引导，无句末标点，缺省则工具不进入该区块） */
-    promptSnippet: "Consult author on novel creative decisions, plot branches, scene drafting, or story settings",
+    promptSnippet:
+      "Ask the author to choose narrative directions with options, draft previews, and conditional follow-ups",
     /**
      * `Guidelines` 区块附加条目（LLM 端英文；分类标签前缀 + 行为要求）
      * 约定：宿主把条目扁平追加进 `Guidelines` 且不加工具名前缀，故每条首词必须显式点名 `ask_author`
      */
     promptGuidelines: [
-      "Invoke ask_author DIRECTLY without conversational preambles or greetings whenever author confirmation is needed for plot, characters, scenes, branches, or settings.",
-      "ask_author modes: Always provide a concise formTitle. Use flat mode (formTitle + question + options) for single decisions, or the questions array for batch consultations. Batch interrelated decisions into one ask_author call; never make consecutive single-question calls.",
-      "ask_author adaptive forms: When a later question or option depends on an earlier answer, give the earlier question a stable id and set showIf on the dependent item (questionId plus one of that question's option labels, or answered). Conditions may only reference earlier questions, and every referenced option label must exist.",
-      "ask_author payload minimization: Strictly omit optional fields (id, description, minSelect, maxSelect, allowEmpty, allowCustom, customPlaceholder) when using default behavior. Never output auto-generated IDs or default boolean flags.",
-      "ask_author option quality: Provide clear, descriptive labels summarizing the core action (never generic placeholders like 'Option A'). Include cause-and-effect plot deductions in description, and draft excerpts or dialogue in preview when helpful.",
-      "ask_author multi-select & notes: Set multiSelect: true only when choices are not mutually exclusive. The author can always submit free-form notes alongside choices (both per-question and per-option).",
-      "ask_author draft directives: Confirmed draft previews are automatically condensed into single-line directives in the ask_author result to guide subsequent story drafting.",
-      "ask_author envelopes: [Author Decision Cancelled] means do not proceed with the discarded decision; [Author Consultation Error] means fix the arguments and retry once, then continue without the confirmation if it fails again.",
+      "ask_author: Call it directly when the author must choose a plot branch, character action, scene direction, or setting; do not ask the same question in chat first.",
+      "ask_author: Use flat mode (formTitle + question + options) for one decision, or the questions array for related decisions. Batch related choices into one call instead of consecutive calls, and always give a concise formTitle.",
+      "ask_author: Label options with concrete actions and put consequences in description. Add preview only when a Markdown draft or storyboard helps the author judge.",
+      "ask_author: Omit optional fields that use defaults. Add a question id only when a later showIf references it, and point showIf at an earlier question id plus one of its option labels, or answered.",
+      "ask_author: The author may choose multiple options, add notes, and edit drafts. Confirmed drafts return as [Draft directive: ...] lines.",
+      "ask_author: [Author Decision Cancelled] means drop the decision. [Author Consultation Error] means fix the arguments and retry once, then continue without the confirmation.",
     ],
   },
 
@@ -43,64 +42,61 @@ export const LLM_TEXTS = {
   schema: {
     // ===== 选项字段（OptionSchema） =====
     /** 选项标签（必须填写；要求简明动作导向，禁止占位式命名） */
-    optionLabel: "Concise, descriptive label summarizing the action or choice",
+    optionLabel: "Concrete action or choice label",
     /** 选项情节推演（可选；作者端渲染为「情节设定推演」预览面板） */
-    optionDesc: "Plot consequences, rationale, or deduction (optional)",
+    optionDesc: "Consequences or rationale (optional)",
     /** 选项草稿预览（可选；作者端渲染为「正文草稿/分镜头试撰写」预览面板） */
-    optionPreview: "Draft prose excerpt or scene storyboard preview (optional, Markdown)",
+    optionPreview: "Markdown draft or storyboard excerpt (optional)",
     /** 选项批注占位符（可选；作者端作为选项补充说明编辑器的输入框占位文本） */
-    optionCustomPlaceholder: "Placeholder text for option note input (optional)",
+    optionCustomPlaceholder: "Placeholder for the option note (optional)",
     /** 选项显示条件（可选；条件不成立时该选项不展示） */
-    optionShowIf:
-      "Show this option only when the referenced earlier question matches (single condition or array; all conditions must hold)",
+    optionShowIf: "Show only when an earlier answer matches (condition or array; all must hold)",
 
     // ===== 题目字段（QuestionSchema） =====
-    /** 题目 ID（可选；供批量模式与返回封套稳定引用） */
-    questionId: "Question identifier (optional, omit unless needed)",
+    /** 题目 ID（可选；仅在后续 showIf 引用时需要） */
+    questionId: "Stable id for showIf references (optional)",
     /** 题目标题（必须填写；作者端呈现为 Tab 标签与题头） */
-    questionTitle: "Question title (e.g., 'Choose the next route')",
+    questionTitle: "Question text",
     /** 题目背景说明（可选；作者端呈现为题头下方的上下文行） */
-    questionDesc: "Context or background for this question (optional)",
+    questionDesc: "Context for the question (optional)",
     /** 多选开关（可选；默认 false，开启后作者端展示多选模式标签与方框勾选指示符） */
     questionMultiSelect: "Allow multiple selections (default false)",
     /** 最小勾选数（可选；默认 1，仅多选生效，作者端据此标注强制下限） */
-    questionMinSelect: "Minimum selections required (default 1)",
+    questionMinSelect: "Minimum selections (default 1)",
     /** 最大勾选数（可选；默认全部选项，仅多选生效，小于选项总数时作者端追加上限标注） */
-    questionMaxSelect: "Maximum selections allowed (default: all options)",
+    questionMaxSelect: "Maximum selections (default: all options)",
     /** 零勾选提交开关（可选；默认 false，仅多选生效，开启后作者端标注可不选） */
-    questionAllowEmpty: "Allow submitting with zero selections (default false)",
+    questionAllowEmpty: "Allow submitting with no selection (default false)",
     /** 候选选项列表（必须填写；1~{@link MAX_OPTIONS} 项；建议 2~10 项） */
     questionOptions: `Candidate options (1-${MAX_OPTIONS}, 2-10 recommended)`,
     /** 自由批注开关（可选；默认 true，开启后作者端可额外提交非选项文本） */
-    questionAllowCustom: "Allow author free-form custom notes (default true)",
+    questionAllowCustom: "Allow author notes (default true)",
     /** 作者批注占位符（可选；作者端作为题目补充说明编辑器的输入框占位文本） */
-    questionCustomPlaceholder: "Placeholder text for author note input (optional)",
+    questionCustomPlaceholder: "Placeholder for the author note (optional)",
     /** 题目显示条件（可选；条件不成立时该题不展示，也不计入答卷） */
-    questionShowIf:
-      "Show this question only when the referenced earlier question matches (single condition or array; all conditions must hold)",
+    questionShowIf: "Show only when an earlier answer matches (condition or array; all must hold)",
     /** 显示条件引用的题目 ID（必须为本次表单中更早出现的题目） */
-    conditionQuestionId: "Id of an earlier question in this form",
+    conditionQuestionId: "Id of an earlier question",
     /** 显示条件匹配的选项（引用题目的选项标签；作者选中该选项时条件成立） */
-    conditionOption: "Option label of that earlier question; the condition holds while that option is selected",
+    conditionOption: "Option label that activates the condition",
     /** 显示条件的作答存在性（缺省等价于 true；与 option 同时给出时忽略） */
-    conditionAnswered:
-      "Hold while that question has any answer (default true) or none (false); ignored when option is set",
+    conditionAnswered: "Match any answer (default true) or no answer (false); ignored with option",
 
     // ===== 表单层字段（AskAuthorParams 批量模式） =====
     /** 问卷标题（必须填写；作者端呈现为卡片标题与总览页标题） */
-    formTitle: "Concise title describing the overall consultation task",
+    formTitle: "Short title for the consultation",
     /** 问卷背景（可选；作者端呈现为问卷级上下文） */
-    formDesc: "Overall context or background for the consultation (optional)",
+    formDesc: "Overall context (optional)",
     /** 批量模式题目数组（可选；1~{@link MAX_QUESTIONS} 题；与平铺单题模式互斥） */
-    formQuestions: `Batched related questions (1-${MAX_QUESTIONS}); batch interrelated decisions into one call instead of consecutive single-question calls`,
+    formQuestions: `Related questions (1-${MAX_QUESTIONS}); batch related decisions into one call`,
 
     // ===== 单题平铺模式 =====
     /** 平铺模式的题目标题（可选；与批量模式的 `questionTitle` 同义） */
-    formSingleQuestion: "Question title for flat single-question mode",
+    formSingleQuestion: "Question for flat mode",
     /** 平铺单题模式字段描述的统一区分前缀（LLM 端英文，`schema.ts` 逐字段拼接） */
     flatPrefix: "(Flat single-question mode only) ",
     /** 平铺模式候选选项列表（可选；1~{@link MAX_OPTIONS} 项；建议 2~10 项） */
-    flatQuestionOptions: `Candidate options for flat single-question mode (1-${MAX_OPTIONS}, 2-10 recommended)`,
+    flatQuestionOptions: `Options for flat mode (1-${MAX_OPTIONS}, 2-10 recommended)`,
   },
 
   /**
@@ -113,12 +109,12 @@ export const LLM_TEXTS = {
     // ===== 封套骨架 =====
     /** 完成封套首行标识（固定英文令牌，恒为返回正文第一行） */
     envelopePrefix: "[Author Decision Finalized]",
-    /** 完成封套收尾指令（固定英文单行，驱动下游正文写作与大纲更新） */
+    /** 完成封套收尾指令（固定英文单行，驱动后续写作） */
     envelopeSuffix:
-      "Execute workflow and writing strictly according to the author decisions and draft directives above without conversational acknowledgments.",
+      "Proceed with the author decisions and draft directives above without conversational acknowledgment.",
     /** 取消封套（固定两行：标识行 + 禁止沿用被丢弃决策的英文处置指令） */
     envelopeCancelled:
-      "[Author Decision Cancelled]\nThe author cancelled the consultation. Do not proceed with the discarded decision; propose next steps or ask for clarification in chat.",
+      "[Author Decision Cancelled]\nThe author cancelled. Do not proceed with the discarded decision; propose next steps or ask for clarification.",
     /**
      * 构建错误封套（固定三行：标识行 + 原因行 + 指引行）
      * @param reason - 面向 LLM 的英文失败原因（取自 `errorReasons`）
@@ -129,25 +125,24 @@ export const LLM_TEXTS = {
     /** 错误封套原因行字典（英文单句，按失败路径枚举） */
     errorReasons: {
       /** 非交互式终端环境无法启动 TUI（对应作者端 `status.errorNonTui`） */
-      nonTui: "Interactive TUI is unavailable in the current execution mode.",
+      nonTui: "Interactive TUI is unavailable in the current mode.",
       /** 入参无有效题目或选项（对应作者端 `status.errorNoQuestions`） */
-      noQuestions: "No valid questions or options were provided in arguments.",
+      noQuestions: "No questions or options were provided.",
       /** 构建执行期异常的原因行（`details` 为宿主异常摘要，对应作者端 `status.errorExecutionFailed`） */
-      runtimeError: (details: string) => `Runtime error during consultation UI execution: ${details}`,
+      runtimeError: (details: string) => `Consultation UI failed: ${details}`,
       /** 自适应条件引用无效（对应作者端 `status.errorInvalidCondition`） */
-      invalidCondition: (details: string) => `Invalid adaptive condition in arguments: ${details}`,
+      invalidCondition: (details: string) => `Invalid showIf condition: ${details}`,
     },
     /** 错误封套纠正指引行字典（英文单句，与 `errorReasons` 一一对应） */
     errorGuidances: {
       /** `nonTui` 的纠正指引 */
-      nonTui: "Proceed using defaults or ask user via standard chat/message if crucial.",
+      nonTui: "Use defaults, or ask the user in chat if the decision is crucial.",
       /** `noQuestions` 的纠正指引 */
       noQuestions: "Provide at least one question with concrete options.",
       /** `runtimeError` 的纠正指引 */
-      runtimeError: "Check arguments format and retry with valid questions and options.",
+      runtimeError: "Check the arguments and retry with valid questions and options.",
       /** `invalidCondition` 的纠正指引 */
-      invalidCondition:
-        "Point showIf at an earlier question id plus one of its option labels, or use answered, then retry.",
+      invalidCondition: "Reference an earlier question id plus one of its option labels, or use answered.",
     },
     /** 自适应条件引用校验的英文诊断消息（拼入错误封套原因行） */
     adaptiveErrors: {
@@ -160,10 +155,9 @@ export const LLM_TEXTS = {
         `showIf option "${option}" does not exist in question "${questionId}"`,
     },
     /** 空答卷封套正文（作者未作答时的英文处置指令，位于首尾标识之间） */
-    envelopeEmpty:
-      "Author submitted the form without any answers. Proceed with your defaults, or ask a follow-up question in chat if the decision is crucial.",
+    envelopeEmpty: "The author submitted no answers. Use your defaults, or ask a follow-up if the decision is crucial.",
     /** 单题无任何作答（未勾选且无批注）时的英文占位正文 */
-    noSelection: "(No selection; author skipped this question)",
+    noSelection: "(No selection; the author skipped this question)",
 
     // ===== 行内令牌定界符（左右成对，供 `model.ts` 包装作者文本） =====
     /** 行内批注令牌左定界符（尾随 1 空格，与 `noteSuffix` 成对） */
