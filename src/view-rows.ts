@@ -10,7 +10,7 @@
  * 依赖方向：view-rows.ts → format.ts / model.ts / texts.ts / theme.ts；禁止反向导入 `component.ts`
  */
 
-import { visibleWidth, wrapTextWithAnsi } from "@earendil-works/pi-tui";
+import { truncateToWidth, visibleWidth, wrapTextWithAnsi } from "@earendil-works/pi-tui";
 import { divider, padToVisibleWidth, pushWrapped, safeLine } from "./format.js";
 import {
   hasQuestionNote,
@@ -126,10 +126,23 @@ export function formatMenuItemRow(
 }
 
 /**
+ * 解析题目的 Tab 标签文本
+ * @param model - 问卷模型（读取题目短标签）
+ * @param questionIndex - 题目顺序索引（0-based）
+ * @param displayIndex - 可见题目的展示序号（1-based）
+ * @returns 题目声明的短标签（超宽时截断至 `LAYOUT_CONFIG.tabLabelMaxWidth`）；未声明时回退题号文案
+ */
+function tabLabelText(model: AskAuthorFormModel, questionIndex: number, displayIndex: number): string {
+  const tabLabel = model.getQuestion(questionIndex)?.tabLabel;
+  return tabLabel ? truncateToWidth(tabLabel, LAYOUT_CONFIG.tabLabelMaxWidth) : TEXTS.tabs.questionTab(displayIndex);
+}
+
+/**
  * 渲染完整 Tab 导航栏区块（各题标签 + 提交页标签 + 末尾单横分隔线）
  *
  * 算法不变量：
  * - 只为当前可见题目产出标签（序条件隐藏的题目不出现在导航栏），标签序号为可见题目的展示序号
+ * - 题目标签文本优先取题目的 `tabLabel`（超过 `LAYOUT_CONFIG.tabLabelMaxWidth` 时截断），未声明时回退题号文案；
  * - 题目标签以 `ICONS.checked` / `ICONS.unchecked` 与 `success` / `muted` 配色表达完成度，激活题页恒为
  *   `selectedBg` + `accent` 的 `bold` 反白（激活提交页为 `selectedBg` + `success`）
  * - 提交页标签在全部作答完成时用 `success`，否则 `dim`；激活判定为 `currentTab === model.questionCount`
@@ -156,7 +169,7 @@ export function buildTabLines(
     const answered = model.isQuestionAnswered(questionIndex);
     const icon = answered ? ICONS.checked : ICONS.unchecked;
     const color = answered ? "success" : "muted";
-    const text = ` ${icon} ${TEXTS.tabs.questionTab(displayIndex + 1)} `;
+    const text = ` ${icon} ${tabLabelText(model, questionIndex, displayIndex + 1)} `;
     tabSegments.push(isActive ? theme.bg("selectedBg", theme.fg("accent", theme.bold(text))) : theme.fg(color, text));
   }
 

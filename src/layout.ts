@@ -32,6 +32,8 @@ export const LAYOUT_CONFIG = {
   leftColRatio: 0.42,
   /** 触发宽屏双栏的终端最小列宽 (cols) */
   splitViewMinWidth: 72,
+  /** Tab 栏自定义短标签的最大可见宽度 (cols)；超出部分由 `truncateToWidth` 截断 */
+  tabLabelMaxWidth: 14,
 
   // ===== 滚动与翻页 =====
   /** 预览区单次翻页滚动行数 (lines) */

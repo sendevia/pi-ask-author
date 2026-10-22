@@ -30,7 +30,7 @@ export const LLM_TEXTS = {
      */
     promptGuidelines: [
       "ask_author: Call it directly when the author must choose a plot branch, character action, scene direction, or setting; do not ask the same question in chat first.",
-      "ask_author: Use flat mode (formTitle + question + options) for one decision, or the questions array for related decisions. Batch related choices into one call instead of consecutive calls, and always give a concise formTitle.",
+      "ask_author: Use flat mode (formTitle + question + options) for one decision, or the questions array for related decisions. Batch related choices into one call instead of consecutive calls, always give a concise formTitle, and add tabLabel when a long question title needs a short tab name.",
       "ask_author: Label options with concrete actions and put consequences in description. Add preview only when a Markdown draft or storyboard helps the author judge.",
       "ask_author: Omit optional fields that use defaults. Add a question id only when a later showIf references it, and point showIf at an earlier question id plus one of its option labels, or answered.",
       "ask_author: The author may choose multiple options, add notes, and edit drafts. Confirmed drafts return as [Draft directive: ...] lines.",
@@ -55,8 +55,10 @@ export const LLM_TEXTS = {
     // ===== 题目字段（QuestionSchema） =====
     /** 题目 ID（可选；仅在后续 showIf 引用时需要） */
     questionId: "Stable id for showIf references (optional)",
-    /** 题目标题（必须填写；作者端呈现为 Tab 标签与题头） */
+    /** 题目标题（必须填写；作者端呈现为题头与总览页条目） */
     questionTitle: "Question text",
+    /** Tab 栏短标签（可选；缺省时 Tab 栏显示 `Q<序号>`，显式给出可让作者在一屏内区分多题） */
+    questionTabLabel: "Short label for the tab bar (default: Q<index>)",
     /** 题目背景说明（可选；作者端呈现为题头下方的上下文行） */
     questionDesc: "Context for the question (optional)",
     /** 多选开关（可选；默认 false，开启后作者端展示多选模式标签与方框勾选指示符） */

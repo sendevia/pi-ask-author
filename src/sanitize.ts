@@ -197,6 +197,7 @@ function sanitizeQuestionEntry(value: unknown, index: number): QuestionInput {
     title:
       cleanOptional(pickString(o, ["title", "question", "prompt", "query", "heading"])) ??
       TEXTS.fallbacks.autoQuestionTitle(index + 1),
+    tabLabel: cleanOptional(pickString(o, ["tabLabel", "tabTitle", "tab"])),
     description: cleanOptional(pickString(o, ["description", "desc", "rationale"])),
     multiSelect: parseBooleanValue(o.multiSelect, false),
     minSelect: sanitizeMinSelect(o.minSelect),

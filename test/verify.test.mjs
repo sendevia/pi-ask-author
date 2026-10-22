@@ -458,4 +458,52 @@ import { visibleWidth } from "@earendil-works/pi-tui";
   assert.equal(result.details.cancelled, true, "取消结果应原样返回");
 }
 
+// 9. 题目 Tab 短标签验证
+{
+  const longLabel = "非常长的自定义标签用于验证截断行为";
+  const sanitized = sanitizeAskAuthorArgs({
+    formTitle: "标签验证",
+    questions: [
+      { title: "第一章采用哪种叙事视角？", tabLabel: "视点", options: [{ label: "甲" }, { label: "乙" }] },
+      { title: "第二章的节奏", options: [{ label: "丙" }, { label: "丁" }] },
+      { title: "第三章的氛围", tabLabel: longLabel, options: [{ label: "戊" }, { label: "己" }] },
+    ],
+  });
+  const model = new AskAuthorFormModel(sanitized);
+  assert.equal(model.getQuestion(0)?.tabLabel, "视点", "Tab 短标签应经清洗进入模型");
+  assert.equal(model.getQuestion(1)?.tabLabel, undefined, "未声明短标签的题目应保持 undefined");
+
+  let registeredToolDef;
+  const { askAuthorExtension } = await import("../dist/index.js");
+  askAuthorExtension({
+    registerTool(def) {
+      registeredToolDef = def;
+    },
+    registerCommand() {},
+  });
+  const { initTheme } = await import("@earendil-works/pi-coding-agent");
+  initTheme();
+
+  const dummyTheme = { fg: (_color, text) => text, bg: (_color, text) => text, bold: (text) => text };
+  const fakeTui = { terminal: { rows: 40 }, requestRender() {} };
+  const ctx = {
+    mode: "tui",
+    ui: {
+      custom: async (factory) => {
+        const component = factory(fakeTui, dummyTheme, {}, () => {});
+        const text = component.render(120).join("\n");
+        assert.ok(text.includes("视点"), "Tab 栏应显示题目自定义短标签");
+        assert.ok(!text.includes(TEXTS.tabs.questionTab(1)), "声明短标签后不应再显示默认题号");
+        assert.ok(text.includes(TEXTS.tabs.questionTab(2)), "未声明短标签的题目应保留默认题号");
+        assert.ok(!text.includes(longLabel), "超宽短标签应被截断");
+        assert.ok(text.includes("第一章采用哪种叙事视角？"), "题头仍应显示完整标题");
+        component.dispose();
+        return { formTitle: "标签验证", questions: [], answers: [], cancelled: true };
+      },
+    },
+  };
+
+  await registeredToolDef.execute("call-tab-label", sanitized, undefined, undefined, ctx);
+}
+
 console.log("全部功能自检顺利通过。");

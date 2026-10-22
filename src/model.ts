@@ -46,6 +46,8 @@ export interface NormalizedQuestion {
   id: string;
   /** 题目标题 */
   title: string;
+  /** Tab 栏短标签（可选；缺省时 Tab 栏显示题号） */
+  tabLabel?: string;
   /** 题目背景描述（可选） */
   description?: string;
   /** 是否多选（默认 false，即单选） */
@@ -257,6 +259,7 @@ function buildQuestion(q: QuestionInput, index: number): PendingQuestion {
     question: {
       id: cleanOptional(q.id) ?? TEXTS.fallbacks.autoQuestionId(index + 1),
       title: cleanOptional(q.title) ?? TEXTS.fallbacks.autoQuestionTitle(index + 1),
+      tabLabel: cleanOptional(q.tabLabel),
       description: cleanOptional(q.description),
       multiSelect: Boolean(q.multiSelect),
       ...clampSelectBounds(q.minSelect, q.maxSelect, q.options.length),

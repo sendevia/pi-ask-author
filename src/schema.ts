@@ -53,6 +53,8 @@ export const QuestionSchema = Type.Object({
   id: Type.Optional(Type.String({ description: TEXTS.schema.questionId })),
   /** 题目标题（必须填写；缺失时两级兜底为自动占位标题） */
   title: Type.String({ description: TEXTS.schema.questionTitle }),
+  /** Tab 栏短标签（可选；缺省时 Tab 栏显示题号） */
+  tabLabel: Type.Optional(Type.String({ description: TEXTS.schema.questionTabLabel })),
   /** 题目背景与语境（可选） */
   description: Type.Optional(Type.String({ description: TEXTS.schema.questionDesc })),
   /** 是否允许多选（可选；默认 false，即单选） */
