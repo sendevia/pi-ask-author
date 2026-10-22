@@ -159,6 +159,26 @@ export function divider(width: number, char: string = LAYOUT_CONFIG.dividerThin)
 }
 
 /**
+ * 中文输入法全角状态下送出的标点没有对应的 `Key` 常量，这里映射为等价的半角字符
+ * 全角 ASCII 区（U+FF01~U+FF5E）与半角字符的码位差固定为 0xFEE0
+ */
+const IME_KEY_ALIASES: Record<string, string> = { "\u3000": " ", "【": "[", "】": "]" };
+
+/**
+ * 把输入法全角字符收敛为半角按键字符，使快捷键在中文输入法开启时仍然命中
+ * @param data - 终端按键序列
+ * @returns 单个全角字符被替换后的序列；长度非 1 的序列（转义序列、粘贴文本）原样返回
+ */
+export function normalizeImeKey(data: string): string {
+  if (data.length !== 1) return data;
+  const alias = IME_KEY_ALIASES[data];
+  if (alias !== undefined) return alias;
+  const code = data.charCodeAt(0);
+  if (code >= 0xff01 && code <= 0xff5e) return String.fromCharCode(code - 0xfee0);
+  return data;
+}
+
+/**
  * 折叠不可信文本的换行与连续空白为单空格：LLM 生成的描述/批注含换行会破坏返回封套的行结构
  * @param text - 原始文本
  * @returns 单行文本（所有 `\s+` 折叠为一个空格并去除首尾空白；纯空白输入返回空串）

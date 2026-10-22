@@ -164,6 +164,6 @@ export { sanitizeAskAuthorArgs } from "./sanitize.js";
 export { TEXTS } from "./texts.js";
 export { ICONS, LAYOUT_CONFIG, MAX_OPTIONS, MAX_QUESTIONS } from "./layout.js";
 export { ACTIVE_LOCALE, detectLocale } from "./i18n.js";
-export { cleanOptional, cleanText, padToVisibleWidth, safeLine } from "./format.js";
+export { cleanOptional, cleanText, normalizeImeKey, padToVisibleWidth, safeLine } from "./format.js";
 export type { AskAuthorToolResult, ResultContext } from "./tool-result.js";
 export type { CallCardData, CallRenderState } from "./tool-card.js";

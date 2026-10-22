@@ -8,6 +8,7 @@ import {
   TEXTS,
   cleanOptional,
   detectLocale,
+  normalizeImeKey,
   padToVisibleWidth,
   safeLine,
   sanitizeAskAuthorArgs,
@@ -31,6 +32,30 @@ import { visibleWidth } from "@earendil-works/pi-tui";
   const longLine = "这是一段非常非常长的测试文本用于验证截断行为";
   const truncated = safeLine(longLine, 10);
   assert.ok(visibleWidth(truncated) <= 10, "safeLine 截断后可见宽度不超过指定上限");
+
+  // 输入法全角字符收敛：`【`/`】` 与全角 ASCII 区映射为半角，转义序列与粘贴文本原样保留
+  const imeCases = [
+    ["【", "["],
+    ["】", "]"],
+    ["［", "["],
+    ["］", "]"],
+    ["１", "1"],
+    ["ｈ", "h"],
+    ["Ｎ", "N"],
+    ["\u3000", " "],
+    ["\[", "["],
+    ["h", "h"],
+    ["\x1b[5~", "\x1b[5~"],
+    ["\x1b[A", "\x1b[A"],
+    ["【】", "【】"],
+  ];
+  for (const [input, expected] of imeCases) {
+    assert.equal(
+      normalizeImeKey(input),
+      expected,
+      `normalizeImeKey 应把 ${JSON.stringify(input)} 收敛为 ${JSON.stringify(expected)}`,
+    );
+  }
 }
 
 // 2. 表单模型与参数清洗验证
@@ -303,13 +328,9 @@ import { visibleWidth } from "@earendil-works/pi-tui";
   assert.equal(MAX_OPTIONS, 30, "单题选项上限应由公共常量导出");
   assert.equal(MAX_QUESTIONS, 20, "问卷题目上限应由公共常量导出");
 
-  const errorResult = await registeredToolDef.execute(
-    "call-error",
-    { formTitle: "错误路径" },
-    undefined,
-    undefined,
-    { mode: "json" },
-  );
+  const errorResult = await registeredToolDef.execute("call-error", { formTitle: "错误路径" }, undefined, undefined, {
+    mode: "json",
+  });
   assert.equal(errorResult.isError, true, "非交互模式应作为工具错误结果返回");
   assert.ok(errorResult.content[0].text.startsWith("[Author Consultation Error]"), "错误封套前缀应保持稳定");
 
@@ -357,7 +378,10 @@ import { visibleWidth } from "@earendil-works/pi-tui";
     argsComplete: true,
   });
   assert.ok(
-    complete.render(200).join("\n").includes(TEXTS.card.callQuestionAndOptionCount(MAX_QUESTIONS, MAX_QUESTIONS * 2)),
+    complete
+      .render(200)
+      .join("\n")
+      .includes(TEXTS.card.callQuestionAndOptionCount(MAX_QUESTIONS, MAX_QUESTIONS * 2)),
     "参数补全后的摘要应命中同一清洗路径",
   );
 
@@ -396,10 +420,7 @@ import { visibleWidth } from "@earendil-works/pi-tui";
       const lines = component.render(width);
       assert.ok(lines.length > 0, `${stage} 在 ${width} 列应输出内容`);
       for (const line of lines) {
-        assert.ok(
-          visibleWidth(line) <= width,
-          `${stage} 在 ${width} 列存在超宽行：${JSON.stringify(line)}`,
-        );
+        assert.ok(visibleWidth(line) <= width, `${stage} 在 ${width} 列存在超宽行：${JSON.stringify(line)}`);
       }
     }
   };
@@ -410,10 +431,7 @@ import { visibleWidth } from "@earendil-works/pi-tui";
       custom: async (factory) => {
         const component = factory(fakeTui, dummyTheme, {}, () => {});
         assertWidths(component, "题目页");
-        assert.ok(
-          component.render(120).join("\n").includes("选择接下来的方向"),
-          "题目页应显示题干",
-        );
+        assert.ok(component.render(120).join("\n").includes("选择接下来的方向"), "题目页应显示题干");
 
         component.handleInput("\t");
         assertWidths(component, "总览页");
@@ -422,10 +440,7 @@ import { visibleWidth } from "@earendil-works/pi-tui";
         component.handleInput("h");
         component.handleInput("n");
         assertWidths(component, "编辑器页");
-        assert.ok(
-          component.render(120).join("\n").includes("选择接下来的方向"),
-          "编辑器页应显示题目上下文",
-        );
+        assert.ok(component.render(120).join("\n").includes("选择接下来的方向"), "编辑器页应显示题目上下文");
 
         component.dispose();
         return { formTitle: "渲染冒烟", questions: [], answers: [], cancelled: true };
@@ -435,11 +450,7 @@ import { visibleWidth } from "@earendil-works/pi-tui";
 
   const result = await registeredToolDef.execute(
     "call-render",
-    {
-      formTitle: "渲染冒烟",
-      question: "选择接下来的方向",
-      options: [{ label: "甲" }, { label: "乙" }],
-    },
+    { formTitle: "渲染冒烟", question: "选择接下来的方向", options: [{ label: "甲" }, { label: "乙" }] },
     undefined,
     undefined,
     ctx,

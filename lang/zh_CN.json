@@ -30,10 +30,7 @@
     "customNotePanelTitle": "题目补充说明",
     "confirmPanelTitle": "操作说明",
     "customNotePanelCurrent": "当前填写内容：",
-    "previewScrollInfo": {
-      "template": "(行 {start}-{end}/{total}，PgUp/PgDn 滚动)",
-      "params": ["start", "end", "total"]
-    },
+    "previewScrollInfo": { "template": "(行 {start}-{end}/{total}，用 [ ] 滚动)", "params": ["start", "end", "total"] },
     "previewNoDraft": "(无内容预览)",
     "customNotePanelTips": [
       "• 随时按「N」或选择此项按「Enter」填写/修改本题补充说明",
@@ -104,8 +101,8 @@
     "editQuestionNote": "N 题目补充说明",
     "jumpQuestion": "1~9 跳转题目",
     "moveCursor": "↑↓/jk 移动",
-    "scrollDraft": "PgUp/PgDn 滚动草稿",
-    "scrollSummary": "↑↓/PgUp/PgDn 滚动",
+    "scrollDraft": "[ ] 滚动草稿",
+    "scrollSummary": "↑↓/[ ] 滚动",
     "selectOptionSingle": "空格/Enter 选定",
     "switchQuestion": "Tab/←→/hl 切换题目",
     "toggleAll": "a 全选/清空",

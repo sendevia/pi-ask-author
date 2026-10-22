@@ -7,6 +7,7 @@
  * - 宽屏双栏 / 窄屏单栏自适应由 `QuestionView` 判定；预览与总览视口行数随终端高度收缩
  * - 多级缓存失效：整屏（尺寸键 + 状态突变清空）、Tab 栏 / 菜单项（`revision` 键）、视图层内容缓存（由 `touchDerived` 统一清空）
  * - 逐题独立光标记忆与 `1~9` 跳转题目；内置编辑器透传 Focusable 以定位 IME 候选框
+ * - 无输入框页面把输入法全角字符收敛为半角，`【`/`】` 与全角字母数字一样命中快捷键
  * - 自适应导航：Tab 循环 / 数字跳转 / 确认推进一律沿可见题目序列行走，被条件隐藏的题目自动跳过
  * - Esc / Ctrl+C 双通道取消（输入模式二次确认）；定时器、Abort 监听与缓存池全量回收
  *
@@ -26,7 +27,7 @@ import {
   type Focusable,
   type TUI,
 } from "@earendil-works/pi-tui";
-import { clamp, clampWindowOffset, safeLine } from "./format.js";
+import { clamp, clampWindowOffset, normalizeImeKey, safeLine } from "./format.js";
 import { LAYOUT_CONFIG } from "./layout.js";
 import {
   AskAuthorFormModel,
@@ -515,7 +516,10 @@ export class AskAuthorComponent implements Component, Focusable {
       return;
     }
 
-    // 3. 数字键 1~9 快捷跳转题目（按可见题目的展示序号映射；10 题以上经 Tab/hl 循环或总览页跳转）
+    // 3. 输入法全角字符收敛为半角：候选词框覆盖时按键常以全角送出（`【`/`】`/`０`/`ｈ`），输入模式已在上方返回，此处只处理无输入框页面
+    data = normalizeImeKey(data);
+
+    // 4. 数字键 1~9 快捷跳转题目（按可见题目的展示序号映射；10 题以上经 Tab/hl 循环或总览页跳转）
     if (/^[1-9]$/.test(data)) {
       const targetIndex = parseInt(data, 10) - 1;
       const target = this.tabOrder[targetIndex];
@@ -525,7 +529,7 @@ export class AskAuthorComponent implements Component, Focusable {
       }
     }
 
-    // 4. Tab / 方向键左右 / h / l Vim 风格切换题目
+    // 5. Tab / 方向键左右 / h / l Vim 风格切换题目
     if (matchesKey(data, Key.tab) || matchesKey(data, Key.right) || matchesKey(data, "l")) {
       this.switchRelativeTab(1);
       return;
@@ -535,7 +539,7 @@ export class AskAuthorComponent implements Component, Focusable {
       return;
     }
 
-    // 5. 分视图输入路由
+    // 6. 分视图输入路由
     if (this.isSubmitTab) {
       this.handleSummaryInput(data);
     } else {
@@ -620,20 +624,16 @@ export class AskAuthorComponent implements Component, Focusable {
   }
 
   /**
-   * 预览区垂直滚动键（PgUp / PgDn / 方括号 / Alt+上下）
+   * 预览区垂直滚动键（方括号 / Alt+上下）
    * 滚动位移归一化归属输入路径：以渲染帧写入的 {@link previewViewportObservation} 为界经 `clampWindowOffset` 收敛（缺观察元数据时按单栏预览高度退化）
    * @param data - 按键序列
    * @returns 是否已消费该按键
    */
   private handlePreviewScroll(data: string): boolean {
     let step = 0;
-    if (matchesKey(data, Key.pageUp) || matchesKey(data, Key.leftbracket) || matchesKey(data, Key.alt("up"))) {
+    if (matchesKey(data, Key.leftbracket) || matchesKey(data, Key.alt("up"))) {
       step = -LAYOUT_CONFIG.previewScrollStep;
-    } else if (
-      matchesKey(data, Key.pageDown) ||
-      matchesKey(data, Key.rightbracket) ||
-      matchesKey(data, Key.alt("down"))
-    ) {
+    } else if (matchesKey(data, Key.rightbracket) || matchesKey(data, Key.alt("down"))) {
       step = LAYOUT_CONFIG.previewScrollStep;
     }
     if (step === 0) return false;
@@ -763,10 +763,8 @@ export class AskAuthorComponent implements Component, Focusable {
    * @returns 行位移（正下负上，0 为无动作）
    */
   private summaryScrollStep(data: string): number {
-    if (matchesKey(data, Key.pageUp) || matchesKey(data, Key.leftbracket) || matchesKey(data, Key.alt("up")))
-      return -LAYOUT_CONFIG.summaryScrollStep;
-    if (matchesKey(data, Key.pageDown) || matchesKey(data, Key.rightbracket) || matchesKey(data, Key.alt("down")))
-      return LAYOUT_CONFIG.summaryScrollStep;
+    if (matchesKey(data, Key.leftbracket) || matchesKey(data, Key.alt("up"))) return -LAYOUT_CONFIG.summaryScrollStep;
+    if (matchesKey(data, Key.rightbracket) || matchesKey(data, Key.alt("down"))) return LAYOUT_CONFIG.summaryScrollStep;
     if (matchesKey(data, Key.up) || matchesKey(data, "k")) return -1;
     if (matchesKey(data, Key.down) || matchesKey(data, "j")) return 1;
     return 0;

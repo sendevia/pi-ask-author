@@ -31,7 +31,7 @@
     "confirmPanelTitle": "Controls",
     "customNotePanelCurrent": "Current content:",
     "previewScrollInfo": {
-      "template": "(lines {start}-{end}/{total}, PgUp/PgDn to scroll)",
+      "template": "(lines {start}-{end}/{total}, use [ ] to scroll)",
       "params": ["start", "end", "total"]
     },
     "previewNoDraft": "(nothing to preview)",
@@ -116,8 +116,8 @@
     "editQuestionNote": "N question note",
     "jumpQuestion": "1-9 jump to question",
     "moveCursor": "↑↓/jk move",
-    "scrollDraft": "PgUp/PgDn scroll draft",
-    "scrollSummary": "↑↓/PgUp/PgDn scroll",
+    "scrollDraft": "[ ] scroll draft",
+    "scrollSummary": "↑↓/[ ] scroll",
     "selectOptionSingle": "Space/Enter select",
     "switchQuestion": "Tab/←→/hl switch question",
     "toggleAll": "a select/clear all",
