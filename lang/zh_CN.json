@@ -12,6 +12,7 @@
   },
   "view": {
     "modeSingle": "[单选]",
+    "conditionalBadge": "[条件显示]",
     "modeMultiAtLeast": { "template": "[多选 至少{min}项{maxPart}]", "params": ["min", "maxPart"] },
     "modeMultiOptional": { "template": "[多选 可不选{maxPart}]", "params": ["maxPart"] },
     "modeMultiUnconstrained": { "template": "[多选{maxPart}]", "params": ["maxPart"] },
@@ -87,6 +88,10 @@
     "editorDiscardConfirm": "再次按 Esc/Ctrl+C 放弃修改（未保存内容将丢失），继续输入可撤销",
     "errorNonTui": "当前为非交互式终端环境，无法启动交互界面，请在交互式 TUI 会话中重试",
     "errorNoQuestions": "未提供有效的问题或选项，请提供至少一个带选项的问题",
+    "errorInvalidCondition": {
+      "template": "自适应条件无效：{details}（请让 showIf 指向更早的题目，并引用该题已有选项的标签，或改用 answered）",
+      "params": ["details"]
+    },
     "errorExecutionFailed": { "template": "组件执行异常：{reason}（可修正参数后重试）", "params": ["reason"] }
   },
   "help": {

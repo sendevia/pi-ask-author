@@ -79,8 +79,8 @@
 - `package.json`：定义扩展元数据、依赖项与入口声明，通过 `pi.extensions` 字段导出 `./src/index.ts`。
 - `tsconfig.json`：配置 TypeScript 严格模式编译选项。
 - `src/index.ts`：插件主入口模块。注册 `ask_author` 工具与 `/ask-author` 辅助命令；编排工具生命周期流程，挂载执行函数 `execute`、调用卡片渲染 `renderCall` 与结果卡片渲染 `renderResult`；统一通过结果工厂产出完成、取消、错误与异常四种结构化结果。
-- `src/schema.ts`：工具参数的单一源头。基于 TypeBox 声明参数结构与校验规则，导出 `AskAuthorParams` 以及派生类型 `RawParams`、`QuestionInput`、`QuestionOption`。
-- `src/model.ts`：问卷状态机与数据模型。定义 `AskAuthorFormModel`，负责题目数据归一化、作答状态流转、`revision` 版本推进、答卷结果编译以及 Markdown 封套文本生成。
+- `src/schema.ts`：工具参数的单一源头。基于 TypeBox 声明参数结构、`showIf` 显示条件与校验规则，导出 `AskAuthorParams` 以及派生类型 `RawParams`、`QuestionInput`、`QuestionOption`。
+- `src/model.ts`：问卷状态机与数据模型。定义 `AskAuthorFormModel`，负责题目数据归一化、自适应显示条件解析与显隐快照、作答状态流转、`revision` 版本推进、答卷结果编译以及 Markdown 封套文本生成。
 - `src/component.ts`：交互式 TUI 核心组件。实现 `AskAuthorComponent`，支撑宽屏双栏与窄屏单栏自适应布局、键盘事件路由、内置 `Editor` 文本编辑器集成、视口滚动计算以及多层级渲染缓存管理。
 - `src/sanitize.ts`：入参防御性清洗模块。提供 `sanitizeAskAuthorArgs` 函数，执行不可信入参边界的类型收敛、别名映射、数据纠错与白名单字段过滤。
 - `src/format.ts`：纯函数排版与算法工具模块。提供视口边界限制、可见列宽测量、ANSI 文本折行、文本清洗以及草稿摘要压缩等无状态工具函数。
@@ -173,3 +173,10 @@ graph TD
 - 规范语言为 `en_US`：键集合、形参个数与取值种类均以它为凖，其余语言缺失的键回退 `en_US`；模板引用了未声明的占位符或两种语言结构不一致时，在装载期立即抛出异常。
 - 占位符引用共享符号：语言文件通过 `{icon.<ICONS 键>}` 引用终端图标，禁止在语言文件中重复声明图标字形。
 - 语言探测不写死：按 `LANGUAGE` → `LC_ALL` → `LC_MESSAGES` → `LANG` → `Intl` 系统语言的优先级探测，先精确匹配 locale 再匹配同族主语言；禁止在组件层自行读取环境变量或硬编码语言分支，禁止提供手动切换语言的入口。
+
+#### 2.3.7 自适应显示条件
+
+- 条件只向前引用：`showIf` 只能引用同一份问卷中更早出现的题目 ID，选项以标签定位且必须在被引用题目中存在；引用未知题目、后置题目或不存在的选项时，在模型构建期抛出 `AdaptiveConditionError`。
+- 显隐计算集中：可见题目、可见选项与可见选中项统一由 `AskAuthorFormModel` 的显隐快照按 `revision` 派生；组件层与排版层只允许经 `getVisibleQuestionIndices` / `isQuestionVisible` / `isOptionVisible` / `getSelectedIndex` / `getSelectedIndices` 读取，禁止各自重算条件。
+- 隐藏即不参与：隐藏题目不进入导航、总览与答卷；隐藏选项的既有勾选与批注不计入作答判定与答卷。
+- 渲染路径不构模型：`renderCall` 等流式渲染路径禁止构建表单模型（条件可能引用尚未到达的题目），只做入参清洗与计数。

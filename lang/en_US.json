@@ -12,6 +12,7 @@
   },
   "view": {
     "modeSingle": "[Single]",
+    "conditionalBadge": "[Conditional]",
     "modeMultiAtLeast": { "template": "[Multi, at least {min}{maxPart}]", "params": ["min", "maxPart"] },
     "modeMultiOptional": { "template": "[Multi, optional{maxPart}]", "params": ["maxPart"] },
     "modeMultiUnconstrained": { "template": "[Multi{maxPart}]", "params": ["maxPart"] },
@@ -96,6 +97,10 @@
     "editorDiscardConfirm": "Press Esc/Ctrl+C again to discard changes (unsaved content will be lost); keep typing to cancel",
     "errorNonTui": "The current environment is not an interactive terminal, so the interface cannot start; retry in an interactive TUI session",
     "errorNoQuestions": "No valid question or option was provided; provide at least one question with options",
+    "errorInvalidCondition": {
+      "template": "Invalid adaptive condition: {details} (make showIf reference an earlier question and an existing option label, or use answered)",
+      "params": ["details"]
+    },
     "errorExecutionFailed": {
       "template": "Component failure: {reason} (fix the arguments and retry)",
       "params": ["reason"]

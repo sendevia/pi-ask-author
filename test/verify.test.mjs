@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import {
   ACTIVE_LOCALE,
+  AdaptiveConditionError,
   AskAuthorFormModel,
   TEXTS,
   cleanOptional,
@@ -109,11 +110,7 @@ import { visibleWidth } from "@earendil-works/pi-tui";
   initTheme();
   askAuthorExtension(mockPi);
 
-  const dummyTheme = {
-    fg: (_color, text) => text,
-    bg: (_color, text) => text,
-    bold: (text) => text,
-  };
+  const dummyTheme = { fg: (_color, text) => text, bg: (_color, text) => text, bold: (text) => text };
 
   const collapsedComponent = registeredToolDef.renderResult(
     {
@@ -165,6 +162,122 @@ import { visibleWidth } from "@earendil-works/pi-tui";
   assert.ok(TEXTS.tabs.questionTab(2).includes("2"), "语言模板应按形参插值");
   assert.throws(() => TEXTS.tabs.questionTab(), /形参数量不匹配/, "语言模板形参不足时应立即抛出");
   assert.ok(TEXTS.view.customNotePanelTips.length > 0, "文案列表应完整装载");
+}
+
+// 6. 自适应显示条件验证
+{
+  const buildBranching = () =>
+    new AskAuthorFormModel(
+      sanitizeAskAuthorArgs({
+        formTitle: "自适应问卷",
+        questions: [
+          { id: "route", title: "选择路线", options: [{ label: "昆仑" }, { label: "京城" }] },
+          {
+            id: "kunlun",
+            title: "昆仑细节",
+            showIf: { questionId: "route", option: "昆仑" },
+            options: [{ label: "雪山" }, { label: "地下河" }],
+          },
+          {
+            id: "capital",
+            title: "京城细节",
+            showIf: [{ questionId: "route", option: "京城" }],
+            options: [{ label: "朝堂" }, { label: "巷战", showIf: { questionId: "route", option: "昆仑" } }],
+          },
+        ],
+      }),
+    );
+
+  const model = buildBranching();
+  assert.deepEqual(model.getVisibleQuestionIndices(), [0], "初次进入只显示无条件的题目");
+  assert.equal(model.isQuestionVisible(1), false);
+
+  model.toggleOption(0, 1);
+  assert.deepEqual(model.getVisibleQuestionIndices(), [0, 2], "选择京城后展开对应题目");
+  assert.equal(model.isOptionVisible(2, 0), true);
+  assert.equal(model.isOptionVisible(2, 1), false, "选项条件不成立时应隐藏");
+
+  const branchOptions = model.getMenuItems(2).filter((item) => item.type === "option");
+  assert.deepEqual(
+    branchOptions.map((item) => item.label),
+    ["朝堂"],
+    "菜单不应包含条件不成立的选项",
+  );
+
+  model.toggleOption(2, 0);
+  const capitalAnswers = model.compileAnswers();
+  assert.equal(capitalAnswers.length, 2);
+  assert.equal(capitalAnswers[1].questionTitle, "京城细节");
+
+  model.toggleOption(0, 0);
+  assert.deepEqual(model.getVisibleQuestionIndices(), [0, 1], "改选昆仑后京城分支收起");
+  assert.equal(model.compileAnswers().length, 1, "隐藏题目的作答不计入答卷");
+
+  // 选项隐藏后其既有选中态不再计入作答与答卷
+  const gate = new AskAuthorFormModel(
+    sanitizeAskAuthorArgs({
+      formTitle: "选项联动",
+      questions: [
+        { id: "gate", title: "门", options: [{ label: "开" }, { label: "关" }] },
+        {
+          id: "inner",
+          title: "内",
+          options: [{ label: "甲" }, { label: "乙", showIf: { questionId: "gate", option: "关" } }],
+        },
+      ],
+    }),
+  );
+  gate.toggleOption(0, 1);
+  gate.toggleOption(1, 1);
+  assert.equal(gate.getSelectedIndex(1), 1);
+  gate.toggleOption(0, 0);
+  assert.equal(gate.getSelectedIndex(1), undefined, "选项隐藏后选中态不参与判定");
+  assert.equal(gate.compileAnswers().length, 1, "隐藏选项所属题目没有可见作答时不产出条目");
+
+  // answered 条件
+  const answered = new AskAuthorFormModel(
+    sanitizeAskAuthorArgs({
+      formTitle: "作答存在性",
+      questions: [
+        { id: "q1", title: "一", options: [{ label: "甲" }] },
+        { id: "q2", title: "二", showIf: { questionId: "q1", answered: true }, options: [{ label: "乙" }] },
+        { id: "q3", title: "三", showIf: { questionId: "q1", answered: false }, options: [{ label: "丙" }] },
+      ],
+    }),
+  );
+  assert.deepEqual(answered.getVisibleQuestionIndices(), [0, 2]);
+  answered.setQuestionNote(0, "补充");
+  assert.deepEqual(answered.getVisibleQuestionIndices(), [0, 1]);
+
+  // 非法引用在构建期即抛出，由入口层转换为结构化错误结果
+  assert.throws(
+    () =>
+      new AskAuthorFormModel(
+        sanitizeAskAuthorArgs({
+          formTitle: "非法选项",
+          questions: [
+            { id: "a", title: "A", options: [{ label: "x" }] },
+            { id: "b", title: "B", showIf: { questionId: "a", option: "不存在" }, options: [{ label: "y" }] },
+          ],
+        }),
+      ),
+    (err) => err instanceof AdaptiveConditionError,
+    "引用不存在的选项应抛出 AdaptiveConditionError",
+  );
+  assert.throws(
+    () =>
+      new AskAuthorFormModel(
+        sanitizeAskAuthorArgs({
+          formTitle: "后置引用",
+          questions: [
+            { id: "a", title: "A", showIf: { questionId: "b" }, options: [{ label: "x" }] },
+            { id: "b", title: "B", options: [{ label: "y" }] },
+          ],
+        }),
+      ),
+    (err) => err instanceof AdaptiveConditionError,
+    "引用后置题目应抛出 AdaptiveConditionError",
+  );
 }
 
 console.log("全部功能自检顺利通过。");

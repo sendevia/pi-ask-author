@@ -164,7 +164,7 @@ const LLM_TEXTS = {
     name: "ask_author",
     /** 工具说明（LLM 端英文；业务能力概要与调用场景） */
     description:
-      "Consult the author on novel creative decisions, plot branches, scene drafting, or story settings. Supports single and batched questions with plot deductions and draft previews.",
+      "Consult the author on novel creative decisions, plot branches, scene drafting, or story settings. Supports single and batched questions, including adaptive forms where later questions or options appear only after specific earlier answers.",
     /** `Available tools` 区块单行条目（LLM 端英文；动词引导，无句末标点，缺省则工具不进入该区块） */
     promptSnippet: "Consult author on novel creative decisions, plot branches, scene drafting, or story settings",
     /**
@@ -174,6 +174,7 @@ const LLM_TEXTS = {
     promptGuidelines: [
       "Invoke ask_author DIRECTLY without conversational preambles or greetings whenever author confirmation is needed for plot, characters, scenes, branches, or settings.",
       "ask_author modes: Always provide a concise formTitle. Use flat mode (formTitle + question + options) for single decisions, or the questions array for batch consultations. Batch interrelated decisions into one ask_author call; never make consecutive single-question calls.",
+      "ask_author adaptive forms: When a later question or option depends on an earlier answer, give the earlier question a stable id and set showIf on the dependent item (questionId plus one of that question's option labels, or answered). Conditions may only reference earlier questions, and every referenced option label must exist.",
       "ask_author payload minimization: Strictly omit optional fields (id, description, minSelect, maxSelect, allowEmpty, allowCustom, customPlaceholder) when using default behavior. Never output auto-generated IDs or default boolean flags.",
       "ask_author option quality: Provide clear, descriptive labels summarizing the core action (never generic placeholders like 'Option A'). Include cause-and-effect plot deductions in description, and draft excerpts or dialogue in preview when helpful.",
       "ask_author multi-select & notes: Set multiSelect: true only when choices are not mutually exclusive. The author can always submit free-form notes alongside choices (both per-question and per-option).",
@@ -193,6 +194,9 @@ const LLM_TEXTS = {
     optionPreview: "Draft prose excerpt or scene storyboard preview (optional, Markdown)",
     /** 选项批注占位符（可选；作者端作为选项补充说明编辑器的输入框占位文本） */
     optionCustomPlaceholder: "Placeholder text for option note input (optional)",
+    /** 选项显示条件（可选；条件不成立时该选项不展示） */
+    optionShowIf:
+      "Show this option only when the referenced earlier question matches (single condition or array; all conditions must hold)",
 
     // ===== 题目字段（QuestionSchema） =====
     /** 题目 ID（可选；供批量模式与返回封套稳定引用） */
@@ -215,6 +219,16 @@ const LLM_TEXTS = {
     questionAllowCustom: "Allow author free-form custom notes (default true)",
     /** 作者批注占位符（可选；作者端作为题目补充说明编辑器的输入框占位文本） */
     questionCustomPlaceholder: "Placeholder text for author note input (optional)",
+    /** 题目显示条件（可选；条件不成立时该题不展示，也不计入答卷） */
+    questionShowIf:
+      "Show this question only when the referenced earlier question matches (single condition or array; all conditions must hold)",
+    /** 显示条件引用的题目 ID（必须为本次表单中更早出现的题目） */
+    conditionQuestionId: "Id of an earlier question in this form",
+    /** 显示条件匹配的选项（引用题目的选项标签；作者选中该选项时条件成立） */
+    conditionOption: "Option label of that earlier question; the condition holds while that option is selected",
+    /** 显示条件的作答存在性（缺省等价于 true；与 option 同时给出时忽略） */
+    conditionAnswered:
+      "Hold while that question has any answer (default true) or none (false); ignored when option is set",
 
     // ===== 表单层字段（AskAuthorSchema 批量模式） =====
     /** 问卷标题（必须填写；作者端呈现为卡片标题与总览页标题） */
@@ -264,6 +278,8 @@ const LLM_TEXTS = {
       noQuestions: "No valid questions or options were provided in arguments.",
       /** 构建执行期异常的原因行（`details` 为宿主异常摘要，对应作者端 `status.errorExecutionFailed`） */
       runtimeError: (details: string) => `Runtime error during consultation UI execution: ${details}`,
+      /** 自适应条件引用无效（对应作者端 `status.errorInvalidCondition`） */
+      invalidCondition: (details: string) => `Invalid adaptive condition in arguments: ${details}`,
     },
     /** 错误封套纠正指引行字典（英文单句，与 `errorReasons` 一一对应） */
     errorGuidances: {
@@ -273,6 +289,19 @@ const LLM_TEXTS = {
       noQuestions: "Provide at least one question with concrete options.",
       /** `runtimeError` 的纠正指引 */
       runtimeError: "Check arguments format and retry with valid questions and options.",
+      /** `invalidCondition` 的纠正指引 */
+      invalidCondition:
+        "Point showIf at an earlier question id plus one of its option labels, or use answered, then retry.",
+    },
+    /** 自适应条件引用校验的英文诊断消息（拼入错误封套原因行） */
+    adaptiveErrors: {
+      /** 条件引用的题目 ID 不存在 */
+      unknownQuestion: (questionId: string) => `showIf references unknown question id "${questionId}"`,
+      /** 条件引用的题目不在该条件所属题目之前 */
+      forwardQuestion: (questionId: string) => `showIf may only reference an earlier question, got "${questionId}"`,
+      /** 条件引用的选项标签在目标题目中不存在 */
+      unknownOption: (questionId: string, option: string) =>
+        `showIf option "${option}" does not exist in question "${questionId}"`,
     },
     /** 空答卷封套正文（作者未作答时的英文处置指令，位于首尾标识之间） */
     envelopeEmpty:

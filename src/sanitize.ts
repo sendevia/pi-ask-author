@@ -12,7 +12,7 @@
 
 import { cleanOptional, parseJson } from "./format.js";
 import { MAX_OPTIONS, MAX_QUESTIONS, TEXTS } from "./texts.js";
-import type { QuestionInput, QuestionOption, RawParams } from "./schema.js";
+import type { QuestionInput, QuestionOption, RawParams, ShowIfInput, VisibilityConditionInput } from "./schema.js";
 
 /** 字段别名提取源对象形状（不可信边界，统一经 `pickString` 收敛） */
 type LooseRecord = Record<string, unknown>;
@@ -108,6 +108,37 @@ function sanitizeMaxSelect(val: unknown): number | undefined {
 }
 
 /**
+ * 规整单个显示条件（兼容 `questionId` / `question` 与 `option` / `optionLabel` / `label` 别名）
+ * @param value - 不可信条件输入
+ * @returns 仅含 `questionId` / `option` / `answered` 白名单字段的条件；缺失 `questionId` 或非对象时返回 undefined
+ */
+function coerceCondition(value: unknown): VisibilityConditionInput | undefined {
+  if (!isPlainRecord(value)) return undefined;
+  const questionId = cleanOptional(pickString(value, ["questionId", "question"]));
+  if (!questionId) return undefined;
+  const condition: VisibilityConditionInput = { questionId };
+  const option = cleanOptional(pickString(value, ["option", "optionLabel", "label"]));
+  if (option) condition.option = option;
+  if (value.answered !== undefined) condition.answered = parseBooleanValue(value.answered, true);
+  return condition;
+}
+
+/**
+ * 规整 `showIf` 字段（兼容 JSON 串包裹 / 单条件对象 / 条件数组，丢弃无法识别的条目）
+ * @param value - `showIf` 原始值
+ * @returns 单个条件、条件数组（非空）或 undefined（无条件可识别）
+ */
+function coerceShowIf(value: unknown): ShowIfInput | undefined {
+  const parsed = parseJson(value);
+  const entries = Array.isArray(parsed) ? parsed : [parsed];
+  const conditions = entries
+    .map(coerceCondition)
+    .filter((condition): condition is VisibilityConditionInput => condition !== undefined);
+  if (Array.isArray(parsed)) return conditions.length > 0 ? conditions : undefined;
+  return conditions[0];
+}
+
+/**
  * 规整选项列表为 `QuestionOption[]`（兼容纯字符串项、宽松对象项与字段别名，上限 `MAX_OPTIONS`）
  * @param value - 原始输入
  * @returns 规整后的选项数组；JSON 串解析失败或非数组输入返回空数组（调用方再经 `withDefaultOption` 兜底）
@@ -121,7 +152,7 @@ function coerceOptions(value: unknown): QuestionOption[] {
     if (!isPlainRecord(item)) return { label: TEXTS.fallbacks.autoOptionLabel(idx + 1) };
     const o = item;
 
-    // 声明式别名表：标签 / 推演 / 草稿 / 批注占位各按优先级命中
+    // 声明式别名表：标签 / 推演 / 草稿 / 批注占位 / 显示条件各按优先级命中
     return {
       label:
         cleanOptional(pickString(o, ["label", "name", "title", "text", "value", "choice"])) ??
@@ -129,6 +160,7 @@ function coerceOptions(value: unknown): QuestionOption[] {
       description: cleanOptional(pickString(o, ["description", "desc", "reason", "rationale", "deduction"])),
       preview: cleanOptional(pickString(o, ["preview", "draft", "scene", "content"])),
       customPlaceholder: cleanOptional(pickString(o, ["customPlaceholder", "placeholder"])),
+      showIf: coerceShowIf(o.showIf ?? o.when ?? o.visibleIf),
     };
   });
 }
@@ -172,6 +204,7 @@ function sanitizeQuestionEntry(value: unknown, index: number): QuestionInput {
     options: withDefaultOption(coerceOptions(o.options ?? o.choices ?? o.items)),
     allowCustom: parseBooleanValue(o.allowCustom, true),
     customPlaceholder: pickString(o, ["customPlaceholder", "placeholder"]),
+    showIf: coerceShowIf(o.showIf ?? o.when ?? o.visibleIf),
   };
 }
 

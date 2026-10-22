@@ -15,14 +15,14 @@ import { TEXTS } from "./texts.js";
 import type { Theme } from "./theme.js";
 
 /**
- * 构建总览页底部按键提示片段（依据题目数量动态增删跳转题目提示）
- * @param model - 问卷表单数据模型（提供题目总数）
- * @returns 包含切换题目 / 滚动 / 提交 / 取消四项，题目数 > 1 时额外插入跳转题目提示
+ * 构建总览页底部按键提示片段（依据可见题目数量动态增删跳转题目提示）
+ * @param model - 问卷表单数据模型（提供可见题目数与作答完成度）
+ * @returns 包含切换题目 / 滚动 / 提交 / 取消四项，可见题目数 > 1 时额外插入跳转题目提示
  */
 export function buildSummaryHelpParts(model: AskAuthorFormModel): string[] {
   return [
     TEXTS.help.switchQuestion,
-    ...(model.questionCount > 1 ? [TEXTS.help.jumpQuestion] : []),
+    ...(model.getVisibleQuestionIndices().length > 1 ? [TEXTS.help.jumpQuestion] : []),
     TEXTS.help.scrollSummary,
     TEXTS.help.confirmSubmit,
     TEXTS.help.cancel,
@@ -31,11 +31,12 @@ export function buildSummaryHelpParts(model: AskAuthorFormModel): string[] {
 
 /**
  * 构建未切片的完整答卷总览内容行
- * 逐题输出四段（状态徽章 + 题目标题 / 已选项 / 选项专属批注 / 题目整体批注），题间以空行分隔；显式跳过与仅批注提交的题目同样入列，不静默消失
+ * 逐题输出四段（状态徽章 + 题目标题 / 已选项 / 选项专属批注 / 题目整体批注），题间以空行分隔；隐条件隐藏的题目不入列，
+ * 显式跳过与仅批注提交的题目同样入列；题目序号为可见题目的展示序号
  * @param model - 问卷表单数据模型（作答状态的唯一权威来源）
  * @param theme - 主题样式提供者
  * @param contentWidth - 总览主体可用列宽（列），超宽行沿各段悬挂前缀折行
- * @returns 完整未切片的内容行数组；无效题目跳过，无有效题目时返回空数组
+ * @returns 完整未切片的内容行数组；无效题目跳过，无可见题目时返回空数组
  */
 export function buildSubmitSummaryContentLines(
   model: AskAuthorFormModel,
@@ -44,7 +45,7 @@ export function buildSubmitSummaryContentLines(
 ): string[] {
   const summaryContentLines: string[] = [];
 
-  for (let i = 0; i < model.questionCount; i++) {
+  for (const [displayIndex, i] of model.getVisibleQuestionIndices().entries()) {
     const q = model.getQuestion(i);
     if (!q) continue;
     const answered = model.isQuestionAnswered(i);
@@ -54,24 +55,25 @@ export function buildSubmitSummaryContentLines(
       : theme.fg("warning", TEXTS.summary.statusPending);
     pushWrapped(
       summaryContentLines,
-      `${statusBadge} ${theme.bold(TEXTS.summary.questionPrefix(i + 1, q.title))}`,
+      `${statusBadge} ${theme.bold(TEXTS.summary.questionPrefix(displayIndex + 1, q.title))}`,
       contentWidth,
       " ",
     );
 
     const selectedLabels: string[] = [];
     if (q.multiSelect) {
-      // 升序展示与 compileAnswers 保持一致（排序不变量由模型 getSelectedIndices 集中保证）
+      // 升序展示与 compileAnswers 保持一致（排序不变量由模型 getSelectedIndices 集中保证，已剔除隐藏选项）
       for (const idx of model.getSelectedIndices(i)) {
         const opt = q.options[idx];
         if (!opt) continue;
         const note = st.optionNotes.get(idx);
         selectedLabels.push(note ? `${opt.label} ${TEXTS.summary.optionNoteBadge}` : opt.label);
       }
-    } else if (st.selectedIndex !== undefined) {
-      const opt = q.options[st.selectedIndex];
-      if (opt) {
-        const note = st.optionNotes.get(st.selectedIndex);
+    } else {
+      const selectedIndex = model.getSelectedIndex(i);
+      const opt = selectedIndex === undefined ? undefined : q.options[selectedIndex];
+      if (opt && selectedIndex !== undefined) {
+        const note = st.optionNotes.get(selectedIndex);
         selectedLabels.push(note ? `${opt.label} ${TEXTS.summary.optionNoteBadge}` : opt.label);
       }
     }
@@ -81,10 +83,10 @@ export function buildSubmitSummaryContentLines(
       : theme.fg("dim", TEXTS.fallbacks.unselectedOption);
     pushWrapped(summaryContentLines, `${theme.fg("muted", TEXTS.summary.selectedLabel)} ${value}`, contentWidth, "  ");
 
-    // 显示各选项的专属批注
+    // 显示各选项的专属批注（仅当前可见选项）
     for (const [optIdx, note] of st.optionNotes.entries()) {
       const opt = q.options[optIdx];
-      if (opt && note?.trim()) {
+      if (opt && note?.trim() && model.isOptionVisible(i, optIdx)) {
         pushWrapped(
           summaryContentLines,
           `${theme.fg("muted", TEXTS.summary.optionNotePrefix(opt.label))} ${theme.fg("accent", note)}`,

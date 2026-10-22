@@ -13,6 +13,25 @@
 import { Type, type Static } from "typebox";
 import { MAX_OPTIONS, MAX_QUESTIONS, TEXTS } from "./texts.js";
 
+/** 显示条件参数 Schema：引用更早题目的作答状态，决定本题或本选项是否出现 */
+const ShowIfConditionSchema = Type.Object({
+  /** 被引用的题目 ID（必须为本次表单中更早出现的题目） */
+  questionId: Type.String({ description: TEXTS.schema.conditionQuestionId }),
+  /** 匹配的选项标签（可选；给出时条件等价于「该选项被选中」） */
+  option: Type.Optional(Type.String({ description: TEXTS.schema.conditionOption })),
+  /** 作答存在性（可选；缺省等价于 true，给出 `option` 时忽略） */
+  answered: Type.Optional(Type.Boolean({ description: TEXTS.schema.conditionAnswered })),
+});
+
+/**
+ * 构建 `showIf` 字段：允许单个条件对象或条件数组，数组语义为「全部成立」
+ * @param description - 字段描述（取自 `TEXTS.schema`）
+ * @returns 可选的条件字段 Schema
+ */
+function showIfField(description: string) {
+  return Type.Optional(Type.Union([ShowIfConditionSchema, Type.Array(ShowIfConditionSchema)], { description }));
+}
+
 /** 单个候选选项的参数 Schema */
 const OptionSchema = Type.Object({
   /** 选项简短标题/行动标签（必须填写；缺失时经 `sanitize.ts` → `model.ts` 两级兜底为自动占位标签） */
@@ -23,6 +42,8 @@ const OptionSchema = Type.Object({
   preview: Type.Optional(Type.String({ description: TEXTS.schema.optionPreview })),
   /** 该选项专属补充说明的占位引导文案（可选） */
   customPlaceholder: Type.Optional(Type.String({ description: TEXTS.schema.optionCustomPlaceholder })),
+  /** 该选项的显示条件（可选；不成立时不展示，选中态同样不计入答卷） */
+  showIf: showIfField(TEXTS.schema.optionShowIf),
 });
 
 /** 单个问题的参数 Schema（批量问卷与平铺模式共用） */
@@ -47,6 +68,8 @@ const QuestionSchema = Type.Object({
   allowCustom: Type.Optional(Type.Boolean({ description: TEXTS.schema.questionAllowCustom })),
   /** 题目整体补充说明的占位引导词（可选） */
   customPlaceholder: Type.Optional(Type.String({ description: TEXTS.schema.questionCustomPlaceholder })),
+  /** 该题目的显示条件（可选；不成立时不展示，也不计入答卷） */
+  showIf: showIfField(TEXTS.schema.questionShowIf),
 });
 
 /** `ask_author` 工具完整参数 Schema（必须填写 `formTitle`；批量问卷传递 `questions`，单题平铺传递顶层 `question` + `options`） */
@@ -106,3 +129,9 @@ export type QuestionOption = Static<typeof OptionSchema>;
 
 /** 单个问题的运行时类型（由 `QuestionSchema` 经 `Static<typeof>` 派生，批量与平铺共用） */
 export type QuestionInput = Static<typeof QuestionSchema>;
+
+/** 单个显示条件的运行时类型（由 `ShowIfConditionSchema` 经 `Static<typeof>` 派生） */
+export type VisibilityConditionInput = Static<typeof ShowIfConditionSchema>;
+
+/** `showIf` 字段的运行时类型：单个条件或条件数组 */
+export type ShowIfInput = VisibilityConditionInput | VisibilityConditionInput[];

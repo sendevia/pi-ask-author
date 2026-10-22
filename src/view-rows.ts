@@ -128,6 +128,7 @@ export function formatMenuItemRow(
  * 渲染完整 Tab 导航栏区块（各题标签 + 提交页标签 + 末尾单横分隔线）
  *
  * 算法不变量：
+ * - 只为当前可见题目产出标签（序条件隐藏的题目不出现在导航栏），标签序号为可见题目的展示序号
  * - 题目标签以 `ICONS.checked` / `ICONS.unchecked` 与 `success` / `muted` 配色表达完成度，激活题页恒为
  *   `selectedBg` + `accent` 的 `bold` 反白（激活提交页为 `selectedBg` + `success`）
  * - 提交页标签在全部作答完成时用 `success`，否则 `dim`；激活判定为 `currentTab === model.questionCount`
@@ -135,8 +136,8 @@ export function formatMenuItemRow(
  *   `dim` 配色的单横分隔线（`LAYOUT_CONFIG.dividerThin`）
  *
  * @param theme - 主题样式提供者
- * @param model - 问卷表单数据模型（提供题目数、作答完成度）
- * @param currentTab - 激活页索引（`0 ~ questionCount - 1` 为题页，`questionCount` 为总览页）
+ * @param model - 问卷表单数据模型（提供可见题目、作答完成度）
+ * @param currentTab - 激活页索引（题目顺序索引；`questionCount` 为总览页）
  * @param renderWidth - 终端可视宽度限制
  * @returns Tab 导航栏终端行数组（至少含末尾分隔线一行；超宽时标签折为多行）
  */
@@ -149,12 +150,12 @@ export function buildTabLines(
   const isSubmitTab = currentTab === model.questionCount;
   const tabLines: string[] = [];
   const tabSegments: string[] = [];
-  for (let i = 0; i < model.questionCount; i++) {
-    const isActive = i === currentTab;
-    const answered = model.isQuestionAnswered(i);
+  for (const [displayIndex, questionIndex] of model.getVisibleQuestionIndices().entries()) {
+    const isActive = questionIndex === currentTab;
+    const answered = model.isQuestionAnswered(questionIndex);
     const icon = answered ? ICONS.checked : ICONS.unchecked;
     const color = answered ? "success" : "muted";
-    const text = ` ${icon} ${TEXTS.tabs.questionTab(i + 1)} `;
+    const text = ` ${icon} ${TEXTS.tabs.questionTab(displayIndex + 1)} `;
     tabSegments.push(isActive ? theme.bg("selectedBg", theme.fg("accent", theme.bold(text))) : theme.fg(color, text));
   }
 

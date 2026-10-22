@@ -7,14 +7,38 @@
  * - 两层清洗：`sanitize.ts` 边界归一化 + 本层对文本字段幂等兜底（绕过 sanitize 直接构造模型时同样安全）
  * - 封套防止击穿：插值文本经由 `sanitizeEnvelopeText` 归一化，定界符不可被作者文本击穿
  * - 封套语言单一：自动生成的占位题目/标签在封套编译期替换为英文占位（`Question N` / `Option N`），作者界面保留中文占位
- * - 答卷完整性：显式跳过与仅批注提交均产出条目，多选题目恒产出条目，问题不在结果中静默消失
+ * - 答卷完整性：显示中的题目即使显式跳过或仅批注提交也产出条目，多选题目恒产出条目，不存在静默消失的作答
+ * - 自适应显隐：题目与选项可声明 `showIf` 条件且仅允许引用更早题目；显隐快照按 `revision` 缓存，隐藏项的选择不计入作答与答卷
  *
  * 依赖方向：model.ts → format.ts / schema.ts / texts.ts（纯函数工具、Schema 单一类型源与文案字典，无回边）；不引用 `Theme` 与 TUI 组件，渲染细节全部上移组件层
  */
 
 import { cleanOptional, cleanText, clamp, compressDraftPreview, toSingleLine } from "./format.js";
 import { TEXTS } from "./texts.js";
-import type { QuestionInput, QuestionOption, RawParams } from "./schema.js";
+import type { QuestionInput, QuestionOption, RawParams, ShowIfInput } from "./schema.js";
+
+/**
+ * 显示条件的归一化形态：引用的题目索引与选项索引均已解析
+ * - `option`：指定题目中某个选项当前处于选中状态
+ * - `answered`：指定题目存在（或不存在）任何作答痕迹
+ */
+export type VisibilityCondition =
+  | { readonly kind: "option"; readonly questionIndex: number; readonly optionIndex: number }
+  | { readonly kind: "answered"; readonly questionIndex: number; readonly answered: boolean };
+
+/** 归一化后的候选选项（在 Schema 选项字段之外附带显示条件） */
+export interface NormalizedOption {
+  /** 选项标签 */
+  label: string;
+  /** 情节推演 / 设定阐述（可选） */
+  description?: string;
+  /** 正文草稿或分镜头预览（可选） */
+  preview?: string;
+  /** 选项补充说明占位词（可选） */
+  customPlaceholder?: string;
+  /** 该选项的显示条件（空数组表示恒显示） */
+  showIf: VisibilityCondition[];
+}
 
 /** 归一化后的问题对象（字段已兜底，区间已收敛） */
 export interface NormalizedQuestion {
@@ -35,11 +59,25 @@ export interface NormalizedQuestion {
   /** 是否允许 0 勾选提交（默认 false；单选与多选均生效） */
   allowEmpty: boolean;
   /** 归一化后的候选选项列表（至少一项） */
-  options: QuestionOption[];
+  options: NormalizedOption[];
   /** 是否允许自由补充说明（默认 true） */
   allowCustom: boolean;
   /** 补充说明输入框占位提示词 */
   customPlaceholder: string;
+  /** 该题目的显示条件（空数组表示恒显示） */
+  showIf: VisibilityCondition[];
+}
+
+/** 自适应条件非法（引用未知题目、后置题目或不存在的选项）：携带面向 LLM 的英文诊断消息，由入口层映射为结构化错误结果 */
+export class AdaptiveConditionError extends Error {
+  /**
+   * 构造自适应条件异常
+   * @param message - 英文诊断消息（取自 `TEXTS.markdown.adaptiveErrors`）
+   */
+  constructor(message: string) {
+    super(message);
+    this.name = "AdaptiveConditionError";
+  }
 }
 
 /** 单题作答状态（内部数据结构，选项索引 0-based） */
@@ -148,12 +186,6 @@ function hasAnyNote(st: QuestionAnswerState): boolean {
   return hasQuestionNote(st) || hasAnyOptionNote(st);
 }
 
-/**
- * 只读兜底空作答状态（供 `isQuestionAnswered` 读取尚未懒加载的题目）
- * 约定式只读：本对象的 `selectedIndices` / `optionNotes` 永不写入，可写状态经 `getState` 懒加载
- */
-const EMPTY_STATE: QuestionAnswerState = { selectedIndices: new Set<number>(), optionNotes: new Map<number, string>() };
-
 /** 多选区间收敛结构模型 */
 interface SelectBounds {
   /** 收敛后的最少勾选数下限 */
@@ -178,30 +210,147 @@ function clampSelectBounds(minRaw: number | undefined, maxRaw: number | undefine
   return { minSelect, minSelectExplicit, maxSelect };
 }
 
+/** 待解析的显示条件（题目 ID 与选项标签尚未映射到索引） */
+interface RawCondition {
+  /** 被引用的题目 ID */
+  readonly questionId: string;
+  /** 被引用题目中的选项标签（可选） */
+  readonly option?: string;
+  /** 作答存在性（仅无 `option` 时生效） */
+  readonly answered?: boolean;
+}
+
+/** `buildQuestion` 的中间产物：归一化题目与待解析的显示条件 */
+interface PendingQuestion {
+  /** 归一化题目（`showIf` 暂为空） */
+  readonly question: NormalizedQuestion;
+  /** 题目级待解析条件 */
+  readonly questionConditions: RawCondition[];
+  /** 选项级待解析条件（按选项索引对齐） */
+  readonly optionConditions: RawCondition[][];
+}
+
+/**
+ * 把 Schema 层的 `showIf`（单条件或条件数组）展开为待解析条件列表
+ * @param input - 原始显示条件输入
+ * @returns 待解析条件列表；未声明时为空数组
+ */
+function toRawConditions(input: ShowIfInput | undefined): RawCondition[] {
+  if (!input) return [];
+  const list = Array.isArray(input) ? input : [input];
+  return list.map((condition) => ({
+    questionId: condition.questionId,
+    option: condition.option,
+    answered: condition.answered,
+  }));
+}
+
 /**
  * 规整单个题目为标准数据结构
  * 全程对文本字段应用幂等 `cleanOptional` 兜底，使绕过 sanitize 钩子直接构造模型时同样安全
  * @param q - 原始题目输入（可能未经 sanitize 层清洗）
  * @param index - 题目顺序索引（0-based），仅用于派生缺省 id 与标题
- * @returns id/title/label 为空时回退 `TEXTS.fallbacks`；`minSelect` / `maxSelect` 收敛至 `[0, options.length]` 且保证 `minSelect <= maxSelect`
+ * @returns id/title/label 为空时回退 `TEXTS.fallbacks`；`minSelect` / `maxSelect` 收敛至 `[0, options.length]` 且保证 `minSelect <= maxSelect`；`showIf` 留待 {@link resolveConditions} 解析
  */
-function buildQuestion(q: QuestionInput, index: number): NormalizedQuestion {
+function buildQuestion(q: QuestionInput, index: number): PendingQuestion {
   return {
-    id: cleanOptional(q.id) ?? TEXTS.fallbacks.autoQuestionId(index + 1),
-    title: cleanOptional(q.title) ?? TEXTS.fallbacks.autoQuestionTitle(index + 1),
-    description: cleanOptional(q.description),
-    multiSelect: Boolean(q.multiSelect),
-    ...clampSelectBounds(q.minSelect, q.maxSelect, q.options.length),
-    options: q.options.map((o) => ({
-      label: cleanOptional(o.label) ?? TEXTS.fallbacks.unnamedOptionLabel,
-      description: cleanOptional(o.description),
-      preview: cleanOptional(o.preview),
-      customPlaceholder: cleanOptional(o.customPlaceholder),
-    })),
-    allowEmpty: Boolean(q.allowEmpty),
-    allowCustom: q.allowCustom !== false,
-    customPlaceholder: cleanOptional(q.customPlaceholder) ?? TEXTS.fallbacks.defaultCustomPlaceholder,
+    question: {
+      id: cleanOptional(q.id) ?? TEXTS.fallbacks.autoQuestionId(index + 1),
+      title: cleanOptional(q.title) ?? TEXTS.fallbacks.autoQuestionTitle(index + 1),
+      description: cleanOptional(q.description),
+      multiSelect: Boolean(q.multiSelect),
+      ...clampSelectBounds(q.minSelect, q.maxSelect, q.options.length),
+      options: q.options.map((o) => ({
+        label: cleanOptional(o.label) ?? TEXTS.fallbacks.unnamedOptionLabel,
+        description: cleanOptional(o.description),
+        preview: cleanOptional(o.preview),
+        customPlaceholder: cleanOptional(o.customPlaceholder),
+        showIf: [],
+      })),
+      allowEmpty: Boolean(q.allowEmpty),
+      allowCustom: q.allowCustom !== false,
+      customPlaceholder: cleanOptional(q.customPlaceholder) ?? TEXTS.fallbacks.defaultCustomPlaceholder,
+      showIf: [],
+    },
+    questionConditions: toRawConditions(q.showIf),
+    optionConditions: q.options.map((o) => toRawConditions(o.showIf)),
   };
+}
+
+/**
+ * 把待解析条件映射为题目索引与选项索引
+ * @param raw - 待解析条件列表
+ * @param ownerIndex - 条件所属题目的索引（条件只允许引用更早题目）
+ * @param indexById - 题目 ID → 题目索引
+ * @param questions - 归一化后的全部题目（用于按标签定位选项）
+ * @returns 解析后的条件列表
+ * @throws AdaptiveConditionError 引用未知题目、后置题目或不存在的选项时抛出
+ */
+function resolveConditions(
+  raw: readonly RawCondition[],
+  ownerIndex: number,
+  indexById: ReadonlyMap<string, number>,
+  questions: readonly NormalizedQuestion[],
+): VisibilityCondition[] {
+  return raw.map((condition): VisibilityCondition => {
+    const questionId = cleanOptional(condition.questionId) ?? "";
+    const questionIndex = indexById.get(questionId);
+    if (questionIndex === undefined) {
+      throw new AdaptiveConditionError(TEXTS.markdown.adaptiveErrors.unknownQuestion(questionId));
+    }
+    if (questionIndex >= ownerIndex) {
+      throw new AdaptiveConditionError(TEXTS.markdown.adaptiveErrors.forwardQuestion(questionId));
+    }
+    const optionLabel = cleanOptional(condition.option);
+    if (optionLabel === undefined) {
+      return { kind: "answered", questionIndex, answered: condition.answered !== false };
+    }
+    const optionIndex = questions[questionIndex]?.options.findIndex((option) => option.label === optionLabel) ?? -1;
+    if (optionIndex < 0) {
+      throw new AdaptiveConditionError(TEXTS.markdown.adaptiveErrors.unknownOption(questionId, optionLabel));
+    }
+    return { kind: "option", questionIndex, optionIndex };
+  });
+}
+
+/**
+ * 构建并解析全部题目的显示条件
+ * @param rawQuestions - 原始题目输入
+ * @returns 题目 ID 唯一、条件已解析的题目列表
+ * @throws AdaptiveConditionError 任一条件引用非法时抛出
+ */
+function buildQuestions(rawQuestions: readonly QuestionInput[]): NormalizedQuestion[] {
+  const pending = rawQuestions.map((raw, index) => buildQuestion(raw, index));
+  const questions = dedupeQuestionIds(pending.map((entry) => entry.question));
+  const indexById = new Map(questions.map((question, index) => [question.id, index]));
+  return questions.map((question, index) => {
+    const conditions = pending[index];
+    return {
+      ...question,
+      showIf: resolveConditions(conditions?.questionConditions ?? [], index, indexById, questions),
+      options: question.options.map((option, optionIndex) => ({
+        ...option,
+        showIf: resolveConditions(conditions?.optionConditions[optionIndex] ?? [], index, indexById, questions),
+      })),
+    };
+  });
+}
+
+/**
+ * 把归一化选项投影为答卷条目选项（剥离显示条件等内部字段）
+ * @param option - 归一化选项
+ * @param customText - 该选项专属批注（可选）
+ * @returns 仅含 Schema 选项字段的答卷选项
+ */
+function toAnswerOption(option: NormalizedOption, customText?: string): QuestionOption & { customText?: string } {
+  const answer: QuestionOption & { customText?: string } = {
+    label: option.label,
+    description: option.description,
+    preview: option.preview,
+    customPlaceholder: option.customPlaceholder,
+  };
+  if (customText) answer.customText = customText;
+  return answer;
 }
 
 /**
@@ -271,7 +420,7 @@ function envelopeOptionLabel(label: string, optionIndex1: number | undefined): s
 
 /**
  * 问卷数据模型：题目归一化、作答状态流转与答卷编译；全部状态突变经本类 mutation 方法完成并自动推进 `revision`，组件层只读
- * 只读访问面：`revision` / `questionCount` / `getQuestion` / `getState` / `getSelectedIndices`（0-based 升序，排序不变量唯一实现）/ `getMenuItems` / `isQuestionAnswered` / `areAllQuestionsAnswered` / `compileAnswers` / `formatAnswers`
+ * 只读访问面：`revision` / `questionCount` / `getQuestion` / `getState` / `getSelectedIndices`（0-based 升序，排序不变量唯一实现）/ `getSelectedIndex` / `isQuestionVisible` / `isOptionVisible` / `getVisibleQuestionIndices` / `hasAnyResponse` / `getMenuItems` / `isQuestionAnswered` / `areAllQuestionsAnswered` / `compileAnswers` / `formatAnswers`
  */
 export class AskAuthorFormModel {
   /** 问卷总标题 */
@@ -287,6 +436,9 @@ export class AskAuthorFormModel {
   /** 各题作答状态映射（题目索引 0-based） */
   private readonly states = new Map<number, QuestionAnswerState>();
 
+  /** 显隐快照缓存（按 `revision` 失效；包含题目可见性、选项可见性与可见选中项） */
+  private visibilityCache?: { revision: number; questions: boolean[]; options: boolean[][]; selected: number[][] };
+
   /**
    * 构造问卷数据模型实例（单题平铺与批量问卷两模式归一化）
    * @param rawParams - 经 prepareArguments 规整的入参；`questions` 缺省或为空数组时回退单题平铺模式，`options` 亦为空则题目列表为空
@@ -298,24 +450,21 @@ export class AskAuthorFormModel {
     this.formDescription = cleanOptional(rawParams.description);
 
     if (isBatch) {
-      this.questions = dedupeQuestionIds(rawQuestions.map((q, i) => buildQuestion(q, i)));
+      this.questions = buildQuestions(rawQuestions);
     } else if (rawParams.options?.length) {
-      this.questions = [
-        buildQuestion(
-          {
-            title: cleanOptional(rawParams.question) ?? TEXTS.fallbacks.defaultQuestionTitle,
-            description: cleanOptional(rawParams.description),
-            multiSelect: rawParams.multiSelect,
-            minSelect: rawParams.minSelect,
-            maxSelect: rawParams.maxSelect,
-            allowEmpty: rawParams.allowEmpty,
-            options: rawParams.options,
-            allowCustom: rawParams.allowCustom,
-            customPlaceholder: rawParams.customPlaceholder,
-          },
-          0,
-        ),
-      ];
+      this.questions = buildQuestions([
+        {
+          title: cleanOptional(rawParams.question) ?? TEXTS.fallbacks.defaultQuestionTitle,
+          description: cleanOptional(rawParams.description),
+          multiSelect: rawParams.multiSelect,
+          minSelect: rawParams.minSelect,
+          maxSelect: rawParams.maxSelect,
+          allowEmpty: rawParams.allowEmpty,
+          options: rawParams.options,
+          allowCustom: rawParams.allowCustom,
+          customPlaceholder: rawParams.customPlaceholder,
+        },
+      ]);
     } else {
       this.questions = [];
     }
@@ -356,13 +505,122 @@ export class AskAuthorFormModel {
   }
 
   /**
-   * 获取已勾选选项索引（0-based 升序，未作答为空数组；排序不变量唯一实现在此）
+   * 获取当前显隐快照（按 `revision` 缓存，题目顺序一次正向计算）
+   * 条件只允许引用更早题目，故单次正向遍历即可得出全部可见性；被引用题目自身不可见时，引用它的条件恒不成立
+   * @returns 题目可见性、各题选项可见性与各题可见选中项索引（升序）
+   */
+  private snapshot(): { questions: boolean[]; options: boolean[][]; selected: number[][] } {
+    const cached = this.visibilityCache;
+    if (cached && cached.revision === this.revisionValue) return cached;
+
+    const questions: boolean[] = [];
+    const options: boolean[][] = [];
+    const selected: number[][] = [];
+
+    for (const [index, q] of this.questions.entries()) {
+      const questionVisible = q.showIf.every((condition) => this.conditionHolds(condition, questions, selected));
+      const optionVisible = q.options.map((option) =>
+        option.showIf.every((condition) => this.conditionHolds(condition, questions, selected)),
+      );
+      const st = this.states.get(index);
+      const selectedIndices: number[] = [];
+      if (st) {
+        if (q.multiSelect) {
+          for (const optionIndex of st.selectedIndices) {
+            if (optionVisible[optionIndex]) selectedIndices.push(optionIndex);
+          }
+        } else if (st.selectedIndex !== undefined && optionVisible[st.selectedIndex]) {
+          selectedIndices.push(st.selectedIndex);
+        }
+      }
+      selectedIndices.sort((a, b) => a - b);
+
+      questions.push(questionVisible);
+      options.push(optionVisible);
+      selected.push(selectedIndices);
+    }
+
+    this.visibilityCache = { revision: this.revisionValue, questions, options, selected };
+    return this.visibilityCache;
+  }
+
+  /**
+   * 判定单个显示条件是否成立
+   * @param condition - 已解析的条件
+   * @param questions - 已完成计算的题目可见性（下标小于当前题）
+   * @param selected - 已完成计算的可见选中项（下标小于当前题）
+   * @returns 被引用题目不可见时为 false；否则按选项选中态或作答存在性判定
+   */
+  private conditionHolds(
+    condition: VisibilityCondition,
+    questions: readonly boolean[],
+    selected: readonly number[][],
+  ): boolean {
+    if (!questions[condition.questionIndex]) return false;
+    if (condition.kind === "answered") return this.hasAnyResponse(condition.questionIndex) === condition.answered;
+    return (selected[condition.questionIndex] ?? []).includes(condition.optionIndex);
+  }
+
+  /**
+   * 判定指定题目是否留下过任何作答痕迹（已选选项或非空批注，不区分选项当前是否可见）
+   * @param qIndex - 题目顺序索引（0-based）
+   * @returns 存在任意痕迹时为 true；状态未创建时为 false
+   */
+  hasAnyResponse(qIndex: number): boolean {
+    const st = this.states.get(qIndex);
+    if (!st) return false;
+    return st.selectedIndex !== undefined || st.selectedIndices.size > 0 || hasAnyNote(st);
+  }
+
+  /**
+   * 判定指定题目是否可见
+   * @param index - 题目顺序索引（0-based）
+   * @returns 无显示条件或全部条件成立时为 true；索引越界为 false
+   */
+  isQuestionVisible(index: number): boolean {
+    return this.snapshot().questions[index] ?? false;
+  }
+
+  /**
+   * 判定指定选项是否可见
+   * @param qIndex - 题目顺序索引（0-based）
+   * @param optionIndex - 选项索引（0-based）
+   * @returns 无显示条件或全部条件成立时为 true；索引越界为 false
+   */
+  isOptionVisible(qIndex: number, optionIndex: number): boolean {
+    return this.snapshot().options[qIndex]?.[optionIndex] ?? false;
+  }
+
+  /**
+   * 获取当前可见题目索引
+   * @returns 升序索引数组；第一题无前置题目可引用，因此结果恒非空（题目列表非空时）
+   */
+  getVisibleQuestionIndices(): number[] {
+    const { questions } = this.snapshot();
+    const indices: number[] = [];
+    for (const [index, visible] of questions.entries()) {
+      if (visible) indices.push(index);
+    }
+    return indices;
+  }
+
+  /**
+   * 获取已勾选且当前可见的选项索引（0-based 升序，未作答为空数组；排序不变量唯一实现在此）
+   * 选项因条件失效而隐藏时，其既有勾选不计入作答与答卷；条件恢复后重新生效
    * @param qIndex - 题目顺序索引（0-based）
    * @returns 全新数组（调用方可安全持有而不影响内部状态）；题目越界或状态未创建时为空数组
    */
   getSelectedIndices(qIndex: number): number[] {
-    const st = this.states.get(qIndex);
-    return st ? Array.from(st.selectedIndices).sort((a, b) => a - b) : [];
+    return [...(this.snapshot().selected[qIndex] ?? [])];
+  }
+
+  /**
+   * 获取单选选中项索引（可见选中项为空时 undefined）
+   * @param qIndex - 题目顺序索引（0-based）
+   * @returns 首个可见选中项索引；未选中、选中项已隐藏或索引越界时为 undefined
+   */
+  getSelectedIndex(qIndex: number): number | undefined {
+    return this.snapshot().selected[qIndex]?.[0];
   }
 
   /** 推进作答状态版本号（全部 mutation 方法的统一出口） */
@@ -374,21 +632,19 @@ export class AskAuthorFormModel {
    * 派生指定题目的左侧菜单项列表（预设选项 + 自由补充入口 + 确认推进按钮）
    * 菜单项标签与确认按钮明细随当前作答状态派生：多选展示已选数/下限，单选展示已选项标签、自定义方案名或「未选」
    * @param qIndex - 题目顺序索引（0-based）
-   * @returns 顺序固定的菜单项数组（选项按声明顺序在前、补充入口居中、确认按钮殿后）；题目越界为空数组；`allowCustom` 为 false 时省略补充入口
+   * @returns 顺序固定的菜单项数组（选项按声明顺序在前、补充入口居中、确认按钮殿后）；题目越界为空数组；`allowCustom` 为 false 时省略补充入口；不可见选项不产出条目
    */
   getMenuItems(qIndex: number): MenuItem[] {
     const q = this.getQuestion(qIndex);
     if (!q) return [];
     const st = this.getState(qIndex);
-    const noted = hasAnyNote(st);
+    const noted = this.hasSubmittableNote(qIndex);
 
-    const items: MenuItem[] = q.options.map((opt, optionIndex) => ({
-      type: "option",
-      optionIndex,
-      label: opt.label,
-      description: opt.description,
-      preview: opt.preview,
-    }));
+    const items: MenuItem[] = [];
+    for (const [optionIndex, opt] of q.options.entries()) {
+      if (!this.isOptionVisible(qIndex, optionIndex)) continue;
+      items.push({ type: "option", optionIndex, label: opt.label, description: opt.description, preview: opt.preview });
+    }
 
     if (q.allowCustom) {
       items.push({
@@ -397,10 +653,11 @@ export class AskAuthorFormModel {
       });
     }
 
+    const selectedIndex = this.getSelectedIndex(qIndex);
     const confirmDetail = q.multiSelect
-      ? TEXTS.menu.confirmDetailMulti(st.selectedIndices.size, q.minSelect)
-      : st.selectedIndex !== undefined
-        ? (q.options[st.selectedIndex]?.label ?? TEXTS.fallbacks.unselectedOption)
+      ? TEXTS.menu.confirmDetailMulti(this.getSelectedIndices(qIndex).length, q.minSelect)
+      : selectedIndex !== undefined
+        ? (q.options[selectedIndex]?.label ?? TEXTS.fallbacks.unselectedOption)
         : noted
           ? TEXTS.fallbacks.defaultCustomChoiceName
           : TEXTS.fallbacks.unselectedOption;
@@ -415,36 +672,54 @@ export class AskAuthorFormModel {
   }
 
   /**
+   * 判定指定题目是否存在会被提交的批注（题目级批注或可见选项上的批注）
+   * @param qIndex - 题目顺序索引（0-based）
+   * @returns 存在非空批注时为 true；状态未创建时为 false
+   */
+  private hasSubmittableNote(qIndex: number): boolean {
+    const st = this.states.get(qIndex);
+    if (!st) return false;
+    if (st.customText?.trim()) return true;
+    for (const [optionIndex, note] of st.optionNotes) {
+      if (note?.trim() && this.isOptionVisible(qIndex, optionIndex)) return true;
+    }
+    return false;
+  }
+
+  /**
    * 判定指定题目是否满足作答下限提交要求
    * 单选：已选一项、`allowEmpty`，或 `allowCustom` 开启且存在任意非空批注；多选：勾选数达 `minSelect`、`allowEmpty` 下 0 选，
    * 或缺省下限未勾选（`minSelect` 未显式给出时收敛为 `min(1, 选项数)`，故此时 `count < minSelect` 等价于 `count === 0`）且 `allowCustom` 开启并存在任意非空批注
    * @param qIndex - 题目顺序索引（0-based）
-   * @returns 题目越界恒为 false；作答状态尚未懒加载时按只读空状态（{@link EMPTY_STATE}）判定，不写入任何状态
+   * @returns 题目越界或该题当前不可见时恒为 false；作答状态尚未懒加载时按空作答判定，不写入任何状态
    */
   isQuestionAnswered(qIndex: number): boolean {
     const q = this.questions[qIndex];
-    if (!q) return false;
-    const st = this.states.get(qIndex) ?? EMPTY_STATE;
+    if (!q || !this.isQuestionVisible(qIndex)) return false;
 
     if (!q.multiSelect) {
-      return st.selectedIndex !== undefined || q.allowEmpty || (q.allowCustom && hasAnyNote(st));
+      return (
+        this.getSelectedIndex(qIndex) !== undefined ||
+        q.allowEmpty ||
+        (q.allowCustom && this.hasSubmittableNote(qIndex))
+      );
     }
 
-    const count = st.selectedIndices.size;
+    const count = this.getSelectedIndices(qIndex).length;
     if (count >= q.minSelect) return true;
     if (count === 0 && q.allowEmpty) return true;
     // 缺省下限（未显式指定 minSelect）未勾选时，填写批注可直接提交
-    if (!q.minSelectExplicit && count === 0 && q.allowCustom && hasAnyNote(st)) return true;
+    if (!q.minSelectExplicit && count === 0 && q.allowCustom && this.hasSubmittableNote(qIndex)) return true;
 
     return false;
   }
 
   /**
-   * 判定问卷中的全部题目是否均已作答完毕
-   * @returns 每题均满足 {@link isQuestionAnswered} 时为 true；题目列表为空时恒为 true（`every` 的空集语义）
+   * 判定问卷中当前可见的题目是否均已作答完毕（隐藏题目不参与判定）
+   * @returns 所有可见题目均满足 {@link isQuestionAnswered} 时为 true；无可见题目时恒为 true（`every` 的空集语义）
    */
   areAllQuestionsAnswered(): boolean {
-    return this.questions.every((_, idx) => this.isQuestionAnswered(idx));
+    return this.getVisibleQuestionIndices().every((index) => this.isQuestionAnswered(index));
   }
 
   // ===== 作答状态 mutation API（组件层唯一合法入口，全部自动推进 revision） =====
@@ -471,7 +746,7 @@ export class AskAuthorFormModel {
       this.bumpRevision();
       return "deselected";
     }
-    if (st.selectedIndices.size >= q.maxSelect) return "limit";
+    if (this.getSelectedIndices(qIndex).length >= q.maxSelect) return "limit";
     st.selectedIndices.add(optionIndex);
     this.bumpRevision();
     return "selected";
@@ -494,7 +769,7 @@ export class AskAuthorFormModel {
       }
       return;
     }
-    if (st.selectedIndices.has(optionIndex) || st.selectedIndices.size >= q.maxSelect) return;
+    if (st.selectedIndices.has(optionIndex) || this.getSelectedIndices(qIndex).length >= q.maxSelect) return;
     st.selectedIndices.add(optionIndex);
     this.bumpRevision();
   }
@@ -509,13 +784,17 @@ export class AskAuthorFormModel {
     if (!q || !q.multiSelect) return "cleared";
     const st = this.getState(qIndex);
 
-    if (st.selectedIndices.size >= q.maxSelect) {
+    if (this.getSelectedIndices(qIndex).length >= q.maxSelect) {
       st.selectedIndices.clear();
       this.bumpRevision();
       return "cleared";
     }
-    for (let i = 0; i < q.options.length && st.selectedIndices.size < q.maxSelect; i++) {
-      st.selectedIndices.add(i);
+    let selectedCount = this.getSelectedIndices(qIndex).length;
+    for (const [optionIndex] of q.options.entries()) {
+      if (selectedCount >= q.maxSelect) break;
+      if (!this.isOptionVisible(qIndex, optionIndex) || st.selectedIndices.has(optionIndex)) continue;
+      st.selectedIndices.add(optionIndex);
+      selectedCount++;
     }
     this.bumpRevision();
     return "filled";
@@ -542,8 +821,8 @@ export class AskAuthorFormModel {
     st.optionNotes.set(optionIndex, cleaned);
 
     if (q.multiSelect) {
-      if (st.selectedIndices.has(optionIndex)) return "saved";
-      if (st.selectedIndices.size >= q.maxSelect) return "savedAtLimit";
+      if (this.getSelectedIndices(qIndex).includes(optionIndex)) return "saved";
+      if (this.getSelectedIndices(qIndex).length >= q.maxSelect) return "savedAtLimit";
       st.selectedIndices.add(optionIndex);
       return "saved";
     }
@@ -597,17 +876,22 @@ export class AskAuthorFormModel {
   }
 
   /**
-   * 收集全部非空选项批注（含未选中选项上的孤立批注），键转换为 1-based；与总览页展示保持一致
+   * 收集全部非空选项批注（含未选中选项上的孤立批注，跳过当前不可见的选项），键转换为 1-based；与总览页展示保持一致
+   * @param qIndex - 题目顺序索引（0-based）
    * @param q - 归一化题目对象
    * @param st - 题目作答状态（可选）
    * @returns 1-based 选项索引 → 批注内容的映射表
    */
-  private collectOptionNotes(q: NormalizedQuestion, st: QuestionAnswerState | undefined): Record<number, string> {
+  private collectOptionNotes(
+    qIndex: number,
+    q: NormalizedQuestion,
+    st: QuestionAnswerState | undefined,
+  ): Record<number, string> {
     const optNotes: Record<number, string> = {};
     if (!st) return optNotes;
     for (const [idx, note] of st.optionNotes) {
       const cleaned = cleanOptional(note);
-      if (cleaned && q.options[idx]) {
+      if (cleaned && q.options[idx] && this.isOptionVisible(qIndex, idx)) {
         optNotes[idx + 1] = cleaned;
       }
     }
@@ -615,28 +899,29 @@ export class AskAuthorFormModel {
   }
 
   /**
-   * 编译全部作答状态为结果答案条目列表
+   * 编译当前可见题目的作答状态为结果答案条目列表（隐藏题目不产出条目）
    * 产出规则：多选题目恒产出条目（未作答时 `selectedOptions` / `selectedIndices` 为空）；单选题目仅在已作答时才产出条目（已选一项、`allowEmpty` 主动跳过或仅批注提交）
-   * 两种模式均杜绝问题在结果封套中静默消失；0-based 内部索引统一转换为 1-based
-   * @returns 与题目顺序一致的答卷条目列表（未产出的单选题目不占位）；题干无任何作答且非多选时为空数组
+   * 两种模式均杜绝可见题目在结果封套中静默消失；0-based 内部索引统一转换为 1-based
+   * @returns 与题目顺序一致的答卷条目列表（未产出的单选题目不占位）；无已作答题目时为空数组
    */
   compileAnswers(): AuthorAnswerItem[] {
     const answers: AuthorAnswerItem[] = [];
 
     for (const [i, q] of this.questions.entries()) {
+      if (!this.isQuestionVisible(i)) continue;
       const st = this.states.get(i);
       const customText = st?.customText?.trim() ? cleanText(st.customText.trim()) : undefined;
       const base = { questionId: q.id, questionTitle: q.title, customText };
 
       if (q.multiSelect) {
         const selectedIdxs = this.getSelectedIndices(i);
-        const optNotes = this.collectOptionNotes(q, st);
+        const optNotes = this.collectOptionNotes(i, q, st);
         const selectedOptions: Array<QuestionOption & { customText?: string }> = [];
 
         for (const idx of selectedIdxs) {
           const opt = q.options[idx];
           if (!opt) continue;
-          selectedOptions.push({ ...opt, customText: optNotes[idx + 1] });
+          selectedOptions.push(toAnswerOption(opt, optNotes[idx + 1]));
         }
 
         const hasNotes = Object.keys(optNotes).length > 0;
@@ -647,22 +932,25 @@ export class AskAuthorFormModel {
           selectedIndices: selectedIdxs.map((idx) => idx + 1),
           optionNotes: hasNotes ? optNotes : undefined,
         });
-      } else if (st?.selectedIndex !== undefined) {
-        const opt = q.options[st.selectedIndex];
-        const optNotes = this.collectOptionNotes(q, st);
+      } else {
+        const selectedIndex = this.getSelectedIndex(i);
+        if (selectedIndex !== undefined) {
+          const opt = q.options[selectedIndex];
+          const optNotes = this.collectOptionNotes(i, q, st);
 
-        answers.push({
-          ...base,
-          multiSelect: false,
-          selectedOption: opt ? { ...opt, customText: optNotes[st.selectedIndex + 1] } : undefined,
-          selectedOptionIndex: st.selectedIndex + 1,
-          optionNotes: Object.keys(optNotes).length > 0 ? optNotes : undefined,
-        });
-      } else if (this.isQuestionAnswered(i)) {
-        // 无选项勾选的显式决策（仅批注提交或 allowEmpty 主动跳过）必须产出条目，否则 LLM 无法区分「作者主动跳过」与「问题未曾提出」
-        const optNotes = this.collectOptionNotes(q, st);
-        const hasNotes = Object.keys(optNotes).length > 0;
-        answers.push({ ...base, multiSelect: false, optionNotes: hasNotes ? optNotes : undefined });
+          answers.push({
+            ...base,
+            multiSelect: false,
+            selectedOption: opt ? toAnswerOption(opt, optNotes[selectedIndex + 1]) : undefined,
+            selectedOptionIndex: selectedIndex + 1,
+            optionNotes: Object.keys(optNotes).length > 0 ? optNotes : undefined,
+          });
+        } else if (this.isQuestionAnswered(i)) {
+          // 无选项勾选的显式决策（仅批注提交或 allowEmpty 主动跳过）必须产出条目，否则 LLM 无法区分「作者主动跳过」与「问题未曾提出」
+          const optNotes = this.collectOptionNotes(i, q, st);
+          const hasNotes = Object.keys(optNotes).length > 0;
+          answers.push({ ...base, multiSelect: false, optionNotes: hasNotes ? optNotes : undefined });
+        }
       }
     }
 

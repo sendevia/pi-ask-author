@@ -14,7 +14,13 @@ import { type AgentToolResult, type ExtensionAPI } from "@earendil-works/pi-codi
 import { Text, type Component } from "@earendil-works/pi-tui";
 import { AskAuthorComponent } from "./component.js";
 import { cleanOptional } from "./format.js";
-import { AskAuthorFormModel, type AskAuthorResult, type AuthorAnswerItem, type NormalizedQuestion } from "./model.js";
+import {
+  AdaptiveConditionError,
+  AskAuthorFormModel,
+  type AskAuthorResult,
+  type AuthorAnswerItem,
+  type NormalizedQuestion,
+} from "./model.js";
 import { AskAuthorParams, type RawParams } from "./schema.js";
 import { sanitizeAskAuthorArgs } from "./sanitize.js";
 import { TEXTS } from "./texts.js";
@@ -211,7 +217,8 @@ export interface CallRenderState {
 
 /**
  * 派生调用卡片数据（标题 + 计数标签：题目数 > 1 时附带题量，单题模式仅选项数）
- * 入参清洗、模型构建与计数归约仅在 **args 对象身份变化时**执行一次，同帧后续渲染只做一次引用比对
+ * 本函数不构建表单模型：流式调用期间 `showIf` 可能引用尚未到达的题目，模型构造会因条件非法而抛出（条件在 `execute` 入口严格校验）
+ * 入参清洗与计数归约仅在 **args 对象身份变化时**执行一次，同帧后续渲染只做一次引用比对
  * 缓存只存储与主题无关的数据——`theme` 是身份稳定的 Proxy，缓存 ANSI 着色结果会在主题切换后滞留
  * @param args - 本次渲染的原始工具入参（未经 `sanitizeAskAuthorArgs` 清洗，流式期间可能为不完整对象）
  * @param state - 宿主按工具行复用、跨帧身份稳定的可变状态载荷
@@ -220,14 +227,21 @@ export interface CallRenderState {
 function resolveCallCard(args: RawParams, state: CallRenderState): CallCardData {
   if (state.cachedArgs === args && state.cachedCard) return state.cachedCard;
 
-  const model = new AskAuthorFormModel(sanitizeAskAuthorArgs(args));
-  const totalOpts = model.questions.reduce((sum, q) => sum + q.options.length, 0);
+  const params = sanitizeAskAuthorArgs(args);
+  const batchQuestions = params.questions ?? [];
+  const flatOptions = params.options ?? [];
+  const questionCount = batchQuestions.length > 0 ? batchQuestions.length : flatOptions.length > 0 ? 1 : 0;
+  const optionCount =
+    batchQuestions.length > 0
+      ? batchQuestions.reduce((sum, question) => sum + question.options.length, 0)
+      : flatOptions.length;
+
   const card: CallCardData = {
-    title: model.formTitle,
+    title: params.formTitle,
     countLabel:
-      model.questions.length > 1
-        ? TEXTS.card.callQuestionAndOptionCount(model.questions.length, totalOpts)
-        : TEXTS.card.callOptionCountOnly(totalOpts),
+      questionCount > 1
+        ? TEXTS.card.callQuestionAndOptionCount(questionCount, optionCount)
+        : TEXTS.card.callOptionCountOnly(optionCount),
   };
 
   state.cachedArgs = args;
@@ -286,6 +300,14 @@ export default function askAuthorExtension(pi: ExtensionAPI): void {
       try {
         formModel = new AskAuthorFormModel(rawParams);
       } catch (err) {
+        if (err instanceof AdaptiveConditionError) {
+          return createErrorResult(
+            TEXTS.markdown.errorReasons.invalidCondition(err.message),
+            TEXTS.markdown.errorGuidances.invalidCondition,
+            TEXTS.status.errorInvalidCondition(err.message),
+            { formTitle: initialFormTitle },
+          );
+        }
         return createRuntimeErrorResult(err, { formTitle: initialFormTitle });
       }
 
@@ -406,7 +428,15 @@ export default function askAuthorExtension(pi: ExtensionAPI): void {
 // ===== 外部与二次开发具名导出 =====
 
 export { askAuthorExtension };
-export { AskAuthorFormModel, type AskAuthorResult, type AuthorAnswerItem, type NormalizedQuestion } from "./model.js";
+export {
+  AdaptiveConditionError,
+  AskAuthorFormModel,
+  type AskAuthorResult,
+  type AuthorAnswerItem,
+  type NormalizedOption,
+  type NormalizedQuestion,
+  type VisibilityCondition,
+} from "./model.js";
 export { AskAuthorParams, type RawParams } from "./schema.js";
 export { sanitizeAskAuthorArgs } from "./sanitize.js";
 export { TEXTS, LAYOUT_CONFIG, ICONS } from "./texts.js";

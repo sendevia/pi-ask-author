@@ -6,6 +6,7 @@
  * - 宽屏双栏 / 窄屏单栏自适应：`renderWidth >= LAYOUT_CONFIG.splitViewMinWidth` 且题目含富内容时走双栏，否则降级单栏紧凑列表；预览与总览视口行数随终端高度收缩
  * - 多级缓存失效：整屏（尺寸键 + 状态突变清空）、总览 / Tab 栏 / 左栏 / 菜单项（`revision` 键）、预览池（内容键）；视口切片 O(1)；`render()` 无 I/O，Markdown 渲染仅发生在派生缓存未命中时
  * - 逐题独立光标记忆与 `1~9` 跳转题目；内置编辑器透传 Focusable 以定位 IME 候选框
+ * - 自适应导航：Tab 循环 / 数字跳转 / 确认推进一律沿可见题目序列行走，被条件隐藏的题目自动跳过
  * - Esc / Ctrl+C 双通道取消（输入模式二次确认）；定时器、Abort 监听与缓存池全量回收
  *
  * 渲染纯度不变量：`render()` 及其可达被调函数禁止写入语义状态（`currentTab`、光标与各 `*ScrollOffset`、`inputMode`、`editTarget`、`editorEscArmed`、`statusMessage`、`isFinished`）；滚动位移归一化一律归属输入路径
@@ -305,9 +306,9 @@ export class AskAuthorComponent implements Component, Focusable {
     });
   }
 
-  /** Tab 总页数（题目页 + 总览提交页） */
-  private get totalTabs(): number {
-    return this.model.questionCount + 1;
+  /** 可见页序列：可见题目索引升序 + 总览提交页（`questionCount`）；被条件隐藏的题目不出现在序列中 */
+  private get tabOrder(): number[] {
+    return [...this.model.getVisibleQuestionIndices(), this.model.questionCount];
   }
 
   /** 当前 Tab 是否为答卷总览提交页 */
@@ -371,13 +372,27 @@ export class AskAuthorComponent implements Component, Focusable {
     this.menuCache = undefined;
 
     if (!this.isSubmitTab) {
-      const st = this.model.getState(this.currentTab);
-      this.currentOptionIndex = this.cursorByTab.get(this.currentTab) ?? st.selectedIndex ?? 0;
+      this.currentOptionIndex =
+        this.cursorByTab.get(this.currentTab) ?? this.model.getSelectedIndex(this.currentTab) ?? 0;
       this.adjustScrollForCurrentOption();
     } else {
       this.currentOptionIndex = 0;
     }
     this.touch();
+  }
+
+  /**
+   * 按可见页序列循环切换 Tab（跳过被条件隐藏的题目）
+   * @param delta - 相对位移（正数下一项，负数上一项）
+   */
+  private switchRelativeTab(delta: number): void {
+    const order = this.tabOrder;
+    const position = order.indexOf(this.currentTab);
+    if (position === -1) {
+      this.switchTab(order[0] ?? this.model.questionCount);
+      return;
+    }
+    this.switchTab(order[(position + delta + order.length) % order.length] ?? this.currentTab);
   }
 
   /** 收敛光标至合法区间并同步左栏滚动窗口，保证聚焦项可见（菜单项为空时直接返回） */
@@ -466,7 +481,10 @@ export class AskAuthorComponent implements Component, Focusable {
     }
 
     if (this.model.isQuestionAnswered(this.currentTab)) {
-      this.switchTab(this.currentTab < this.model.questionCount - 1 ? this.currentTab + 1 : this.model.questionCount);
+      const order = this.tabOrder;
+      const position = order.indexOf(this.currentTab);
+      const next = position === -1 ? this.model.questionCount : (order[position + 1] ?? this.model.questionCount);
+      this.switchTab(next);
       return;
     }
     this.setStatus(q.multiSelect ? TEXTS.status.minSelectRequired(q.minSelect) : TEXTS.status.pleaseAnswerBeforeSubmit);
@@ -512,22 +530,23 @@ export class AskAuthorComponent implements Component, Focusable {
       return;
     }
 
-    // 3. 数字键 1~9 快捷跳转题目（10 题以上经 Tab/hl 循环或总览页跳转）
+    // 3. 数字键 1~9 快捷跳转题目（按可见题目的展示序号映射；10 题以上经 Tab/hl 循环或总览页跳转）
     if (/^[1-9]$/.test(data)) {
       const targetIndex = parseInt(data, 10) - 1;
-      if (targetIndex < this.model.questionCount) {
-        this.switchTab(targetIndex);
+      const target = this.tabOrder[targetIndex];
+      if (target !== undefined && target < this.model.questionCount) {
+        this.switchTab(target);
         return;
       }
     }
 
     // 4. Tab / 方向键左右 / h / l Vim 风格切换题目
     if (matchesKey(data, Key.tab) || matchesKey(data, Key.right) || matchesKey(data, "l")) {
-      this.switchTab((this.currentTab + 1) % this.totalTabs);
+      this.switchRelativeTab(1);
       return;
     }
     if (matchesKey(data, Key.shift("tab")) || matchesKey(data, Key.left) || matchesKey(data, "h")) {
-      this.switchTab((this.currentTab - 1 + this.totalTabs) % this.totalTabs);
+      this.switchRelativeTab(-1);
       return;
     }
 
@@ -675,7 +694,8 @@ export class AskAuthorComponent implements Component, Focusable {
   private handleSelectAllShortcut(q: NormalizedQuestion, data: string): boolean {
     if (!q.multiSelect || !matchesKey(data, "a")) return false;
     const result = this.model.selectAllOrClear(this.currentTab);
-    if (result === "filled" && q.maxSelect < q.options.length) {
+    const visibleOptionCount = q.options.filter((_, idx) => this.model.isOptionVisible(this.currentTab, idx)).length;
+    if (result === "filled" && q.maxSelect < visibleOptionCount) {
       this.setStatus(TEXTS.status.selectedUpToLimit(q.maxSelect));
     } else {
       this.touch();
@@ -715,8 +735,10 @@ export class AskAuthorComponent implements Component, Focusable {
       if (this.model.areAllQuestionsAnswered()) {
         this.finish(false);
       } else {
-        const firstUnfinished = this.model.questions.findIndex((_, idx) => !this.model.isQuestionAnswered(idx));
-        if (firstUnfinished !== -1) {
+        const firstUnfinished = this.model
+          .getVisibleQuestionIndices()
+          .find((index) => !this.model.isQuestionAnswered(index));
+        if (firstUnfinished !== undefined) {
           this.switchTab(firstUnfinished);
           const unfQ = this.model.getQuestion(firstUnfinished);
           if (unfQ) {
@@ -927,10 +949,12 @@ export class AskAuthorComponent implements Component, Focusable {
     const items = this.getMenuItems();
 
     // 1. 题目标签与标题
+    const visibleOptionCount = q.options.filter((_, idx) => this.model.isOptionVisible(this.currentTab, idx)).length;
     const modeTag = q.multiSelect
-      ? this.theme.fg("warning", TEXTS.view.modeMulti(q.minSelect, q.maxSelect, q.options.length, q.allowEmpty))
+      ? this.theme.fg("warning", TEXTS.view.modeMulti(q.minSelect, q.maxSelect, visibleOptionCount, q.allowEmpty))
       : this.theme.fg("accent", TEXTS.view.modeSingle);
-    pushWrapped(lines, ` ${modeTag} ${this.theme.bold(q.title)}`, renderWidth);
+    const conditionalTag = q.showIf.length > 0 ? ` ${this.theme.fg("muted", TEXTS.view.conditionalBadge)}` : "";
+    pushWrapped(lines, ` ${modeTag}${conditionalTag} ${this.theme.bold(q.title)}`, renderWidth);
 
     if (q.description) {
       pushWrapped(lines, this.theme.fg("muted", q.description), renderWidth, "  ");
@@ -957,7 +981,9 @@ export class AskAuthorComponent implements Component, Focusable {
 
     // 3. 智能分屏 / 紧凑单栏（富内容按可视列宽判定）
     const hasRichContent = q.options.some(
-      (o, idx) => Boolean(o.preview) || visibleWidth(o.description ?? "") > 30 || Boolean(st.optionNotes.get(idx)),
+      (o, idx) =>
+        this.model.isOptionVisible(this.currentTab, idx) &&
+        (Boolean(o.preview) || visibleWidth(o.description ?? "") > 30 || Boolean(st.optionNotes.get(idx))),
     );
     if (renderWidth >= LAYOUT_CONFIG.splitViewMinWidth && hasRichContent) {
       this.renderSplitView(lines, q, st, items, renderWidth);
@@ -970,7 +996,7 @@ export class AskAuthorComponent implements Component, Focusable {
 
     lines.push("");
     const helpParts: string[] = [TEXTS.help.switchQuestion];
-    if (this.model.questionCount > 1) {
+    if (this.model.getVisibleQuestionIndices().length > 1) {
       helpParts.push(TEXTS.help.jumpQuestion);
     }
     helpParts.push(TEXTS.help.moveCursor);
