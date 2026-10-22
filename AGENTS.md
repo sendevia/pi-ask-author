@@ -76,21 +76,28 @@
 
 本项目属于面向终端文字创作者交互式决策的 Pi 扩展插件，基于 TypeScript 与 ESM 规范构建。代码组织如下：
 
-- `package.json`：定义扩展元数据、依赖项与入口声明，通过 `pi.extensions` 字段导出 `./src/index.ts`。
+- `package.json`：定义扩展元数据、依赖项与入口声明，通过 `pi.extensions` 字段导出 `./dist/index.js`。
 - `tsconfig.json`：配置 TypeScript 严格模式编译选项。
-- `src/index.ts`：插件主入口模块。注册 `ask_author` 工具与 `/ask-author` 辅助命令；编排工具生命周期流程，挂载执行函数 `execute`、调用卡片渲染 `renderCall` 与结果卡片渲染 `renderResult`；统一通过结果工厂产出完成、取消、错误与异常四种结构化结果。
-- `src/schema.ts`：工具参数的单一源头。基于 TypeBox 声明参数结构、`showIf` 显示条件与校验规则，导出 `AskAuthorParams` 以及派生类型 `RawParams`、`QuestionInput`、`QuestionOption`。
+- `src/index.ts`：插件主入口模块。注册 `ask_author` 工具与 `/ask-author` 辅助命令，编排工具执行过程中的守卫、模型构建与四类结果分支；工具声明为 `model-only` 并标注只读、封闭世界。
+- `src/schema.ts`：工具参数的单一源头。基于 TypeBox 声明参数结构、`showIf` 显示条件与校验规则，导出 `AskAuthorParams`、`QuestionSchema`、`OptionSchema`、`ShowIfConditionSchema` 以及派生类型 `RawParams`、`QuestionInput`、`QuestionOption`。
 - `src/model.ts`：问卷状态机与数据模型。定义 `AskAuthorFormModel`，负责题目数据归一化、自适应显示条件解析与显隐快照、作答状态流转、`revision` 版本推进、答卷结果编译以及 Markdown 封套文本生成。
-- `src/component.ts`：交互式 TUI 核心组件。实现 `AskAuthorComponent`，支撑宽屏双栏与窄屏单栏自适应布局、键盘事件路由、内置 `Editor` 文本编辑器集成、视口滚动计算以及多层级渲染缓存管理。
+- `src/component.ts`：交互式 TUI 核心组件。实现 `AskAuthorComponent`，负责交互状态机、键盘事件路由、内置 `Editor` 文本编辑器集成、AbortSignal 级联取消与整屏帧缓存；具体排版委托给 `view-*` 模块。
 - `src/sanitize.ts`：入参防御性清洗模块。提供 `sanitizeAskAuthorArgs` 函数，执行不可信入参边界的类型收敛、别名映射、数据纠错与白名单字段过滤。
-- `src/format.ts`：纯函数排版与算法工具模块。提供视口边界限制、可见列宽测量、ANSI 文本折行、文本清洗以及草稿摘要压缩等无状态工具函数。
-- `src/novel-markdown.ts`：小说语法高亮引擎。通过声明式语法模板表将对话台词与心理旁白转换为携带语义哨兵的行内代码，由定制 Markdown 主题完成样式渲染。
+- `src/format.ts`：纯函数排版与算法工具模块。提供视口边界限制、可见列宽测量、ANSI 文本折行与文本清洗等无状态工具函数，只依赖 `layout.ts`，不装载语言资源。
+- `src/layout.ts`：终端布局几何、图标字形与载荷上限的常量模块。声明 `LAYOUT_CONFIG`、`ICONS`、`MAX_OPTIONS`、`MAX_QUESTIONS`，为纯常量叶层。
+- `src/llm-texts.ts`：面向大语言模型的协议文案模块。声明工具元数据、TypeBox 字段描述与返回封套模板，全部恒为英文。
+- `src/novel-syntax.ts`：小说语法资产模块。以声明式模板表定义定界符、语义哨兵、最大跨距与主题绘制函数，并派生开定界符与哨兵两个索引。
+- `src/novel-markdown.ts`：小说语法高亮引擎。把对话台词与心理旁白转换为携带语义哨兵的行内代码，由定制 Markdown 主题完成样式渲染。
 - `src/i18n.ts`：语言资源装载模块。注册可用语言文件、按系统语言环境选择界面语言、以 `en_US` 为规范结构编译文案模板，并对占位符未声明、取值种类不一致等情况快速失败。
 - `lang/en_US.json`、`lang/zh_CN.json`：作者界面文案语言资源。文件名即 locale 标识，采用 JSON 格式，平编时由 `esbuild` 打包进产物；新增语言只需追加同构文件并在 `i18n.ts` 注册。
-- `src/texts.ts`：终端图标、布局几何常量、小说语法模板表与文案字典的组装源头。集中声明 `LAYOUT_CONFIG`、`ICONS`、`NOVEL_TEMPLATES`、面向 LLM 的英文协议文案，并装载当前语言的作者界面文案组装为 `TEXTS`。
+- `src/texts.ts`：文案字典组装模块。把 `llm-texts.ts` 的英文协议文案与当前语言的作者界面文案合并为 `TEXTS`，并集中派生多选标签与确认按钮文案。
 - `src/theme.ts`：主题类型定义模块。导出 `Theme` 类型别名，作为无运行时依赖的叶层节点。
-- `src/view-rows.ts`：纯函数视图排版模块。负责题目选项菜单行、顶部 Tab 标签栏、分割线与底部帮助栏的格式化排版。
-- `src/view-summary.ts`：纯函数视图排版模块。负责答卷提交总览确认页的内容行与操作提示排版。
+- `src/view-question.ts`：题目作答页视图构建模块。实现 `QuestionView`，负责题头、选项菜单、双栏 / 单栏预览、预览与左栏缓存以及底部帮助栏。
+- `src/view-editor.ts`：补充说明编辑器视图构建模块。负责编辑目标标题、上下文、编辑框与页脚提示的排版。
+- `src/view-rows.ts`：视图排版模块。负责题目选项菜单行、顶部 Tab 标签栏、状态通知、分割线与底部帮助栏的格式化排版。
+- `src/view-summary.ts`：答卷总览页视图构建模块。实现 `SummaryView` 与内容行构建器，负责提交确认页的内容行、分页、提示与操作栏。
+- `src/tool-result.ts`：工具结果模块。集中产出完成、取消、结构化错误与运行期异常四类结果，收窄宿主传入的 `details`，并把失败结果标记为 `isError`。
+- `src/tool-card.ts`：会话回放卡片模块。实现调用卡片与结果卡片渲染；调用摘要与执行路径共用 `sanitizeAskAuthorArgs`，按 args 对象身份记忆化。
 
 ### 2.2 模块依赖关系
 
@@ -99,54 +106,90 @@
 ```mermaid
 graph TD
     lang["lang/*.json"] --> i18n["src/i18n.ts"]
+    layout["src/layout.ts"] --> llm["src/llm-texts.ts"]
     i18n --> texts["src/texts.ts"]
-    theme["src/theme.ts"] --> texts
-    texts --> format["src/format.ts"]
-    texts --> schema["src/schema.ts"]
+    llm --> texts
+    layout --> texts
+    theme["src/theme.ts"] --> novelSyntax["src/novel-syntax.ts"]
+    layout --> format["src/format.ts"]
     format --> sanitize["src/sanitize.ts"]
+    layout --> sanitize
+    texts --> sanitize
+    layout --> schema["src/schema.ts"]
+    texts --> schema
     schema --> sanitize
     format --> model["src/model.ts"]
     schema --> model
     texts --> model
     format --> novelMarkdown["src/novel-markdown.ts"]
+    novelSyntax --> novelMarkdown
     theme --> novelMarkdown
     texts --> novelMarkdown
     model --> novelMarkdown
     format --> viewRows["src/view-rows.ts"]
+    layout --> viewRows
     model --> viewRows
     texts --> viewRows
     theme --> viewRows
     format --> viewSummary["src/view-summary.ts"]
+    layout --> viewSummary
     model --> viewSummary
     texts --> viewSummary
     theme --> viewSummary
-    novelMarkdown --> component["src/component.ts"]
-    viewRows --> component
+    viewRows --> viewSummary
+    format --> viewQuestion["src/view-question.ts"]
+    layout --> viewQuestion
+    model --> viewQuestion
+    novelMarkdown --> viewQuestion
+    texts --> viewQuestion
+    theme --> viewQuestion
+    viewRows --> viewQuestion
+    format --> viewEditor["src/view-editor.ts"]
+    model --> viewEditor
+    texts --> viewEditor
+    theme --> viewEditor
+    viewRows --> viewEditor
+    viewQuestion --> component["src/component.ts"]
     viewSummary --> component
+    viewEditor --> component
+    viewRows --> component
     model --> component
-    format --> component
     texts --> component
     theme --> component
+    format --> component
+    layout --> component
+    model --> toolResult["src/tool-result.ts"]
+    model --> toolCard["src/tool-card.ts"]
+    texts --> toolResult
+    toolResult --> toolCard["src/tool-card.ts"]
+    sanitize --> toolCard
+    schema --> toolCard
+    texts --> toolCard
+    theme --> toolCard
     component --> index["src/index.ts"]
+    toolCard --> index
+    toolResult --> index
     sanitize --> index
     model --> index
     schema --> index
     format --> index
     texts --> index
+    layout --> index
+    i18n --> index
 ```
 
 ### 2.3 编码规范
 
 #### 2.3.1 架构设计与依赖管理
 
-- 单向依赖原则：底层模块严禁反向导入上层模块。`component.ts` 作为排版协调器，排版纯函数模块（`view-rows.ts`、`view-summary.ts`）禁止反向导入 `component.ts`。
+- 单向依赖原则：底层模块严禁反向导入上层模块。`component.ts` 作为交互协调器，视图构建模块（`view-question.ts`、`view-editor.ts`、`view-rows.ts`、`view-summary.ts`）禁止反向导入 `component.ts`；`tool-result.ts` 与 `tool-card.ts` 禁止导入 `index.ts`。
 - 零额外第三方依赖：生产环境仅依赖 `@earendil-works/pi-coding-agent`、`@earendil-works/pi-tui` 与 `typebox`，禁止引入未授权的外部依赖库。
-- 纯类型模块隔离：`theme.ts` 仅保留类型导出，编译为 JavaScript 后无运行期实体，维持叶层纯净。
+- 纯类型与纯常量叶层：`theme.ts` 仅保留类型导出；`layout.ts` 仅保留常量导出，两者不得导入插件内其他模块。
 
 #### 2.3.2 文案与常量单一源头
 
-- 集中声明原则：禁止在组件层或者排版层直接书写任何用户可见的字符串字面量、按键提示、图标符号或者几何数值。作者可见文案一律定义在 `lang/*.json` 语言资源中，图标（`ICONS`）与几何配置（`LAYOUT_CONFIG`）定义在 `texts.ts` 模块中，业务逻辑层只做读取与组合。
-- 受众边界划分：`TEXTS` 字典严格区分使用受众。面向大语言模型的文本（`tool` 描述、`schema` 描述、`markdown` 封套）统一使用英文编写并固定声明在 `texts.ts`；面向人类作者的界面文本（提示语、操作指南、选项标签占位符）取自当前语言的资源文件，两者界限清晰。
+- 集中声明原则：禁止在组件层或者排版层直接书写任何用户可见的字符串字面量、按键提示、图标符号或者几何数值。作者可见文案一律定义在 `lang/*.json` 语言资源中，图标（`ICONS`）与几何配置（`LAYOUT_CONFIG`）定义在 `layout.ts`，小说语法模板定义在 `novel-syntax.ts`，业务逻辑层只做读取与组合。
+- 受众边界划分：`TEXTS` 字典严格区分使用受众。面向大语言模型的文本（`tool` 描述、`schema` 描述、`markdown` 封套）统一使用英文编写并固定声明在 `llm-texts.ts`；面向人类作者的界面文本（提示语、操作指南、选项标签占位符）取自当前语言的资源文件，两者界限清晰。
 
 #### 2.3.3 参数校验与类型系统
 
@@ -158,12 +201,14 @@ graph TD
 
 - 终端宽度安全计算：涉及终端列宽计算、截断或者折行时，必须调用 `@earendil-works/pi-tui` 导出的 `visibleWidth`、`truncateToWidth` 与 `wrapTextWithAnsi`，禁止使用 JavaScript 原生 `string.length` 计算字符宽度。
 - 渲染函数纯度约定：`AskAuthorComponent.prototype.render` 及其调用的排版函数必须保持纯净，禁止在渲染周期内修改任何语义状态（例如当前选中项、滚动位移、输入模式标记）。修改语义状态的操作仅允许在键盘事件分发路径中执行。
-- 多级缓存失效控制：模型层通过 `revision` 版本计数器标记作答状态突变；视图层根据版本计数器与视口尺寸键使对应缓存失效，避免重复执行高开销的 Markdown 解析与文本排版。
+- 多级缓存失效控制：模型层通过 `revision` 版本计数器标记作答状态突变；组件层掌握整屏帧缓存与 Tab 栏缓存，`QuestionView` 与 `SummaryView` 各自持有按版本计数器与视口尺寸键失效的内容缓存；作答状态突变与主题切换时由组件的 `clearDerivedCaches` 统一清空，焦点变化时只清空左栏缓存并保留已解析的预览内容。
+- 视图缓存不写语义状态：视图构建模块只读取组件传入的只读状态，滚动位移与光标写入仅发生在键盘事件路径；预览视口观察值由视图返回，组件负责保存。
 - 资源生命周期释放：组件实现 `dispose` 方法并保持幂等性。在组件销毁或者执行结束时，必须彻底清理计时器、注销 `AbortSignal` 监听器并清空缓存容器。
 
 #### 2.3.5 封套生成与确定性输出
 
 - 固定格式封套：工具执行完成、取消或者错误时，输出内容必须严格遵循预定义的 Markdown 封套结构（`[Author Decision Finalized]`、`[Author Decision Cancelled]`、`[Author Consultation Error]`），前缀格式固定，提升模型前缀缓存命中概率。
+- 失败结果标记：结构化错误与运行期异常必须同时携带 `isError: true`，让宿主按工具错误处理；`content` 仍保留面向模型的原因行与纠正指引。
 - 草稿指令提炼：当选中的选项包含 Markdown 正文草稿预览时，模型层需将其压缩提炼为单行 `[Draft directive: ...]` 指令，便于大语言模型在后续生成中直接读取与遵循。
 - 防止击穿处理：拼装封套时，针对来自不可信源的文本执行清洗与单行化处理，防止恶意输入击穿封套结构。
 
@@ -179,4 +224,4 @@ graph TD
 - 条件只向前引用：`showIf` 只能引用同一份问卷中更早出现的题目 ID，选项以标签定位且必须在被引用题目中存在；引用未知题目、后置题目或不存在的选项时，在模型构建期抛出 `AdaptiveConditionError`。
 - 显隐计算集中：可见题目、可见选项与可见选中项统一由 `AskAuthorFormModel` 的显隐快照按 `revision` 派生；组件层与排版层只允许经 `getVisibleQuestionIndices` / `isQuestionVisible` / `isOptionVisible` / `getSelectedIndex` / `getSelectedIndices` 读取，禁止各自重算条件。
 - 隐藏即不参与：隐藏题目不进入导航、总览与答卷；隐藏选项的既有勾选与批注不计入作答判定与答卷。
-- 渲染路径不构模型：`renderCall` 等流式渲染路径禁止构建表单模型（条件可能引用尚未到达的题目），只做入参清洗与计数。
+- 渲染路径不构模型：`renderCall` 等流式渲染路径禁止构建表单模型（条件可能引用尚未到达的题目），只做入参清洗与计数；调用摘要统一经 `sanitizeAskAuthorArgs` 生成，与执行路径共用同一套别名、包装键、转义清洗与数量上限规则。

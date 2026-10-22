@@ -3,7 +3,7 @@
  * @description 小说语法高亮引擎：把语义定界符（`「」` / `（）`）标注为携带哨兵的原生行内代码，折行与配色交还 Pi 原生 Markdown 引擎
  *
  * 核心架构特性：
- * - 声明式语法模板表（`NOVEL_TEMPLATE_*` 派生索引）驱动「定界符 → 语义哨兵 → 行内代码载体 → 主题样式」映射
+ * - 声明式语法模板表（定义于 `novel-syntax.ts` 的 `NOVEL_TEMPLATES` 与派生索引）驱动「定界符 → 语义哨兵 → 行内代码载体 → 主题样式」映射
  * - 对话台词「...」与旁白心理（...）由 `MarkdownOptions.transform` 在 marked 解析前完成标注
  * - `theme.code` 回调兼作哨兵分类器，未命中哨兵即完整交还原生行内代码样式
  * - 折行、嵌套与配色全部由原生 Markdown 引擎回填，插件不触碰任何 ANSI 转义流
@@ -11,7 +11,7 @@
  *
  * 索引约定：全文「扁平索引 / 行内列索引」一律指 UTF-16 码元下标，含义与 `String.prototype.length` / `charAt` / `slice` 一致
  *
- * 依赖方向：novel-markdown.ts → format.ts / texts.ts / theme.ts（另行引入 model.ts 的 `MenuItem` 类型，无回环依赖）；外部依赖 `@earendil-works/pi-tui` 的 `Markdown` / `MarkdownTheme` 与 `@earendil-works/pi-coding-agent` 的 `getMarkdownTheme`
+ * 依赖方向：novel-markdown.ts → format.ts / novel-syntax.ts / texts.ts / theme.ts（另行引入 model.ts 的 `MenuItem` 类型，无回环依赖）；外部依赖 `@earendil-works/pi-tui` 的 `Markdown` / `MarkdownTheme` 与 `@earendil-works/pi-coding-agent` 的 `getMarkdownTheme`
  * 宿主主题耦合：围栏代码块由 `getMarkdownTheme()` 的 `highlightCode` 着色，提取颜色读取宿主全局活动主题（须宿主已 `initTheme`，本模块不自行持有主题）；行内代码仅在未命中哨兵时走同一全局 `code` 提取颜色
  */
 
@@ -24,8 +24,8 @@ import {
   NOVEL_TEMPLATE_BY_MARKER,
   NOVEL_TEMPLATE_BY_OPENER,
   type NovelSyntaxTemplate,
-  TEXTS,
-} from "./texts.js";
+} from "./novel-syntax.js";
+import { TEXTS } from "./texts.js";
 import type { Theme } from "./theme.js";
 
 /**
@@ -225,7 +225,6 @@ function maskCodeRegions(source: string, lines: readonly string[], lineStarts: L
   // 块级数学区（`$$…$$` / `\[…\]`）可跨空行，且未闭合时按 pending 语义吞并余下全部源码
   // （原生 `pendingBracket` 无条件吞并，`pendingDollar` 另需 `looksLikePendingDollarMath` 启发式；本掩码采用更宽的保守范围），故独立于「空行即终止」的 rawBlock 状态机
   let mathCloser: string | null = null;
-  let mathContent = "";
   for (let lineIndex = 0; lineIndex < lines.length; lineIndex++) {
     const line = lines[lineIndex] ?? "";
 
@@ -238,7 +237,6 @@ function maskCodeRegions(source: string, lines: readonly string[], lineStarts: L
     }
 
     if (mathCloser !== null) {
-      mathContent += line;
       markLine(lineIndex);
       const closerIndex = line.indexOf(mathCloser);
       if (closerIndex >= 0) {
@@ -301,7 +299,6 @@ function maskCodeRegions(source: string, lines: readonly string[], lineStarts: L
     // 块级数学区：行首 `$$` / `\[…` 开启至闭合定界符所在行，未闭合时按 pending 语义跨空行吞并至源码末尾
     if (BLOCK_MATH_OPENING_PATTERN.test(line)) {
       const rest = line.replace(BLOCK_MATH_OPENING_PATTERN, "");
-      mathContent = rest;
       markLine(lineIndex);
       if (!rest.includes(rest.startsWith("$$") ? "$$" : "\\]")) {
         mathCloser = rest.startsWith("$$") ? "$$" : "\\]";

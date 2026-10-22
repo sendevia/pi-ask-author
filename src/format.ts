@@ -6,11 +6,11 @@
  * - 全部函数无副作用、不依赖运行时可变状态，供 sanitize / model / novel-markdown / view-* / component / index 复用
  * - 终端宽度一律经 `visibleWidth` / `truncateToWidth` / `wrapTextWithAnsi`，禁止使用 `string.length` 直接计算
  *
- * 依赖方向：format.ts → texts.ts（布局常量与文案字典）
+ * 依赖方向：format.ts → layout.ts（布局常量）；不装载语言资源，保持纯算法层可在任意执行模式下复用
  */
 
 import { stripTerminalSequences, truncateToWidth, visibleWidth, wrapTextWithAnsi } from "@earendil-works/pi-tui";
-import { LAYOUT_CONFIG, TEXTS } from "./texts.js";
+import { LAYOUT_CONFIG } from "./layout.js";
 
 /**
  * 将数值收敛至闭区间 `[min, max]`
@@ -156,32 +156,6 @@ export function padToVisibleWidth(str: string, targetWidth: number): string {
  */
 export function divider(width: number, char: string = LAYOUT_CONFIG.dividerThin): string {
   return width > 0 ? char.repeat(width) : "";
-}
-
-/**
- * 极限压缩正文草稿/分镜头为高密度单行 LLM 指令：逐行剥离行首 Markdown 标题标识与引用符，折叠连续空白，各片段以 `TEXTS.markdown.draftSegmentSeparator` 连接
- * @param preview - 原始草稿/分镜头文本；缺省或全空白时返回 undefined
- * @returns 单行分镜头指令；无有效片段时返回 undefined
- */
-export function compressDraftPreview(preview: string | undefined): string | undefined {
-  if (!preview) return undefined;
-  const cleaned = cleanText(preview);
-  if (!cleaned.trim()) return undefined;
-
-  const segments = cleaned
-    .split("\n")
-    .map((line) => {
-      let l = line.trim();
-      if (!l) return "";
-      // 单次交替剥离行首任意层级的 Markdown 标题标识与引用符（`> # 标题` 需同时去除两类前缀，故不可分成两次行首替换）
-      l = l.replace(/^(?:[>#]+\s*)+/, "");
-      l = l.replace(/\s+/g, " ");
-      return l;
-    })
-    .filter(Boolean);
-
-  if (segments.length === 0) return undefined;
-  return segments.join(TEXTS.markdown.draftSegmentSeparator);
 }
 
 /**

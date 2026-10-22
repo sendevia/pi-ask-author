@@ -11,7 +11,8 @@
  */
 
 import { cleanOptional, parseJson } from "./format.js";
-import { MAX_OPTIONS, MAX_QUESTIONS, TEXTS } from "./texts.js";
+import { MAX_OPTIONS, MAX_QUESTIONS } from "./layout.js";
+import { TEXTS } from "./texts.js";
 import type { QuestionInput, QuestionOption, RawParams, ShowIfInput, VisibilityConditionInput } from "./schema.js";
 
 /** 字段别名提取源对象形状（不可信边界，统一经 `pickString` 收敛） */

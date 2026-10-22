@@ -3,6 +3,8 @@ import {
   ACTIVE_LOCALE,
   AdaptiveConditionError,
   AskAuthorFormModel,
+  MAX_OPTIONS,
+  MAX_QUESTIONS,
   TEXTS,
   cleanOptional,
   detectLocale,
@@ -94,6 +96,8 @@ import { visibleWidth } from "@earendil-works/pi-tui";
   const answers = model.compileAnswers();
   const markdown = model.formatAnswers(answers);
   assert.ok(markdown.includes("[Author note: 使用配剑「霜华」]"));
+  assert.ok(markdown.includes("[Draft directive: 剑出如龙]"), "选中选项的草稿预览应压缩为单行指令");
+  assert.ok(markdown.includes("[Draft directive: 烈焰焚天]"), "多个选中选项的草稿指令均应保留");
 }
 
 // 4. 结果卡片折叠与展开隐式支持验证
@@ -278,6 +282,169 @@ import { visibleWidth } from "@earendil-works/pi-tui";
     (err) => err instanceof AdaptiveConditionError,
     "引用后置题目应抛出 AdaptiveConditionError",
   );
+}
+
+// 7. 工具注册元数据、错误结果与调用卡片摘要验证
+{
+  let registeredToolDef;
+  const mockPi = {
+    registerTool(def) {
+      registeredToolDef = def;
+    },
+    registerCommand() {},
+  };
+  const { askAuthorExtension } = await import("../dist/index.js");
+  askAuthorExtension(mockPi);
+
+  assert.equal(registeredToolDef.exposure, "model-only", "交互式工具应只由模型直接发起");
+  assert.equal(registeredToolDef.annotations.readOnlyHint, true, "工具应标注只读");
+  assert.equal(registeredToolDef.annotations.openWorldHint, false, "工具不应标注开放世界");
+  assert.equal(registeredToolDef.executionMode, "sequential", "交互式工具应串行执行");
+  assert.equal(MAX_OPTIONS, 30, "单题选项上限应由公共常量导出");
+  assert.equal(MAX_QUESTIONS, 20, "问卷题目上限应由公共常量导出");
+
+  const errorResult = await registeredToolDef.execute(
+    "call-error",
+    { formTitle: "错误路径" },
+    undefined,
+    undefined,
+    { mode: "json" },
+  );
+  assert.equal(errorResult.isError, true, "非交互模式应作为工具错误结果返回");
+  assert.ok(errorResult.content[0].text.startsWith("[Author Consultation Error]"), "错误封套前缀应保持稳定");
+
+  const cancelledResult = await registeredToolDef.execute(
+    "call-cancel",
+    { formTitle: "取消路径" },
+    { aborted: true },
+    undefined,
+    { mode: "tui" },
+  );
+  assert.equal(cancelledResult.isError, undefined, "取消不是工具错误");
+  assert.ok(cancelledResult.content[0].text.startsWith("[Author Decision Cancelled]"), "取消封套前缀应保持稳定");
+
+  const dummyTheme = {
+    fg: (_color, text) => text,
+    bg: (_color, text) => text,
+    bold: (text) => text,
+    italic: (text) => text,
+  };
+  const overflowQuestions = MAX_QUESTIONS + 5;
+  const streamArgs = {
+    formTitle: "\u001b[31m流式摘要\u001b[0m",
+    questions: Array.from({ length: overflowQuestions }, (_, index) => ({
+      title: `题目 ${index + 1}`,
+      options: [{ label: "甲" }, { label: "乙" }],
+    })),
+  };
+  const state = {};
+  const streaming = registeredToolDef.renderCall(streamArgs, dummyTheme, {
+    state,
+    lastComponent: undefined,
+    argsComplete: false,
+  });
+  const streamingText = streaming.render(200).join("\n");
+  assert.ok(!streamingText.includes("\u001b"), "调用卡片应剥离终端控制序列");
+  assert.ok(streamingText.includes("流式摘要"), "调用卡片应保留清洗后的标题");
+  assert.ok(
+    streamingText.includes(TEXTS.card.callQuestionAndOptionCount(MAX_QUESTIONS, MAX_QUESTIONS * 2)),
+    "流式渲染同样按清洗与截断后的数量计数",
+  );
+
+  const complete = registeredToolDef.renderCall(streamArgs, dummyTheme, {
+    state,
+    lastComponent: streaming,
+    argsComplete: true,
+  });
+  assert.ok(
+    complete.render(200).join("\n").includes(TEXTS.card.callQuestionAndOptionCount(MAX_QUESTIONS, MAX_QUESTIONS * 2)),
+    "参数补全后的摘要应命中同一清洗路径",
+  );
+
+  const errorCard = registeredToolDef.renderResult(errorResult, { expanded: false }, dummyTheme, {
+    state,
+    lastComponent: undefined,
+    argsComplete: true,
+  });
+  assert.ok(errorCard.render(120).join("\n").includes(TEXTS.card.resultErrorShort), "错误详情应渲染为错误结果卡片");
+}
+
+// 8. 视图渲染冒烟验证
+{
+  let registeredToolDef;
+  const { askAuthorExtension } = await import("../dist/index.js");
+  askAuthorExtension({
+    registerTool(def) {
+      registeredToolDef = def;
+    },
+    registerCommand() {},
+  });
+
+  const { initTheme } = await import("@earendil-works/pi-coding-agent");
+  initTheme();
+
+  const dummyTheme = {
+    fg: (_color, text) => text,
+    bg: (_color, text) => text,
+    bold: (text) => text,
+    italic: (text) => text,
+  };
+  const fakeTui = { terminal: { rows: 40 }, requestRender() {} };
+  const widths = [120, 40];
+  const assertWidths = (component, stage) => {
+    for (const width of widths) {
+      const lines = component.render(width);
+      assert.ok(lines.length > 0, `${stage} 在 ${width} 列应输出内容`);
+      for (const line of lines) {
+        assert.ok(
+          visibleWidth(line) <= width,
+          `${stage} 在 ${width} 列存在超宽行：${JSON.stringify(line)}`,
+        );
+      }
+    }
+  };
+
+  const ctx = {
+    mode: "tui",
+    ui: {
+      custom: async (factory) => {
+        const component = factory(fakeTui, dummyTheme, {}, () => {});
+        assertWidths(component, "题目页");
+        assert.ok(
+          component.render(120).join("\n").includes("选择接下来的方向"),
+          "题目页应显示题干",
+        );
+
+        component.handleInput("\t");
+        assertWidths(component, "总览页");
+        assert.ok(component.render(120).join("\n").includes(TEXTS.summary.title), "总览页应显示标题");
+
+        component.handleInput("h");
+        component.handleInput("n");
+        assertWidths(component, "编辑器页");
+        assert.ok(
+          component.render(120).join("\n").includes("选择接下来的方向"),
+          "编辑器页应显示题目上下文",
+        );
+
+        component.dispose();
+        return { formTitle: "渲染冒烟", questions: [], answers: [], cancelled: true };
+      },
+    },
+  };
+
+  const result = await registeredToolDef.execute(
+    "call-render",
+    {
+      formTitle: "渲染冒烟",
+      question: "选择接下来的方向",
+      options: [{ label: "甲" }, { label: "乙" }],
+    },
+    undefined,
+    undefined,
+    ctx,
+  );
+  assert.equal(result.details.cancelled, true, "取消结果应原样返回");
 }
 
 console.log("全部功能自检顺利通过。");

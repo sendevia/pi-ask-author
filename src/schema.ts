@@ -11,10 +11,11 @@
  */
 
 import { Type, type Static } from "typebox";
-import { MAX_OPTIONS, MAX_QUESTIONS, TEXTS } from "./texts.js";
+import { MAX_OPTIONS, MAX_QUESTIONS } from "./layout.js";
+import { TEXTS } from "./texts.js";
 
 /** 显示条件参数 Schema：引用更早题目的作答状态，决定本题或本选项是否出现 */
-const ShowIfConditionSchema = Type.Object({
+export const ShowIfConditionSchema = Type.Object({
   /** 被引用的题目 ID（必须为本次表单中更早出现的题目） */
   questionId: Type.String({ description: TEXTS.schema.conditionQuestionId }),
   /** 匹配的选项标签（可选；给出时条件等价于「该选项被选中」） */
@@ -33,7 +34,7 @@ function showIfField(description: string) {
 }
 
 /** 单个候选选项的参数 Schema */
-const OptionSchema = Type.Object({
+export const OptionSchema = Type.Object({
   /** 选项简短标题/行动标签（必须填写；缺失时经 `sanitize.ts` → `model.ts` 两级兜底为自动占位标签） */
   label: Type.String({ description: TEXTS.schema.optionLabel }),
   /** 情节推演后果或设定阐述（可选） */
@@ -47,7 +48,7 @@ const OptionSchema = Type.Object({
 });
 
 /** 单个问题的参数 Schema（批量问卷与平铺模式共用） */
-const QuestionSchema = Type.Object({
+export const QuestionSchema = Type.Object({
   /** 题目唯一标识符（可选；缺省由模型层按顺序生成，跨题重复由模型层去重） */
   id: Type.Optional(Type.String({ description: TEXTS.schema.questionId })),
   /** 题目标题（必须填写；缺失时两级兜底为自动占位标题） */

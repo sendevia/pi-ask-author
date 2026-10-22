@@ -19,7 +19,8 @@ import {
   type NormalizedQuestion,
   type QuestionAnswerState,
 } from "./model.js";
-import { ICONS, LAYOUT_CONFIG, TEXTS } from "./texts.js";
+import { ICONS, LAYOUT_CONFIG } from "./layout.js";
+import { TEXTS } from "./texts.js";
 import type { Theme } from "./theme.js";
 
 /**
@@ -185,6 +186,18 @@ export function buildTabLines(
   tabLines.push(theme.fg("dim", divider(renderWidth)));
 
   return tabLines;
+}
+
+/**
+ * 原地追加底部状态通知行（无文案时不追加）
+ * @param lines - 输出行数组（原地追加）
+ * @param theme - 主题样式提供者
+ * @param statusMessage - 当前状态通知（可为空）
+ */
+export function pushStatusMessage(lines: string[], theme: Theme, statusMessage: string | null): void {
+  if (!statusMessage) return;
+  lines.push("");
+  lines.push(` ${theme.fg("warning", statusMessage)}`);
 }
 
 /**

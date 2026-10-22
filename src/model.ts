@@ -13,7 +13,7 @@
  * 依赖方向：model.ts → format.ts / schema.ts / texts.ts（纯函数工具、Schema 单一类型源与文案字典，无回边）；不引用 `Theme` 与 TUI 组件，渲染细节全部上移组件层
  */
 
-import { cleanOptional, cleanText, clamp, compressDraftPreview, toSingleLine } from "./format.js";
+import { cleanOptional, cleanText, clamp, toSingleLine } from "./format.js";
 import { TEXTS } from "./texts.js";
 import type { QuestionInput, QuestionOption, RawParams, ShowIfInput } from "./schema.js";
 
@@ -386,6 +386,32 @@ function sanitizeEnvelopeText(text: string): string {
     .replace(/[\[\]]/g, (bracket) => (bracket === "[" ? "［" : "］"))
     .replace(/[【】]/g, "")
     .replace(/;/g, "；");
+}
+
+/**
+ * 极限压缩正文草稿/分镜头为高密度单行 LLM 指令：逐行剥离行首 Markdown 标题标识与引用符，折叠连续空白，各片段以 `TEXTS.markdown.draftSegmentSeparator` 连接
+ * @param preview - 原始草稿/分镜头文本；缺省或全空白时返回 undefined
+ * @returns 单行分镜头指令；无有效片段时返回 undefined
+ */
+function compressDraftPreview(preview: string | undefined): string | undefined {
+  if (!preview) return undefined;
+  const cleaned = cleanText(preview);
+  if (!cleaned.trim()) return undefined;
+
+  const segments = cleaned
+    .split("\n")
+    .map((line) => {
+      let l = line.trim();
+      if (!l) return "";
+      // 单次交替剥离行首任意层级的 Markdown 标题标识与引用符（`> # 标题` 需同时去除两类前缀，故不可分成两次行首替换）
+      l = l.replace(/^(?:[>#]+\s*)+/, "");
+      l = l.replace(/\s+/g, " ");
+      return l;
+    })
+    .filter(Boolean);
+
+  if (segments.length === 0) return undefined;
+  return segments.join(TEXTS.markdown.draftSegmentSeparator);
 }
 
 /**
@@ -979,7 +1005,6 @@ export class AskAuthorFormModel {
         ? `${TEXTS.markdown.draftDirectivePrefix}${sanitizeEnvelopeText(draft)}${TEXTS.markdown.draftDirectiveSuffix}`
         : "";
 
-    const questionsById = new Map(this.questions.map((q) => [q.id, q]));
     const questionIndexById = new Map(this.questions.map((q, index) => [q.id, index]));
 
     const answerLines = answers.map((ans, i) => {
@@ -998,7 +1023,7 @@ export class AskAuthorFormModel {
       });
 
       // 附带未选中选项上的孤立批注（与总览页展示一致）
-      const q = questionsById.get(ans.questionId);
+      const q = questionIndex === undefined ? undefined : this.questions[questionIndex];
       if (q && ans.optionNotes) {
         const selectedIdxSet = new Set(
           ans.multiSelect
