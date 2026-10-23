@@ -3,7 +3,7 @@
  * @description 语言资源注册、系统语言探测与模板字典编译的完整实现
  *
  * 资源约定：
- * - 语言文件位于仓库根 `lang/`，文件名即 locale 标识（`en_US`、`zh_CN`），新增语言只需在 {@link LOCALE_PACKAGES} 追加一项导入
+ * - 语言文件位于仓库根 `lang/`，文件名即 locale 标识，新增语言只需在 {@link LOCALE_PACKAGES} 追加一项导入
  * - 纯字符串即原样文案；字符串数组即文案列表；`{ "template": "…", "params": ["a", "b"] }` 为带插值的模板对象，声明形参时编译为定参函数，省略 `params` 时在装载期求值为常量文案
  * - 模板占位符 `{name}` 取 `params` 同名形参，`{icon.<键>}` 取调用方传入的共享常量解析器结果
  * - `en_US` 为规范语言：键集合、参数个数与取值种类以它为准；其余语言缺失的键回退 `en_US`，结构与规范语言不符时立即抛出异常
@@ -14,6 +14,8 @@
  */
 
 import enUS from "../lang/en_US.json" with { type: "json" };
+import jaJP from "../lang/ja_JP.json" with { type: "json" };
+import koKR from "../lang/ko_KR.json" with { type: "json" };
 import zhCN from "../lang/zh_CN.json" with { type: "json" };
 
 /** 带插值的模板声明（`params` 为规范语言声明的形参名，决定编译后函数的形参个数） */
@@ -41,7 +43,7 @@ export type CompiledTree<T> = T extends { readonly template: string; readonly pa
           : never;
 
 /** 可用语言包注册表（文件名即键；新增语言在此追加一项导入） */
-const LOCALE_PACKAGES: Readonly<Record<string, TreeNode>> = { en_US: enUS, zh_CN: zhCN };
+const LOCALE_PACKAGES: Readonly<Record<string, TreeNode>> = { en_US: enUS, ja_JP: jaJP, ko_KR: koKR, zh_CN: zhCN };
 
 /** 规范语言：键集合、形参个数与缺失键回退值的来源 */
 const CANONICAL_LOCALE = "en_US";

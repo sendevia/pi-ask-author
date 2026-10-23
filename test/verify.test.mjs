@@ -1,4 +1,8 @@
 import assert from "node:assert/strict";
+import enUS from "../lang/en_US.json" with { type: "json" };
+import jaJP from "../lang/ja_JP.json" with { type: "json" };
+import koKR from "../lang/ko_KR.json" with { type: "json" };
+import zhCN from "../lang/zh_CN.json" with { type: "json" };
 import {
   ACTIVE_LOCALE,
   AdaptiveConditionError,
@@ -186,13 +190,47 @@ import { visibleWidth } from "@earendil-works/pi-tui";
   assert.equal(detectLocale({ LC_ALL: "zh_CN.UTF-8", LANG: "en_US.UTF-8" }), "zh_CN", "LC_ALL 应优先于 LANG");
   assert.equal(detectLocale({ LANG: "en_GB.UTF-8" }), "en_US", "应回退到同族语言 en_US");
   assert.equal(detectLocale({ LANGUAGE: "zh_TW:en_GB" }), "zh_CN", "LANGUAGE 冒号列表应按顺序探测并回退同族语言");
-  assert.equal(detectLocale({ LANG: "ja_JP.UTF-8" }), "en_US", "无同族语言时应回退规范语言");
+  assert.equal(detectLocale({ LANG: "ja_JP.UTF-8" }), "ja_JP", "应正确匹配已注册的 ja_JP 语言");
+  assert.equal(detectLocale({ LANG: "ko_KR.UTF-8" }), "ko_KR", "应正确匹配已注册的 ko_KR 语言");
+  assert.equal(detectLocale({ LANG: "de_DE.UTF-8" }), "en_US", "无同族语言时应回退规范语言");
   assert.equal(detectLocale({ LANG: "C" }, "en-US"), "en_US", "C locale 应跳过并采用系统语言");
   assert.equal(detectLocale({}, "zh-Hans-CN"), "zh_CN", "系统语言应作为最后一位候选");
-  assert.ok(["en_US", "zh_CN"].includes(ACTIVE_LOCALE), "当前界面语言应为已注册语言");
+  assert.ok(["en_US", "ja_JP", "ko_KR", "zh_CN"].includes(ACTIVE_LOCALE), "当前界面语言应为已注册语言");
   assert.ok(TEXTS.tabs.questionTab(2).includes("2"), "语言模板应按形参插值");
   assert.throws(() => TEXTS.tabs.questionTab(), /形参数量不匹配/, "语言模板形参不足时应立即抛出");
   assert.ok(TEXTS.view.customNotePanelTips.length > 0, "文案列表应完整装载");
+
+  const assertStructureEqual = (canonical, target, path = "") => {
+    if (typeof canonical === "string") {
+      assert.equal(typeof target, "string", `${path} 应为字符串类型`);
+      return;
+    }
+    if (Array.isArray(canonical)) {
+      assert.ok(Array.isArray(target), `${path} 应为数组类型`);
+      assert.equal(target.length, canonical.length, `${path} 数组长度应一致`);
+      return;
+    }
+    if (typeof canonical === "object" && canonical !== null) {
+      assert.ok(typeof target === "object" && target !== null, `${path} 应为对象类型`);
+      if ("template" in canonical) {
+        assert.ok("template" in target, `${path} 应包含 template 字段`);
+        if ("params" in canonical) {
+          assert.deepEqual(target.params, canonical.params, `${path} 的 params 应与规范语言一致`);
+        }
+        return;
+      }
+      const canonicalKeys = Object.keys(canonical).sort();
+      const targetKeys = Object.keys(target).sort();
+      assert.deepEqual(targetKeys, canonicalKeys, `${path} 的键集合应与规范语言完全一致`);
+      for (const key of canonicalKeys) {
+        assertStructureEqual(canonical[key], target[key], path ? `${path}.${key}` : key);
+      }
+    }
+  };
+
+  assertStructureEqual(enUS, jaJP, "ja_JP");
+  assertStructureEqual(enUS, koKR, "ko_KR");
+  assertStructureEqual(enUS, zhCN, "zh_CN");
 }
 
 // 6. 自适应显示条件验证

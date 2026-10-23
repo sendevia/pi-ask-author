@@ -1,0 +1,154 @@
+{
+  "tool": { "label": "작가에게 문의" },
+  "command": {
+    "name": "ask-author",
+    "description": "ask_author 창작 문의 도구 설명 보기",
+    "notify": "프롬프트에서 AI에게 ask_author 호출을 지시하면 창작 결정에 대해 문의합니다"
+  },
+  "common": { "optionSeparator": ", ", "bulletPrefix": "• ", "helpSeparator": " • " },
+  "tabs": {
+    "questionTab": { "template": "질문 {index}", "params": ["index"] },
+    "submitTab": { "template": "{icon.check} 답변 제출" }
+  },
+  "view": {
+    "modeSingle": "[단일 선택]",
+    "conditionalBadge": "[조건부]",
+    "expansionBadge": "[전개]",
+    "modeMultiAtLeast": { "template": "[다중 선택 최소 {min}개{maxPart}]", "params": ["min", "maxPart"] },
+    "modeMultiOptional": { "template": "[다중 선택 선택 안 함 가능{maxPart}]", "params": ["maxPart"] },
+    "modeMultiUnconstrained": { "template": "[다중 선택{maxPart}]", "params": ["maxPart"] },
+    "modeMultiMaxPart": { "template": " 최대 {max}개", "params": ["max"] },
+    "attachedNoteBanner": { "template": "{icon.note} 질문 추가 설명: {text}", "params": ["text"] },
+    "optionAttachedNoteBanner": {
+      "template": "{icon.note} [{label}] 선택지 추가 설명: {text}",
+      "params": ["label", "text"]
+    },
+    "listTopMore": { "template": "  {icon.scrollUp} 위에 {count}개 더 있음", "params": ["count"] },
+    "listBottomMore": { "template": "  {icon.scrollDown} 아래에 {count}개 더 있음", "params": ["count"] },
+    "optionNotePanelTitle": "선택지 추가 설명",
+    "storyDescriptionPanelTitle": "플롯 설정 전개",
+    "storyDraftPanelTitle": "본문 초안 / 콘티 시안",
+    "customNotePanelTitle": "질문 추가 설명",
+    "confirmPanelTitle": "조작 안내",
+    "previewScrollInfo": { "template": "({start}-{end}/{total}행, [ ]로 스크롤)", "params": ["start", "end", "total"] },
+    "previewNoDraft": "(미리보기 내용 없음)",
+    "customNotePanelTips": [
+      "• 언제든지 'N'을 누르거나 이 항목을 선택 후 'Enter'를 눌러 질문 추가 설명을 입력/수정합니다",
+      "• 'x'를 눌러 질문 추가 설명을 지웁니다",
+      "• 추가 설명은 선택된 선택지 및 선택지별 추가 설명과 함께 AI 어시스턴트에게 제출됩니다"
+    ],
+    "confirmPanelTips": ["• `Enter`를 눌러 이 질문을 확정하고 다음 질문으로 이동합니다", "• 마지막 질문을 확정하면 개요 및 제출 화면으로 자동 이동합니다"],
+    "sectionTitle": { "template": "### {title}", "params": ["title"] },
+    "italicLine": { "template": "_{text}_", "params": ["text"] }
+  },
+  "menu": {
+    "customNoteLabel": { "template": "{icon.note} 질문 추가 설명" },
+    "customNoteLabelFilled": { "template": "{icon.note} 질문 추가 설명 (작성됨)" },
+    "confirmDetailMulti": { "template": "{selectedCount}개 선택됨", "params": ["selectedCount", "minSelect"] },
+    "confirmDetailMultiBelowMin": {
+      "template": "{selectedCount}/{minSelect}개 선택됨",
+      "params": ["selectedCount", "minSelect"]
+    },
+    "confirmLabel": { "template": "{icon.check} 이 질문 확정 ({detail}{noteSuffix})", "params": ["detail", "noteSuffix"] },
+    "confirmNoteSuffix": " + 추가 설명",
+    "confirmDesc": "확정 후 다음 질문 또는 개요 화면으로 이동"
+  },
+  "editor": {
+    "title": { "template": " {icon.note} 질문 추가 설명 작성（{questionTitle}）", "params": ["questionTitle"] },
+    "optionTitle": {
+      "template": " {icon.note} 선택지 추가 설명 작성（{optionLabel} - {questionTitle}）",
+      "params": ["questionTitle", "optionLabel"]
+    },
+    "footerHelp": " [Enter] 저장 후 돌아가기 • [Esc/Ctrl+C] 취소"
+  },
+  "status": {
+    "questionNoteSaved": "질문 추가 설명을 저장했습니다",
+    "noteCleared": "질문 추가 설명을 지웠습니다",
+    "optionNoteSaved": { "template": "'{label}' 추가 설명을 저장했습니다", "params": ["label"] },
+    "optionNoteSavedUnselected": {
+      "template": "'{label}' 메모를 저장했습니다 (해당 선택지는 선택되지 않았으며 메모로만 제출됩니다)",
+      "params": ["label"]
+    },
+    "optionNoteSavedAtLimit": {
+      "template": "최대 한도(최대 {max}개)에 도달했습니다: 메모는 저장되었으나 선택지는 선택되지 않았습니다",
+      "params": ["max"]
+    },
+    "optionNoteCleared": { "template": "'{label}' 추가 설명을 지웠습니다", "params": ["label"] },
+    "selectedUpToLimit": { "template": "선택 한도에 도달했습니다 (최대 {limit}개)", "params": ["limit"] },
+    "maxSelectExceeded": { "template": "최대 한도(최대 {max}개)에 도달했습니다: '스페이스바'로 선택을 해제한 후 다시 선택해 주세요", "params": ["max"] },
+    "minSelectRequired": {
+      "template": "최소 조건(최소 {min}개)을 충족하지 않았습니다: '스페이스바'로 계속 선택하거나 'n/N'으로 설명을 입력해 주세요",
+      "params": ["min"]
+    },
+    "pleaseAnswerBeforeSubmit": "이 질문에 답변하지 않았습니다: '스페이스바/Enter'로 선택지를 선택하거나 'n/N'으로 추가 설명을 입력해 주세요",
+    "editorDiscardConfirm": "다시 Esc/Ctrl+C를 누르면 변경사항을 취소합니다 (저장되지 않은 내용은 삭제됩니다). 입력을 계속하면 취소가 중단됩니다",
+    "errorNonTui": "대화형 터미널 환경이 아니므로 인터페이스를 시작할 수 없습니다. 대화형 TUI 세션에서 다시 시도해 주세요",
+    "errorNoQuestions": "유효한 질문이나 선택지가 제공되지 않았습니다. 선택지가 포함된 질문을 최소 하나 이상 제공해 주세요",
+    "errorInvalidCondition": {
+      "template": "적응형 조건이 유효하지 않습니다: {details} (showIf는 더 이전의 질문 및 기존 선택지 라벨을 참조하거나 answered를 사용해 주세요)",
+      "params": ["details"]
+    },
+    "errorExecutionFailed": { "template": "컴포넌트 실행 오류: {reason} (매개변수를 수정한 후 다시 시도해 주세요)", "params": ["reason"] },
+    "expansionRunning": "답변에 따라 후속 질문을 전개하는 중…",
+    "expansionAdded": { "template": "전개 완료: 질문 {qCount}개, 선택지 {optCount}개 추가됨", "params": ["qCount", "optCount"] },
+    "expansionRetracted": "답변이 변경되어 이전 전개 결과를 회수했습니다",
+    "expansionStopped": "판단에 필요한 정보가 충분하여 질문을 더 이상 추가하지 않습니다",
+    "expansionFailed": { "template": "전개 실패: {reason} (계속 답변하거나 그대로 제출할 수 있습니다)", "params": ["reason"] }
+  },
+  "help": {
+    "cancel": "Esc/Ctrl+C 취소",
+    "clearNote": "x 추가 설명 삭제",
+    "confirmQuestion": "Enter 확정",
+    "confirmSubmit": "Enter 제출",
+    "editNote": "n 추가 설명",
+    "editOptionNote": "n 선택지 추가 설명",
+    "editQuestionNote": "N 질문 추가 설명",
+    "jumpQuestion": "1~9 질문으로 이동",
+    "moveCursor": "↑↓/jk 이동",
+    "scrollDraft": "[ ] 초안 스크롤",
+    "scrollSummary": "↑↓/[ ] 스크롤",
+    "selectOptionSingle": "스페이스바/Enter 선택",
+    "switchQuestion": "Tab/←→/hl 질문 전환",
+    "toggleAll": "a 전체 선택/해제",
+    "toggleCheckMulti": "스페이스바 선택/해제"
+  },
+  "summary": {
+    "title": "【답변 개요 및 확인】",
+    "statusDone": "[완료]",
+    "statusPending": "[미완료]",
+    "questionPrefix": { "template": "질문 {index}: {title}", "params": ["index", "title"] },
+    "selectedLabel": "선택됨: ",
+    "optionNoteBadge": { "template": "({icon.note} 메모)" },
+    "optionNotePrefix": { "template": "{icon.note} 선택지 추가 설명（{optLabel}）: ", "params": ["optLabel"] },
+    "customNoteLabel": { "template": "{icon.note} 질문 추가 설명: " },
+    "allDonePrompt": { "template": " {icon.check} 모두 완료되었습니다. Enter/Ctrl+S로 제출, Tab/hl/1~9로 돌아가서 수정" },
+    "pendingWarning": { "template": " {icon.unchecked} 미완료된 질문이 있습니다. Enter로 답변, Tab/hl/1~9로 전환하여 수정" },
+    "topMore": { "template": "  {icon.scrollUp} 위에 {count}줄 더 있음", "params": ["count"] },
+    "bottomMore": { "template": "  {icon.scrollDown} 아래에 {count}줄 더 있음", "params": ["count"] }
+  },
+  "card": {
+    "callQuestionAndOptionCount": { "template": "{qCount}개 질문 • {optCount}개 선택지", "params": ["qCount", "optCount"] },
+    "callOptionCountOnly": { "template": "{optCount}개 선택지", "params": ["optCount"] },
+    "resultCancelled": { "template": "{icon.cancel} 취소됨" },
+    "resultErrorShort": { "template": "{icon.error} 실행 실패" },
+    "resultCompleted": { "template": "{icon.check} 완료" },
+    "resultCount": { "template": "{n}개", "params": ["n"] },
+    "optionBullet": { "template": "• {title}: {content}", "params": ["title", "content"] },
+    "optionWithNote": { "template": "{label} [{icon.note} {note}]", "params": ["label", "note"] },
+    "questionNoteTag": { "template": " ({icon.note} 질문 추가 설명: {text})", "params": ["text"] },
+    "errorBullet": { "template": "• 오류 원인: {err}", "params": ["err"] }
+  },
+  "fallbacks": {
+    "defaultFormTitle": "창작 결정",
+    "defaultQuestionTitle": "향후 창작 방향을 선택해 주세요",
+    "defaultCustomPlaceholder": "이 질문에 대한 전반적인 추가 요구사항, 복선 디테일 또는 수정 의견을 입력하세요...",
+    "defaultOptionCustomPlaceholder": "해당 선택지에 대한 구체적인 추가 요구사항 또는 수정 세부 내용을 입력하세요...",
+    "defaultCustomChoiceName": "사용자 지정 방안",
+    "defaultOptionLabel": "기본 방안",
+    "unnamedOptionLabel": "이름 없는 방안",
+    "unselectedOption": "선택 안 함",
+    "autoQuestionId": { "template": "q_{n}", "params": ["n"] },
+    "autoQuestionTitle": { "template": "질문 {n}", "params": ["n"] },
+    "autoOptionLabel": { "template": "선택지 {n}", "params": ["n"] }
+  }
+}

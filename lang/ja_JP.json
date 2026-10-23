@@ -1,0 +1,154 @@
+{
+  "tool": { "label": "作者に確認" },
+  "command": {
+    "name": "ask-author",
+    "description": "ask_author 創作確認ツールの説明を表示",
+    "notify": "プロンプトで AI に ask_author の呼び出しを指示すると、創作方針の確認が行われます"
+  },
+  "common": { "optionSeparator": "、", "bulletPrefix": "• ", "helpSeparator": " • " },
+  "tabs": {
+    "questionTab": { "template": "第{index}問", "params": ["index"] },
+    "submitTab": { "template": "{icon.check} 回答を提出" }
+  },
+  "view": {
+    "modeSingle": "[単一選択]",
+    "conditionalBadge": "[条件付き]",
+    "expansionBadge": "[展開]",
+    "modeMultiAtLeast": { "template": "[複数選択 {min}項目以上{maxPart}]", "params": ["min", "maxPart"] },
+    "modeMultiOptional": { "template": "[複数選択 選択任意{maxPart}]", "params": ["maxPart"] },
+    "modeMultiUnconstrained": { "template": "[複数選択{maxPart}]", "params": ["maxPart"] },
+    "modeMultiMaxPart": { "template": "、最大{max}項目", "params": ["max"] },
+    "attachedNoteBanner": { "template": "{icon.note} 質問の補足説明：{text}", "params": ["text"] },
+    "optionAttachedNoteBanner": {
+      "template": "{icon.note} [{label}] 選択肢の補足説明：{text}",
+      "params": ["label", "text"]
+    },
+    "listTopMore": { "template": "  {icon.scrollUp} 上にあと {count} 項目", "params": ["count"] },
+    "listBottomMore": { "template": "  {icon.scrollDown} 下にあと {count} 項目", "params": ["count"] },
+    "optionNotePanelTitle": "選択肢の補足説明",
+    "storyDescriptionPanelTitle": "ストーリー設定の展開",
+    "storyDraftPanelTitle": "本文下書き／シーン試筆",
+    "customNotePanelTitle": "質問の補足説明",
+    "confirmPanelTitle": "操作案内",
+    "previewScrollInfo": { "template": "({start}-{end}/{total} 行、[ ] でスクロール)", "params": ["start", "end", "total"] },
+    "previewNoDraft": "(プレビュー内容なし)",
+    "customNotePanelTips": [
+      "• 「N」キーを押すか、本項目を選択して「Enter」を押すと質問の補足説明を入力・編集できます",
+      "• 「x」キーを押すと質問の補足説明を消去できます",
+      "• 補足説明は選択された選択肢および選択肢ごとの補足説明と共に AI アシスタントへ送信されます"
+    ],
+    "confirmPanelTips": ["• `Enter` を押してこの質問を確定し、次の質問へ進みます", "• 最後の質問を確定すると、自動的に概要確認・提出画面へ遷移します"],
+    "sectionTitle": { "template": "### {title}", "params": ["title"] },
+    "italicLine": { "template": "_{text}_", "params": ["text"] }
+  },
+  "menu": {
+    "customNoteLabel": { "template": "{icon.note} 質問の補足説明" },
+    "customNoteLabelFilled": { "template": "{icon.note} 質問の補足説明 (入力済み)" },
+    "confirmDetailMulti": { "template": "{selectedCount} 項目選択済み", "params": ["selectedCount", "minSelect"] },
+    "confirmDetailMultiBelowMin": {
+      "template": "{selectedCount}/{minSelect} 項目選択済み",
+      "params": ["selectedCount", "minSelect"]
+    },
+    "confirmLabel": { "template": "{icon.check} この質問を確定 ({detail}{noteSuffix})", "params": ["detail", "noteSuffix"] },
+    "confirmNoteSuffix": " + 補足説明",
+    "confirmDesc": "確定して次の質問または概要画面へ進む"
+  },
+  "editor": {
+    "title": { "template": " {icon.note} 質問の補足説明を入力（{questionTitle}）", "params": ["questionTitle"] },
+    "optionTitle": {
+      "template": " {icon.note} 選択肢の補足説明を入力（{optionLabel} - {questionTitle}）",
+      "params": ["questionTitle", "optionLabel"]
+    },
+    "footerHelp": " [Enter] 保存して戻る • [Esc/Ctrl+C] 取り消し"
+  },
+  "status": {
+    "questionNoteSaved": "質問の補足説明を保存しました",
+    "noteCleared": "質問の補足説明を消去しました",
+    "optionNoteSaved": { "template": "「{label}」の補足説明を保存しました", "params": ["label"] },
+    "optionNoteSavedUnselected": {
+      "template": "「{label}」のメモを保存しました（この選択肢は未選択のため、メモとしてのみ送信されます）",
+      "params": ["label"]
+    },
+    "optionNoteSavedAtLimit": {
+      "template": "上限（最大 {max} 項目）に達しました：メモは保存されましたが、選択肢は未選択のままです",
+      "params": ["max"]
+    },
+    "optionNoteCleared": { "template": "「{label}」の補足説明を消去しました", "params": ["label"] },
+    "selectedUpToLimit": { "template": "選択上限に達しました（最大 {limit} 項目）", "params": ["limit"] },
+    "maxSelectExceeded": { "template": "上限（最大 {max} 項目）に達しました：「Space」キーで選択を解除してから再選択してください", "params": ["max"] },
+    "minSelectRequired": {
+      "template": "下限（少なくとも {min} 項目）を満たしていません：「Space」キーで選択を続けるか、「n/N」で説明を入力してください",
+      "params": ["min"]
+    },
+    "pleaseAnswerBeforeSubmit": "この質問は未回答です：「Space/Enter」で選択肢を選択するか、「n/N」で補足説明を入力してください",
+    "editorDiscardConfirm": "もう一度 Esc/Ctrl+C を押すと変更を破棄します（未保存の内容は失われます）。入力を続けると取り消しを中止します",
+    "errorNonTui": "対話型ターミナル環境ではないため、インターフェースを起動できません。対話型 TUI セッションで再試行してください",
+    "errorNoQuestions": "有効な質問または選択肢が指定されていません。選択肢を含む質問を少なくとも1つ指定してください",
+    "errorInvalidCondition": {
+      "template": "適応条件が無効です：{details}（showIf はより前の質問と既存の選択肢ラベルを参照するか、answered を使用してください）",
+      "params": ["details"]
+    },
+    "errorExecutionFailed": { "template": "コンポーネント実行エラー：{reason}（引数を修正して再試行してください）", "params": ["reason"] },
+    "expansionRunning": "回答に基づき後続の質問を展開中…",
+    "expansionAdded": { "template": "展開完了：{qCount} 問、{optCount} 個の選択肢を追加しました", "params": ["qCount", "optCount"] },
+    "expansionRetracted": "回答が変更されたため、前回の展開結果を取り消しました",
+    "expansionStopped": "推論に必要な情報は十分揃っているため、質問の追加を終了しました",
+    "expansionFailed": { "template": "展開に失敗しました：{reason}（回答を続けるか、そのまま提出できます）", "params": ["reason"] }
+  },
+  "help": {
+    "cancel": "Esc/Ctrl+C 取消",
+    "clearNote": "x 補足説明を消去",
+    "confirmQuestion": "Enter 確定",
+    "confirmSubmit": "Enter 提出",
+    "editNote": "n 補足説明",
+    "editOptionNote": "n 選択肢の補足説明",
+    "editQuestionNote": "N 質問の補足説明",
+    "jumpQuestion": "1〜9 質問へ移動",
+    "moveCursor": "↑↓/jk 移動",
+    "scrollDraft": "[ ] 下書きをスクロール",
+    "scrollSummary": "↑↓/[ ] スクロール",
+    "selectOptionSingle": "Space/Enter 選択",
+    "switchQuestion": "Tab/←→/hl 質問切り替え",
+    "toggleAll": "a 全選択/クリア",
+    "toggleCheckMulti": "Space 選択/解除"
+  },
+  "summary": {
+    "title": "【回答概要と確認】",
+    "statusDone": "[完了]",
+    "statusPending": "[未完了]",
+    "questionPrefix": { "template": "第{index}問：{title}", "params": ["index", "title"] },
+    "selectedLabel": "選択済み：",
+    "optionNoteBadge": { "template": "({icon.note} メモ)" },
+    "optionNotePrefix": { "template": "{icon.note} 選択肢の補足説明（{optLabel}）：", "params": ["optLabel"] },
+    "customNoteLabel": { "template": "{icon.note} 質問の補足説明：" },
+    "allDonePrompt": { "template": " {icon.check} すべて完了しました。Enter/Ctrl+S で提出、Tab/hl/1〜9 で戻って修正" },
+    "pendingWarning": { "template": " {icon.unchecked} 未完了の質問があります。Enter で回答、Tab/hl/1〜9 で切り替えて修正" },
+    "topMore": { "template": "  {icon.scrollUp} 上にあと {count} 行", "params": ["count"] },
+    "bottomMore": { "template": "  {icon.scrollDown} 下にあと {count} 行", "params": ["count"] }
+  },
+  "card": {
+    "callQuestionAndOptionCount": { "template": "{qCount} 問 • {optCount} 選択肢", "params": ["qCount", "optCount"] },
+    "callOptionCountOnly": { "template": "{optCount} 選択肢", "params": ["optCount"] },
+    "resultCancelled": { "template": "{icon.cancel} 取り消しました" },
+    "resultErrorShort": { "template": "{icon.error} 実行失敗" },
+    "resultCompleted": { "template": "{icon.check} 完了" },
+    "resultCount": { "template": "{n} 項目", "params": ["n"] },
+    "optionBullet": { "template": "• {title}：{content}", "params": ["title", "content"] },
+    "optionWithNote": { "template": "{label} [{icon.note} {note}]", "params": ["label", "note"] },
+    "questionNoteTag": { "template": " ({icon.note} 質問の補足説明: {text})", "params": ["text"] },
+    "errorBullet": { "template": "• エラー原因：{err}", "params": ["err"] }
+  },
+  "fallbacks": {
+    "defaultFormTitle": "創作の決定",
+    "defaultQuestionTitle": "今後の創作方針を選択してください",
+    "defaultCustomPlaceholder": "この質問に対する全体的な要望、伏線などの詳細、または修正意見を入力...",
+    "defaultOptionCustomPlaceholder": "この選択肢に対する具体的な追加要望や修正の詳細を入力...",
+    "defaultCustomChoiceName": "カスタム案",
+    "defaultOptionLabel": "デフォルト案",
+    "unnamedOptionLabel": "名称未設定の案",
+    "unselectedOption": "未選択",
+    "autoQuestionId": { "template": "q_{n}", "params": ["n"] },
+    "autoQuestionTitle": { "template": "質問 {n}", "params": ["n"] },
+    "autoOptionLabel": { "template": "選択肢 {n}", "params": ["n"] }
+  }
+}
