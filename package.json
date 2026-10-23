@@ -1,6 +1,6 @@
 {
   "name": "@sendevia/pi-ask-author",
-  "version": "1.1.0",
+  "version": "1.1.1",
   "description": "面向文字创作者的决策询问 Pi 扩展",
   "keywords": [
     "pi-package",
