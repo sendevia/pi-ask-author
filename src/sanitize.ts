@@ -5,15 +5,26 @@
  * 核心架构特性：
  * - 容错范围：JSON 串包裹 / `raw` 包装键 / 字段别名 / 纯字符串选项 / 空选项兜底
  * - 白名单收敛：产物仅含 `RawParams` 声明字段（丢弃未知键），保障宿主 Schema 校验通过
+ * - 推演载荷清洗：`sanitizeExpansionPayload` 丢弃引用未知题目的选项追加、重复标签、与既有 ID 冲突的新题目与无选项题目
  * - 防御纵深：本层做类型收敛 / 别名映射 / 结构规整 / 区间兜底，模型层再幂等兜底一次
  *
- * 依赖方向：sanitize.ts → format.ts / texts.ts / schema.ts（类型）；仅由 index.ts 装配
+ * 依赖方向：sanitize.ts → format.ts / layout.ts / texts.ts / schema.ts（类型）；被 index / expansion / tool-card 消费
  */
 
 import { cleanOptional, parseJson } from "./format.js";
 import { MAX_OPTIONS, MAX_QUESTIONS } from "./layout.js";
 import { TEXTS } from "./texts.js";
-import type { QuestionInput, QuestionOption, RawParams, ShowIfInput, VisibilityConditionInput } from "./schema.js";
+import type {
+  ExpansionConfig,
+  ExpansionPayload,
+  InsertPosition,
+  OptionAddition,
+  QuestionInput,
+  QuestionOption,
+  RawParams,
+  ShowIfInput,
+  VisibilityConditionInput,
+} from "./schema.js";
 
 /** 字段别名提取源对象形状（不可信边界，统一经 `pickString` 收敛） */
 type LooseRecord = Record<string, unknown>;
@@ -234,6 +245,42 @@ function withDefaultOption(options: QuestionOption[]): QuestionOption[] {
 }
 
 /**
+ * 规整推演题目的插入位置（兼容 JSON 串包裹、`after` 别名与 `anchor` 字符串）
+ * @param value - `insert` 原始值
+ * @returns 预设字符串或 `{ after }` 锚点；无法识别时返回 undefined（由模型层收敛为跟随）
+ */
+function coerceInsertPosition(value: unknown): InsertPosition | undefined {
+  if (typeof value === "string") {
+    const normalized = value.trim().toLowerCase();
+    if (normalized === "follow" || normalized === "tail") return normalized;
+    const anchor = cleanOptional(value);
+    return anchor ? { after: anchor } : undefined;
+  }
+  const parsed = parseJson(value);
+  if (!isPlainRecord(parsed)) return undefined;
+  const after = cleanOptional(pickString(parsed, ["after", "questionId", "anchor", "id"]));
+  return after ? { after } : undefined;
+}
+
+/**
+ * 规整实时推演配置（兼容 JSON 串包裹与 `instructions` / `hint` 别名）
+ * @param value - `expansion` 原始值
+ * @returns 仅含 `maxQuestions` / `guidance` / `insert` 的配置；非对象输入返回 undefined（视为未开启推演）
+ */
+function coerceExpansion(value: unknown): ExpansionConfig | undefined {
+  const parsed = parseJson(value);
+  if (!isPlainRecord(parsed)) return undefined;
+  const config: ExpansionConfig = {};
+  const maxQuestions = parseIntegerValue(parsed.maxQuestions);
+  if (maxQuestions !== undefined) config.maxQuestions = Math.min(Math.max(1, maxQuestions), MAX_QUESTIONS);
+  const guidance = cleanOptional(pickString(parsed, ["guidance", "instructions", "hint"]));
+  if (guidance) config.guidance = guidance;
+  const insert = coerceInsertPosition(parsed.insert ?? parsed.position);
+  if (insert !== undefined) config.insert = insert;
+  return config;
+}
+
+/**
  * 解析单题平铺模式题干（三级回退：`question` → `prompt` → 携带候选选项时的 `title` / `taskTitle`）
  * @param rawQuestion - 顶层 `question` 原始值
  * @param rawPrompt - `prompt` 别名原始值
@@ -296,10 +343,14 @@ export function sanitizeAskAuthorArgs(args: unknown): RawParams {
     p.allowCustom === undefined ? undefined : parseBooleanValue(p.allowCustom, true);
   const customPlaceholder: string | undefined = pickString(p, ["customPlaceholder"]);
 
-  // 6. 白名单收敛：仅保留 RawParams 声明的字段（键序与 Schema 一致），丢弃全部不可信残留键
+  // 7. 实时推演配置（缺省保持 undefined，视为不推演）
+  const expansion: ExpansionConfig | undefined = p.expansion === undefined ? undefined : coerceExpansion(p.expansion);
+
+  // 8. 白名单收敛：仅保留 RawParams 声明的字段（键序与 Schema 一致），丢弃全部不可信残留键
   const sanitized: RawParams = {
     formTitle,
     description,
+    expansion,
     questions,
     question,
     multiSelect,
@@ -311,4 +362,71 @@ export function sanitizeAskAuthorArgs(args: unknown): RawParams {
     customPlaceholder,
   };
   return sanitized;
+}
+
+/** 推演载荷的归集上下文：表单当前已声明的题目 ID 与各题已有选项标签 */
+export interface ExpansionContext {
+  /** 已声明的题目 ID（按题目顺序） */
+  readonly questionIds: readonly string[];
+  /** 题目 ID → 已有选项标签 */
+  readonly optionLabels: ReadonlyMap<string, readonly string[]>;
+}
+
+/**
+ * 规整推演模型的回复载荷（不可信边界）：丢弃引用未知题目的选项追加、与既有标签重复的选项以及与既有题目 ID 冲突的新题目
+ * @param value - 已解析的回复对象（非对象时视为无新增）
+ * @param context - 表单当前已声明的题目与选项标签
+ * @returns 仅含合法追加项的推演载荷；全部条目被过滤时返回空载荷（表单停止增长）
+ */
+export function sanitizeExpansionPayload(value: unknown, context: ExpansionContext): ExpansionPayload {
+  if (!isPlainRecord(value)) return { questions: [], optionAdditions: [] };
+
+  const usedQuestionIds = new Set(context.questionIds);
+  const questions: QuestionInput[] = [];
+  for (const entry of asArray(parseJson(value.questions))) {
+    // 无标题或无选项的生成题目不进入表单：占位题目对作者没有决策价值
+    if (!isPlainRecord(entry)) continue;
+    if (!cleanOptional(pickString(entry, ["title", "question", "prompt", "query", "heading"]))) continue;
+    if (asArray(parseJson(entry.options ?? entry.choices ?? entry.items)).length === 0) continue;
+
+    const question = sanitizeQuestionEntry(entry, questions.length);
+    // 同一题目内重复标签会破坏按标签定位的显示条件，保留首次出现
+    const labels = new Set<string>();
+    question.options = question.options.filter((option) => {
+      if (labels.has(option.label)) return false;
+      labels.add(option.label);
+      return true;
+    });
+    // 与既有题目 ID 冲突的新题目重新派生 ID，避免 showIf 引用歧义
+    if (question.id !== undefined && usedQuestionIds.has(question.id)) question.id = undefined;
+    if (question.id !== undefined) usedQuestionIds.add(question.id);
+    questions.push(question);
+  }
+
+  const optionAdditions: OptionAddition[] = [];
+  for (const entry of asArray(parseJson(value.options ?? value.optionAdditions))) {
+    if (!isPlainRecord(entry)) continue;
+    const questionId = cleanOptional(pickString(entry, ["questionId", "question", "id"]));
+    if (!questionId) continue;
+    const declared = context.optionLabels.get(questionId);
+    if (!declared) continue;
+    const labels = new Set(declared);
+    const options = coerceOptions(entry.options ?? entry.choices ?? entry.items).filter((option) => {
+      if (labels.has(option.label)) return false;
+      labels.add(option.label);
+      return true;
+    });
+    if (options.length > 0) optionAdditions.push({ questionId, options });
+  }
+
+  return { questions, optionAdditions };
+}
+
+/**
+ * 归一化不可信输入为数组（非数组与缺省一律视为空列表）
+ * @param value - 待检测值
+ * @returns 原数组或空数组
+ */
+function asArray(value: unknown): unknown[] {
+  return Array.isArray(value) ? value : [];
 }

@@ -12,7 +12,8 @@
   },
   "view": {
     "modeSingle": "[单选]",
-    "conditionalBadge": "[条件显示]",
+    "conditionalBadge": "[条件]",
+    "expansionBadge": "[推演]",
     "modeMultiAtLeast": { "template": "[多选 至少{min}项{maxPart}]", "params": ["min", "maxPart"] },
     "modeMultiOptional": { "template": "[多选 可不选{maxPart}]", "params": ["maxPart"] },
     "modeMultiUnconstrained": { "template": "[多选{maxPart}]", "params": ["maxPart"] },
@@ -87,7 +88,12 @@
       "template": "自适应条件无效：{details}（请让 showIf 指向更早的题目，并引用该题已有选项的标签，或改用 answered）",
       "params": ["details"]
     },
-    "errorExecutionFailed": { "template": "组件执行异常：{reason}（可修正参数后重试）", "params": ["reason"] }
+    "errorExecutionFailed": { "template": "组件执行异常：{reason}（可修正参数后重试）", "params": ["reason"] },
+    "expansionRunning": "正在根据作答推演后续题目…",
+    "expansionAdded": { "template": "推演完成：新增 {qCount} 题、{optCount} 个选项", "params": ["qCount", "optCount"] },
+    "expansionRetracted": "答案已改动，撤回上一轮推演结果",
+    "expansionStopped": "推演判断信息已足够，不再新增题目",
+    "expansionFailed": { "template": "推演失败：{reason}（可继续作答或直接提交）", "params": ["reason"] }
   },
   "help": {
     "cancel": "Esc/Ctrl+C 取消",

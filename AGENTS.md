@@ -78,19 +78,20 @@
 
 - `package.json`：定义扩展元数据、依赖项与入口声明，通过 `pi.extensions` 字段导出 `./dist/index.js`。
 - `tsconfig.json`：配置 TypeScript 严格模式编译选项。
-- `src/index.ts`：插件主入口模块。注册 `ask_author` 工具与 `/ask-author` 辅助命令，编排工具执行过程中的守卫、模型构建与四类结果分支；工具声明为 `model-only` 并标注只读、封闭世界。
-- `src/schema.ts`：工具参数的单一源头。基于 TypeBox 声明参数结构、`showIf` 显示条件与校验规则，导出 `AskAuthorParams`、`QuestionSchema`、`OptionSchema`、`ShowIfConditionSchema` 以及派生类型 `RawParams`、`QuestionInput`、`QuestionOption`。
-- `src/model.ts`：问卷状态机与数据模型。定义 `AskAuthorFormModel`，负责题目数据归一化、自适应显示条件解析与显隐快照、作答状态流转、`revision` 版本推进、答卷结果编译以及 Markdown 封套文本生成。
-- `src/component.ts`：交互式 TUI 核心组件。实现 `AskAuthorComponent`，负责交互状态机、键盘事件路由、内置 `Editor` 文本编辑器集成、AbortSignal 级联取消与整屏帧缓存；具体排版委托给 `view-*` 模块。
-- `src/sanitize.ts`：入参防御性清洗模块。提供 `sanitizeAskAuthorArgs` 函数，执行不可信入参边界的类型收敛、别名映射、数据纠错与白名单字段过滤。
+- `src/index.ts`：插件主入口模块。注册 `ask_author` 工具与 `/ask-author` 辅助命令，编排工具执行过程中的守卫、模型构建、实时推演的模型调用与四类结果分支；工具声明为 `model-only` 并标注只读、封闭世界。
+- `src/schema.ts`：工具参数的单一源头。基于 TypeBox 声明参数结构、`showIf` 显示条件、实时推演配置与校验规则，导出 `AskAuthorParams`、`QuestionSchema`、`OptionSchema`、`ShowIfConditionSchema`、`ExpansionSchema`、`InsertPositionSchema` 以及派生类型 `RawParams`、`QuestionInput`、`QuestionOption`、`ExpansionConfig`、`InsertPosition`、`ExpansionPayload`、`OptionAddition`。
+- `src/model.ts`：问卷状态机与数据模型。定义 `AskAuthorFormModel`，负责题目数据归一化、自适应显示条件解析与显隐快照、作答状态流转、实时推演结果的追加与栈式撤回、`revision` 版本推进、答卷结果编译以及 Markdown 封套文本生成。
+- `src/component.ts`：交互式 TUI 核心组件。实现 `AskAuthorComponent`，负责交互状态机、键盘事件路由、内置 `Editor` 文本编辑器集成、实时推演的发起与结果写入、AbortSignal 级联取消与整屏帧缓存；具体排版委托给 `view-*` 模块。
+- `src/sanitize.ts`：入参防御性清洗模块。提供 `sanitizeAskAuthorArgs` 与 `sanitizeExpansionPayload` 函数，执行不可信入参边界的类型收敛、别名映射、数据纠错与白名单字段过滤（含推演回复的未知题目、重复标签与 ID 冲突过滤）。
+- `src/expansion.ts`：实时推演协议模块。定义推演请求与执行器类型，构建推演模型的用户消息，解析回复文本并委托清洗层过滤非法追加项。
 - `src/format.ts`：纯函数排版与算法工具模块。提供视口边界限制、可见列宽测量、ANSI 文本折行与文本清洗等无状态工具函数，只依赖 `layout.ts`，不装载语言资源。
 - `src/layout.ts`：终端布局几何、图标字形与载荷上限的常量模块。声明 `LAYOUT_CONFIG`、`ICONS`、`MAX_OPTIONS`、`MAX_QUESTIONS`，为纯常量叶层。
-- `src/llm-texts.ts`：面向大语言模型的协议文案模块。声明工具元数据、TypeBox 字段描述与返回封套模板，全部恒为英文。
+- `src/llm-texts.ts`：面向大语言模型的协议文案模块。声明工具元数据、TypeBox 字段描述、实时推演系统提示词与返回封套模板，全部恒为英文。
 - `src/novel-syntax.ts`：小说语法资产模块。以声明式模板表定义定界符、语义哨兵、最大跨距与主题绘制函数，并派生开定界符与哨兵两个索引。
 - `src/novel-markdown.ts`：小说语法高亮引擎。把对话台词与心理旁白转换为携带语义哨兵的行内代码，由定制 Markdown 主题完成样式渲染。
 - `src/i18n.ts`：语言资源装载模块。注册可用语言文件、按系统语言环境选择界面语言、以 `en_US` 为规范结构编译文案模板，并对占位符未声明、取值种类不一致等情况快速失败。
 - `lang/en_US.json`、`lang/zh_CN.json`：作者界面文案语言资源。文件名即 locale 标识，采用 JSON 格式，平编时由 `esbuild` 打包进产物；新增语言只需追加同构文件并在 `i18n.ts` 注册。
-- `src/texts.ts`：文案字典组装模块。把 `llm-texts.ts` 的英文协议文案与当前语言的作者界面文案合并为 `TEXTS`，并集中派生多选标签与确认按钮文案。
+- `src/texts.ts`：文案字典组装模块。把 `llm-texts.ts` 的英文协议文案（含实时推演协议）与当前语言的作者界面文案合并为 `TEXTS`，并集中派生多选标签与确认按钮文案。
 - `src/theme.ts`：主题类型定义模块。导出 `Theme` 类型别名，作为无运行时依赖的叶层节点。
 - `src/view-question.ts`：题目作答页视图构建模块。实现 `QuestionView`，负责题头、选项菜单、双栏 / 单栏预览、预览与左栏缓存以及底部帮助栏。
 - `src/view-editor.ts`：补充说明编辑器视图构建模块。负责编辑目标标题、上下文、编辑框与页脚提示的排版。
@@ -119,8 +120,13 @@ graph TD
     texts --> schema
     schema --> sanitize
     format --> model["src/model.ts"]
+    layout --> model
     schema --> model
     texts --> model
+    sanitize --> expansion["src/expansion.ts"]
+    schema --> expansion
+    texts --> expansion
+    model --> expansion
     format --> novelMarkdown["src/novel-markdown.ts"]
     novelSyntax --> novelMarkdown
     theme --> novelMarkdown
@@ -158,6 +164,7 @@ graph TD
     theme --> component
     format --> component
     layout --> component
+    expansion --> component
     model --> toolResult["src/tool-result.ts"]
     model --> toolCard["src/tool-card.ts"]
     texts --> toolResult
@@ -172,6 +179,7 @@ graph TD
     sanitize --> index
     model --> index
     schema --> index
+    expansion --> index
     format --> index
     texts --> index
     layout --> index
@@ -225,3 +233,16 @@ graph TD
 - 显隐计算集中：可见题目、可见选项与可见选中项统一由 `AskAuthorFormModel` 的显隐快照按 `revision` 派生；组件层与排版层只允许经 `getVisibleQuestionIndices` / `isQuestionVisible` / `isOptionVisible` / `getSelectedIndex` / `getSelectedIndices` 读取，禁止各自重算条件。
 - 隐藏即不参与：隐藏题目不进入导航、总览与答卷；隐藏选项的既有勾选与批注不计入作答判定与答卷。
 - 渲染路径不构模型：`renderCall` 等流式渲染路径禁止构建表单模型（条件可能引用尚未到达的题目），只做入参清洗与计数；调用摘要统一经 `sanitizeAskAuthorArgs` 生成，与执行路径共用同一套别名、包装键、转义清洗与数量上限规则。
+
+#### 2.3.8 实时推演
+
+- 开关由调用方声明：只在入参携带 `expansion` 时推演；当前会话没有可用模型时直接返回结构化错误，不静默降级为静态表单。
+- 触发时机唯一：推演只由「作者确认一道题目」触发（`confirmAndAdvance` 路径），勾选、批注与滚动不触发；推演在切页前发起，保证新增题目紧接被确认的题目之后。
+- 答案签名复用：每道题的推演记录携带该题答案签名（可见选中项标签按序拼接）；同一答案重复确认不重新调用模型，签名变化时先撤回再重新推演。
+- 题头标记：可触发推演的题目在题头展示 `[推演]` 标记，判定集中在 `AskAuthorFormModel.canExpandOnConfirm`（开启推演、题目可见、未达题数上限且该答案尚未推演），组件只在渲染路径读取该结果。
+- 栈式撤回：推演记录按追加顺序入栈，撤回从栈顶开始，撤回该题及后续题目的全部记录；插入与撤回都整体平移后续题目的显示条件、作答状态与记录索引，被撤回题目与其选项上的作答状态一并剪除。
+- 插入位置由调用方预设：`expansion.insert` 取「跟随」（缺省，插到触发题目之后）、「队尾」（排到全部题目之后）或自定义锚点 `{ after: 题目 ID }`；自定义锚点在模型构建期校验，引用不存在题目时抛出 `AdaptiveConditionError`，同一锚点的后续推演直接排在锚点之后。
+- 上限单一来源：题目总数上限由模型层持有并在 `pushExpansion` 内截断，请求、参数与界面只读取同一上限；推演返回空载荷时记录同样入栈，表单停止增长。
+- 失败不倒作者内容：模型调用失败、回复不可解析或追加内容条件非法时，整批追加丢弃，已填写的作答保持不变，结果写入底部状态栏；仅采纳最新一次请求的结果，中止与卸载一并作废在途请求。
+- 回复走不可信边界：模型回复经 `parseExpansionReply` 提取 JSON，再经 `sanitizeExpansionPayload` 丢弃引用未知题目的选项追加、与既有标签重复的选项、与既有题目 ID 冲突的新题目与无选项的生成题目。
+- 推演用量回传：推演调用不属于主对话上下文，其 `usage` 累加后挂在工具结果的 `usage` 字段上。

@@ -6,8 +6,9 @@
  * - 字段名称、可选性与区间约束（`minItems` / `maxItems` / `minimum`）仅在 TypeBox 定义一次，运行时类型经 `Static<typeof>` 派生
  * - 默认值不写入 Schema：题目内字段由 `sanitize.ts` 规整时填入（`multiSelect`→false、`allowCustom`→true），模型层再按同一语义兜底
  * - LLM 端字段描述保持单句浓缩英文（取自 `TEXTS.schema`）
+ * - 推演载荷（`ExpansionPayload` / `OptionAddition`）的接口类型也在此声明，供 sanitize / model / expansion 共用
  *
- * 依赖方向：schema.ts → typebox / texts.ts（上限常量与字段描述）；被 sanitize / model / index 消费
+ * 依赖方向：schema.ts → typebox / layout.ts / texts.ts（上限常量与字段描述）；被 sanitize / model / expansion / index 消费
  */
 
 import { Type, type Static } from "typebox";
@@ -75,12 +76,36 @@ export const QuestionSchema = Type.Object({
   showIf: showIfField(TEXTS.schema.questionShowIf),
 });
 
+/** 推演题目的插入位置预设：跟随触发题目 / 排到队尾 / 指定题目之后 */
+export const InsertPositionSchema = Type.Union(
+  [
+    Type.Literal("follow"),
+    Type.Literal("tail"),
+    Type.Object({ after: Type.String({ description: TEXTS.schema.expansionInsertAfter }) }),
+  ],
+  { description: TEXTS.schema.expansionInsert },
+);
+
+/** 实时推演参数 Schema：作者确认答案后由同一模型追加题目与选项 */
+export const ExpansionSchema = Type.Object({
+  /** 推演后的题目总量上限（含已声明的题目） */
+  maxQuestions: Type.Optional(
+    Type.Integer({ description: TEXTS.schema.expansionMaxQuestions, minimum: 1, maximum: MAX_QUESTIONS }),
+  ),
+  /** 长期生效的推演方向指示 */
+  guidance: Type.Optional(Type.String({ description: TEXTS.schema.expansionGuidance })),
+  /** 推演题目的插入位置（缺省为跟随触发题目） */
+  insert: Type.Optional(InsertPositionSchema),
+});
+
 /** `ask_author` 工具完整参数 Schema（必须填写 `formTitle`；批量问卷传递 `questions`，单题平铺传递顶层 `question` + `options`） */
 export const AskAuthorParams = Type.Object({
   /** 问卷总任务标题（必须填写；简明概括请示主题） */
   formTitle: Type.String({ description: TEXTS.schema.formTitle }),
   /** 问卷全局背景或前述情境（可选；平铺单题模式下同时充当该题描述） */
   description: Type.Optional(Type.String({ description: TEXTS.schema.formDesc })),
+  /** 实时推演开关（可选；开启后作者每次确认答案都追加后续题目与选项） */
+  expansion: Type.Optional(ExpansionSchema),
 
   // ===== 批量问卷模式 =====
   /** 关联多题批量问卷列表（可选；批量模式使用，上限 `MAX_QUESTIONS` 题） */
@@ -138,3 +163,25 @@ export type VisibilityConditionInput = Static<typeof ShowIfConditionSchema>;
 
 /** `showIf` 字段的运行时类型：单个条件或条件数组 */
 export type ShowIfInput = VisibilityConditionInput | VisibilityConditionInput[];
+
+/** 实时推演配置的运行时类型（由 `ExpansionSchema` 经 `Static<>` 派生） */
+export type ExpansionConfig = Static<typeof ExpansionSchema>;
+
+/** 推演题目插入位置的运行时类型：预设字符串或指定题目之后的锚点 */
+export type InsertPosition = Static<typeof InsertPositionSchema>;
+
+/** 推演向既有题目追加的一组选项 */
+export interface OptionAddition {
+  /** 目标题目的 ID（必须是表单中已存在的题目） */
+  readonly questionId: string;
+  /** 待追加的选项（标签与既有选项不重复） */
+  readonly options: QuestionOption[];
+}
+
+/** 一次推演的产出：待追加的新题目与向既有题目追加的选项 */
+export interface ExpansionPayload {
+  /** 追加到题目列表末尾的新题目 */
+  readonly questions: QuestionInput[];
+  /** 向既有题目追加的选项 */
+  readonly optionAdditions: OptionAddition[];
+}

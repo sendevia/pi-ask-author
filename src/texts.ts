@@ -66,6 +66,8 @@ export const TEXTS = {
   tool: { ...LLM_TEXTS.tool, label: LOCALE_TEXTS.tool.label },
   /** LLM 端 TypeBox 字段描述字典 */
   schema: LLM_TEXTS.schema,
+  /** 实时推演协议（系统提示词、用户消息前缀与诊断文案） */
+  expansion: LLM_TEXTS.expansion,
   /** LLM 端返回封套与纠正指令模板 */
   markdown: LLM_TEXTS.markdown,
 

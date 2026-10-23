@@ -13,6 +13,7 @@
   "view": {
     "modeSingle": "[Single]",
     "conditionalBadge": "[Conditional]",
+    "expansionBadge": "[Expand]",
     "modeMultiAtLeast": { "template": "[Multi, at least {min}{maxPart}]", "params": ["min", "maxPart"] },
     "modeMultiOptional": { "template": "[Multi, optional{maxPart}]", "params": ["maxPart"] },
     "modeMultiUnconstrained": { "template": "[Multi{maxPart}]", "params": ["maxPart"] },
@@ -102,7 +103,15 @@
     "errorExecutionFailed": {
       "template": "Component failure: {reason} (fix the arguments and retry)",
       "params": ["reason"]
-    }
+    },
+    "expansionRunning": "Expanding follow-up questions from your answers…",
+    "expansionAdded": {
+      "template": "Expansion finished: {qCount} new questions, {optCount} new options",
+      "params": ["qCount", "optCount"]
+    },
+    "expansionRetracted": "Answer changed, the previous expansion was withdrawn",
+    "expansionStopped": "The answers already determine the next step; no further questions added",
+    "expansionFailed": { "template": "Expansion failed: {reason} (answer on or submit as is)", "params": ["reason"] }
   },
   "help": {
     "cancel": "Esc/Ctrl+C cancel",

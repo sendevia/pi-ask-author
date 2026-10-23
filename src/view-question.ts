@@ -42,6 +42,8 @@ export interface QuestionViewState {
   readonly statusMessage: string | null;
   /** 当前题目的菜单项（由模型派生并记忆化） */
   readonly menuItems: readonly MenuItem[];
+  /** 本题确认后是否会发起实时推演（题头展示推演标记） */
+  readonly expandable: boolean;
 }
 
 /** 预览视口观察值：渲染后回传组件，供输入路径归一化滚动位移 */
@@ -149,7 +151,8 @@ export class QuestionView {
       ? this.theme.fg("warning", TEXTS.view.modeMulti(q.minSelect, q.maxSelect, visibleOptionCount, q.allowEmpty))
       : this.theme.fg("accent", TEXTS.view.modeSingle);
     const conditionalTag = q.showIf.length > 0 ? ` ${this.theme.fg("muted", TEXTS.view.conditionalBadge)}` : "";
-    pushWrapped(lines, ` ${modeTag}${conditionalTag} ${this.theme.bold(q.title)}`, renderWidth);
+    const expansionTag = state.expandable ? ` ${this.theme.fg("warning", TEXTS.view.expansionBadge)}` : "";
+    pushWrapped(lines, ` ${modeTag}${conditionalTag}${expansionTag} ${this.theme.bold(q.title)}`, renderWidth);
 
     if (q.description) {
       pushWrapped(lines, this.theme.fg("muted", q.description), renderWidth, "  ");

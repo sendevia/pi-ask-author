@@ -9,13 +9,23 @@
  * - 封套语言单一：自动生成的占位题目/标签在封套编译期替换为英文占位（`Question N` / `Option N`），作者界面保留中文占位
  * - 答卷完整性：显示中的题目即使显式跳过或仅批注提交也产出条目，多选题目恒产出条目，不存在静默消失的作答
  * - 自适应显隐：题目与选项可声明 `showIf` 条件且仅允许引用更早题目；显隐快照按 `revision` 缓存，隐藏项的选择不计入作答与答卷
+ * - 实时推演：`pushExpansion` 按 `expansion.insert` 把新题目插到跟随位、队尾或自定义锚点之后，把新选项追加到目标题目末尾，插入与撤回都会平移后续题目的条件、作答状态与推演记录索引
  *
- * 依赖方向：model.ts → format.ts / schema.ts / texts.ts（纯函数工具、Schema 单一类型源与文案字典，无回边）；不引用 `Theme` 与 TUI 组件，渲染细节全部上移组件层
+ * 依赖方向：model.ts → format.ts / layout.ts / schema.ts / texts.ts（纯函数工具、上限常量、Schema 单一类型源与文案字典，无回边）；不引用 `Theme` 与 TUI 组件，渲染细节全部上移组件层
  */
 
 import { cleanOptional, cleanText, clamp, toSingleLine } from "./format.js";
+import { MAX_QUESTIONS } from "./layout.js";
 import { TEXTS } from "./texts.js";
-import type { QuestionInput, QuestionOption, RawParams, ShowIfInput } from "./schema.js";
+import type {
+  ExpansionPayload,
+  InsertPosition,
+  OptionAddition,
+  QuestionInput,
+  QuestionOption,
+  RawParams,
+  ShowIfInput,
+} from "./schema.js";
 
 /**
  * 显示条件的归一化形态：引用的题目索引与选项索引均已解析
@@ -151,6 +161,20 @@ export interface MenuItem {
 
 /** 勾选 toggle 操作语义（三个操作语义类型均不导出，由组件层消费并映射为状态栏提示） */
 type ToggleResult = "selected" | "deselected" | "limit";
+
+/** 一次推演追加的记录，作为撤回的最小单元 */
+export interface ExpansionRecord {
+  /** 触发推演的题目索引（0-based） */
+  readonly questionIndex: number;
+  /** 触发时该题的答案签名（选中项标签按序拼接） */
+  readonly signature: string;
+  /** 追加题目在题目列表中的起始位置（即触发题目的下一题） */
+  readonly insertAt: number;
+  /** 本次插入的题目数 */
+  readonly addedQuestions: number;
+  /** 本次向既有题目追加的选项 */
+  readonly addedOptions: readonly { readonly questionIndex: number; readonly count: number }[];
+}
 
 /** 全选/清空操作语义 */
 type SelectAllResult = "cleared" | "filled";
@@ -456,8 +480,16 @@ export class AskAuthorFormModel {
   readonly formTitle: string;
   /** 问卷全局背景阐述（可选） */
   readonly formDescription?: string;
-  /** 归一化后的题目列表 */
-  readonly questions: NormalizedQuestion[];
+  /** 推演允许的题目总量上限（含初始题目） */
+  readonly expansionMaxQuestions: number;
+  /** 推演题目的插入位置预设（缺省为跟随触发题目） */
+  readonly expansionInsert: InsertPosition;
+
+  /** 归一化后的题目列表（推演会向末尾追加，外部只读） */
+  private readonly questionList: NormalizedQuestion[];
+
+  /** 推演追加记录栈（按追加顺序；撤回时从栈顶开始） */
+  private readonly expansions: ExpansionRecord[] = [];
 
   /** 作答状态版本号：单调递增，作为组件层派生缓存的失效键 */
   private revisionValue = 0;
@@ -477,11 +509,13 @@ export class AskAuthorFormModel {
     const isBatch = rawQuestions.length > 0;
     this.formTitle = cleanOptional(rawParams.formTitle) ?? TEXTS.fallbacks.defaultFormTitle;
     this.formDescription = cleanOptional(rawParams.description);
+    this.expansionMaxQuestions = clamp(rawParams.expansion?.maxQuestions ?? MAX_QUESTIONS, 1, MAX_QUESTIONS);
+    this.expansionInsert = rawParams.expansion?.insert ?? "follow";
 
     if (isBatch) {
-      this.questions = buildQuestions(rawQuestions);
+      this.questionList = buildQuestions(rawQuestions);
     } else if (rawParams.options?.length) {
-      this.questions = buildQuestions([
+      this.questionList = buildQuestions([
         {
           title: cleanOptional(rawParams.question) ?? TEXTS.fallbacks.defaultQuestionTitle,
           description: cleanOptional(rawParams.description),
@@ -495,8 +529,23 @@ export class AskAuthorFormModel {
         },
       ]);
     } else {
-      this.questions = [];
+      this.questionList = [];
     }
+
+    // 自定义插入锚点在构建期校验：拼写错误在模型构建阶段就变成结构化错误，不在作者作答中途才暴露
+    this.resolveInsertIndex(this.expansionInsert);
+  }
+
+  /** 归一化后的题目列表（推演会插入新题目，调用方只读） */
+  get questions(): NormalizedQuestion[] {
+    return this.questionList;
+  }
+
+  /** 推演题目插入位置的可读描述（供推演模型判定哪些题目位于插入点之前） */
+  get expansionInsertLabel(): string {
+    if (this.expansionInsert === "follow") return "right after the question the author just confirmed";
+    if (this.expansionInsert === "tail") return "at the end of the form";
+    return `right after question "${this.expansionInsert.after}"`;
   }
 
   /** 当前作答状态版本号（组件层派生缓存失效键） */
@@ -655,6 +704,278 @@ export class AskAuthorFormModel {
   /** 推进作答状态版本号（全部 mutation 方法的统一出口） */
   private bumpRevision(): void {
     this.revisionValue++;
+  }
+
+  // ===== 实时推演 mutation API（作者确认答案后由组件层调用） =====
+
+  /**
+   * 获取推演追加记录快照
+   * @returns 按追加顺序排列的新数组（调用方可安全持有）
+   */
+  getExpansions(): readonly ExpansionRecord[] {
+    return [...this.expansions];
+  }
+
+  /**
+   * 计算指定题目的答案签名（判断该题推演结果是否仍然有效）
+   * @param qIndex - 题目顺序索引（0-based）
+   * @returns 可见选中项标签按索引升序以 `|` 拼接的签名；未作答或题目越界时为 undefined
+   */
+  answerSignature(qIndex: number): string | undefined {
+    const q = this.questionList[qIndex];
+    if (!q) return undefined;
+    const indices = this.getSelectedIndices(qIndex);
+    if (indices.length === 0) return undefined;
+    return indices.map((index) => q.options[index]?.label ?? "").join("|");
+  }
+
+  /**
+   * 计算推演题目的插入位置
+   * @param insert - 插入位置预设（跟随触发题目 / 队尾 / 指定题目之后）
+   * @param triggerIndex - 触发推演的题目索引（0-based，仅 `follow` 使用）
+   * @returns 插入位置（0-based；`questionList.length` 表示队尾）
+   * @throws AdaptiveConditionError 自定义锚点引用的题目不存在时抛出
+   */
+  private resolveInsertIndex(insert: InsertPosition, triggerIndex = 0): number {
+    if (insert === "tail") return this.questionList.length;
+    if (insert === "follow") return Math.min(triggerIndex + 1, this.questionList.length);
+    const anchor = cleanOptional(insert.after) ?? "";
+    const index = this.questionList.findIndex((question) => question.id === anchor);
+    if (index < 0) throw new AdaptiveConditionError(TEXTS.markdown.adaptiveErrors.unknownInsertAnchor(anchor));
+    return index + 1;
+  }
+
+  /**
+   * 写入一次推演结果（新题目按 {@link expansionInsert} 指定的位置插入，新选项追加到目标题目的选项末尾）
+   * @param input - 记录元数据与推演载荷；超出 {@link expansionMaxQuestions} 的新题目被截断
+   * @returns 本次追加记录（无实际追加时计数均为 0，记录仍入栈以标记该答案已推演）
+   * @throws AdaptiveConditionError 追加内容的条件引用未知题目、后置题目或不存在的选项时抛出（本次追加整体不生效）
+   */
+  pushExpansion(input: { questionIndex: number; signature: string; payload: ExpansionPayload }): ExpansionRecord {
+    const room = Math.max(0, this.expansionMaxQuestions - this.questionList.length);
+    const insertAt = this.resolveInsertIndex(this.expansionInsert, input.questionIndex);
+    const addedQuestions = this.insertQuestions(insertAt, input.payload.questions.slice(0, room));
+    const addedOptions = this.appendOptions(input.payload.optionAdditions);
+    const record: ExpansionRecord = {
+      questionIndex: input.questionIndex,
+      signature: input.signature,
+      insertAt,
+      addedQuestions,
+      addedOptions,
+    };
+    this.expansions.push(record);
+    if (addedQuestions > 0 || addedOptions.length > 0) this.bumpRevision();
+    return record;
+  }
+
+  /**
+   * 撤回指定题目及其后续题目的推演结果（作者改动答案后调用）
+   * @param questionIndex - 起始题目索引（0-based）；触发题目不早于该索引的记录全部撤回
+   * @returns 撤回的记录数；无记录被撤回时为 0（状态与 `revision` 均不变）
+   */
+  retractFrom(questionIndex: number): number {
+    let removed = 0;
+    while (this.expansions.length > 0) {
+      const top = this.expansions[this.expansions.length - 1];
+      if (!top || top.questionIndex < questionIndex) break;
+      this.expansions.pop();
+      this.rollback(top);
+      removed++;
+    }
+    if (removed > 0) this.bumpRevision();
+    return removed;
+  }
+
+  /**
+   * 判定指定题目在确认时是否会发起实时推演
+   * 条件：表单开启推演、该题可见、题目总数未达上限，且该题尚未用当前答案推演过
+   * @param qIndex - 题目顺序索引（0-based）
+   * @param enabled - 本表单是否开启推演（由组件层持有）
+   * @returns 确认本题将发起新的推演请求时为 true
+   */
+  canExpandOnConfirm(qIndex: number, enabled: boolean): boolean {
+    if (!enabled) return false;
+    if (!this.isQuestionVisible(qIndex)) return false;
+    if (this.questionList.length >= this.expansionMaxQuestions) return false;
+    const signature = this.answerSignature(qIndex);
+    if (signature === undefined) return true;
+    return this.expansions.find((record) => record.questionIndex === qIndex)?.signature !== signature;
+  }
+
+  /**
+   * 归一化并在指定位置插入新题目（全部条件先校验，任一非法项抛出时整个批次不生效）
+   * @param at - 插入位置（原有索引不小于该值的题目整体后移）
+   * @param raws - 推演给出的原始题目
+   * @returns 实际插入的题目数
+   */
+  private insertQuestions(at: number, raws: readonly QuestionInput[]): number {
+    if (raws.length === 0) return 0;
+    const used = new Set(this.questionList.map((question) => question.id));
+    const pending: PendingQuestion[] = raws.map((raw, offset) => {
+      const index = at + offset;
+      const built = buildQuestion(raw, index);
+      const id = this.uniqueQuestionId(built.question.id, index, used);
+      return { ...built, question: { ...built.question, id } };
+    });
+
+    // 既有题目、作答状态与推演记录先让位，再按新索引解析插入内容的条件
+    this.remapQuestionIndices(at, pending.length);
+    const scoped = [
+      ...this.questionList.slice(0, at),
+      ...pending.map((entry) => entry.question),
+      ...this.questionList.slice(at),
+    ];
+    const indexById = new Map(scoped.map((question, index) => [question.id, index]));
+    const inserted = pending.map((entry, offset) => {
+      const index = at + offset;
+      const question = entry.question;
+      return {
+        ...question,
+        showIf: resolveConditions(entry.questionConditions, index, indexById, scoped),
+        options: question.options.map((option, optionIndex) => ({
+          ...option,
+          showIf: resolveConditions(entry.optionConditions[optionIndex] ?? [], index, indexById, scoped),
+        })),
+      };
+    });
+
+    this.questionList.splice(at, 0, ...inserted);
+    return inserted.length;
+  }
+
+  /**
+   * 把索引不小于指定值的题目引用整体平移（插入或移除题目后维持既有条件、作答状态与推演记录的指向）
+   * @param from - 起始索引（0-based）
+   * @param delta - 位移量（插入为正、移除为负）
+   */
+  private remapQuestionIndices(from: number, delta: number): void {
+    const remap = (index: number): number => (index >= from ? index + delta : index);
+
+    for (const [index, question] of this.questionList.entries()) {
+      this.questionList[index] = {
+        ...question,
+        showIf: question.showIf.map((condition) => ({ ...condition, questionIndex: remap(condition.questionIndex) })),
+        options: question.options.map((option) => ({
+          ...option,
+          showIf: option.showIf.map((condition) => ({ ...condition, questionIndex: remap(condition.questionIndex) })),
+        })),
+      };
+    }
+
+    const states = new Map<number, QuestionAnswerState>();
+    for (const [index, state] of this.states) states.set(remap(index), state);
+    this.states.clear();
+    for (const [index, state] of states) this.states.set(index, state);
+
+    for (const [position, record] of this.expansions.entries()) {
+      this.expansions[position] = {
+        ...record,
+        questionIndex: remap(record.questionIndex),
+        insertAt: remap(record.insertAt),
+        addedOptions: record.addedOptions.map((addition) => ({
+          ...addition,
+          questionIndex: remap(addition.questionIndex),
+        })),
+      };
+    }
+  }
+
+  /**
+   * 向既有题目追加选项（全部条件先校验，任一非法项抛出时整个批次不生效）
+   * @param additions - 按题目 ID 归集的追加选项
+   * @returns 每题实际追加的选项数
+   */
+  private appendOptions(additions: readonly OptionAddition[]): { questionIndex: number; count: number }[] {
+    if (additions.length === 0) return [];
+    const indexById = new Map(this.questionList.map((question, index) => [question.id, index]));
+
+    const staged: { questionIndex: number; options: NormalizedOption[] }[] = [];
+    for (const addition of additions) {
+      const questionIndex = indexById.get(addition.questionId);
+      if (questionIndex === undefined) continue;
+      staged.push({
+        questionIndex,
+        options: addition.options.map((option) => ({
+          label: option.label,
+          description: option.description,
+          preview: option.preview,
+          customPlaceholder: option.customPlaceholder,
+          showIf: resolveConditions(toRawConditions(option.showIf), questionIndex, indexById, this.questionList),
+        })),
+      });
+    }
+
+    const added: { questionIndex: number; count: number }[] = [];
+    for (const entry of staged) {
+      const q = this.questionList[entry.questionIndex];
+      if (!q || entry.options.length === 0) continue;
+      const options = [...q.options, ...entry.options];
+      const bounds = clampSelectBounds(
+        q.minSelectExplicit ? q.minSelect : undefined,
+        q.maxSelect === q.options.length ? undefined : q.maxSelect,
+        options.length,
+      );
+      this.questionList[entry.questionIndex] = { ...q, options, ...bounds };
+      added.push({ questionIndex: entry.questionIndex, count: entry.options.length });
+    }
+    return added;
+  }
+
+  /**
+   * 回滚单条推演记录（先回滚选项追加，再移除插入的题目块）
+   * @param record - 待回滚的推演记录
+   */
+  private rollback(record: ExpansionRecord): void {
+    for (const addition of [...record.addedOptions].reverse()) {
+      const q = this.questionList[addition.questionIndex];
+      if (!q) continue;
+      const options = q.options.slice(0, Math.max(0, q.options.length - addition.count));
+      const bounds = clampSelectBounds(q.minSelectExplicit ? q.minSelect : undefined, q.maxSelect, options.length);
+      this.questionList[addition.questionIndex] = { ...q, options, ...bounds };
+      this.dropOptionsFromState(addition.questionIndex, options.length);
+    }
+
+    if (record.addedQuestions > 0) {
+      const at = record.insertAt;
+      this.questionList.splice(at, record.addedQuestions);
+      for (let index = at; index < at + record.addedQuestions; index++) this.states.delete(index);
+      this.remapQuestionIndices(at, -record.addedQuestions);
+    }
+  }
+
+  /**
+   * 剪除被移除选项上的选中与批注状态
+   * @param questionIndex - 题目顺序索引（0-based）
+   * @param keptCount - 保留的选项数
+   */
+  private dropOptionsFromState(questionIndex: number, keptCount: number): void {
+    const st = this.states.get(questionIndex);
+    if (!st) return;
+    for (const index of [...st.selectedIndices]) {
+      if (index >= keptCount) st.selectedIndices.delete(index);
+    }
+    if (st.selectedIndex !== undefined && st.selectedIndex >= keptCount) st.selectedIndex = undefined;
+    for (const index of [...st.optionNotes.keys()]) {
+      if (index >= keptCount) st.optionNotes.delete(index);
+    }
+  }
+
+  /**
+   * 生成不与既有题目重复的题目 ID
+   * @param id - 推演给出的原始 ID（可为自动占位）
+   * @param index - 题目顺序索引（0-based）
+   * @param used - 已占用的 ID 集合（就地更新）
+   * @returns 未占用的题目 ID
+   */
+  private uniqueQuestionId(id: string, index: number, used: Set<string>): string {
+    if (!used.has(id)) {
+      used.add(id);
+      return id;
+    }
+    let candidate = TEXTS.fallbacks.autoQuestionId(index + 1);
+    for (let suffix = 2; used.has(candidate); suffix++) candidate = `${candidate}_${suffix}`;
+    used.add(candidate);
+    return candidate;
   }
 
   /**

@@ -1,6 +1,6 @@
 /**
  * @file llm-texts.ts
- * @description 面向大语言模型的协议文案：工具元数据、TypeBox 字段描述与返回封套模板
+ * @description 面向大语言模型的协议文案：工具元数据、TypeBox 字段描述、实时推演系统提示词与返回封套模板
  *
  * 核心架构特性：
  * - 全部文案恒为英文，不参与语言切换，保证封套与工具声明的前缀缓存稳定
@@ -20,21 +20,21 @@ export const LLM_TEXTS = {
     name: "ask_author",
     /** 工具说明（LLM 端英文；一句话能力概要与适用场景） */
     description:
-      "Ask the author to choose between concrete narrative directions. Supports one question or a batch of related questions, with options, optional Markdown draft previews, author notes, and conditional follow-ups based on earlier answers.",
+      "Ask the author to decide between concrete narrative options in an interactive terminal form. Handles a single question or a batch, optional draft previews, author notes, conditional questions, and live follow-up questions generated while the author answers.",
     /** `Available tools` 区块单行条目（LLM 端英文；动词引导，无句末标点，缺省则工具不进入该区块） */
-    promptSnippet:
-      "Ask the author to choose narrative directions with options, draft previews, and conditional follow-ups",
+    promptSnippet: "Ask the author to pick narrative directions in a terminal form",
     /**
      * `Guidelines` 区块附加条目（LLM 端英文；分类标签前缀 + 行为要求）
      * 约定：宿主把条目扁平追加进 `Guidelines` 且不加工具名前缀，故每条首词必须显式点名 `ask_author`
      */
     promptGuidelines: [
-      "ask_author: Call it directly when the author must choose a plot branch, character action, scene direction, or setting; do not ask the same question in chat first.",
-      "ask_author: Use flat mode (formTitle + question + options) for one decision, or the questions array for related decisions. Batch related choices into one call instead of consecutive calls, always give a concise formTitle, and add tabLabel when a long question title needs a short tab name.",
-      "ask_author: Label options with concrete actions and put consequences in description. Add preview only when a Markdown draft or storyboard helps the author judge.",
-      "ask_author: Omit optional fields that use defaults. Add a question id only when a later showIf references it, and point showIf at an earlier question id plus one of its option labels, or answered.",
-      "ask_author: The author may choose multiple options, add notes, and edit drafts. Confirmed drafts return as [Draft directive: ...] lines.",
-      "ask_author: [Author Decision Cancelled] means drop the decision. [Author Consultation Error] means fix the arguments and retry once, then continue without the confirmation.",
+      "ask_author: Use it when the author must choose a plot branch, character action, scene direction, or setting; do not ask the same question in chat first.",
+      "ask_author: Prefer one call over several: flat mode (formTitle + question + options) for a single decision, the questions array for related decisions.",
+      "ask_author: Write option labels as concrete actions, put consequences in description, and add preview only when a Markdown draft or storyboard helps the choice.",
+      "ask_author: Give a short formTitle and a tabLabel for every long question title; omit fields that use defaults.",
+      "ask_author: Add a question id only when a showIf or expansion.insert.after refers to it; showIf may only point at an earlier question's option label or answered.",
+      'ask_author: Pass expansion when follow-up decisions depend on the answers: declare only the first question and let the same model add questions and options on each confirmation; expansion.insert picks "follow" (default), "tail", or {"after":"question_id"}.',
+      "ask_author: The author can multi-select, add notes, and edit drafts; confirmed drafts return as [Draft directive: ...] lines. Treat [Author Decision Cancelled] as no decision, and [Author Consultation Error] as a request to fix the arguments once.",
     ],
   },
 
@@ -46,43 +46,43 @@ export const LLM_TEXTS = {
     /** 选项情节推演（可选；作者端渲染为「情节设定推演」预览面板） */
     optionDesc: "Consequences or rationale (optional)",
     /** 选项草稿预览（可选；作者端渲染为「正文草稿/分镜头试撰写」预览面板） */
-    optionPreview: "Markdown draft or storyboard excerpt (optional)",
+    optionPreview: "Markdown draft or storyboard for this option (optional)",
     /** 选项批注占位符（可选；作者端作为选项补充说明编辑器的输入框占位文本） */
-    optionCustomPlaceholder: "Placeholder for the option note (optional)",
+    optionCustomPlaceholder: "Placeholder for the author's note on this option (optional)",
     /** 选项显示条件（可选；条件不成立时该选项不展示） */
-    optionShowIf: "Show only when an earlier answer matches (condition or array; all must hold)",
+    optionShowIf: "Show only if an earlier answer matches; array means all must hold (optional)",
 
     // ===== 题目字段（QuestionSchema） =====
-    /** 题目 ID（可选；仅在后续 showIf 引用时需要） */
-    questionId: "Stable id for showIf references (optional)",
+    /** 题目 ID（可选；仅在后续 showIf 或 `expansion.insert.after` 引用时需要） */
+    questionId: "Id referenced by showIf and expansion.insert.after (optional)",
     /** 题目标题（必须填写；作者端呈现为题头与总览页条目） */
     questionTitle: "Question text",
     /** Tab 栏短标签（可选；缺省时 Tab 栏显示 `Q<序号>`，显式给出可让作者在一屏内区分多题） */
-    questionTabLabel: "Short label for the tab bar (default: Q<index>)",
+    questionTabLabel: "Short tab label (default: Q<index>)",
     /** 题目背景说明（可选；作者端呈现为题头下方的上下文行） */
-    questionDesc: "Context for the question (optional)",
+    questionDesc: "Context shown under the question (optional)",
     /** 多选开关（可选；默认 false，开启后作者端展示多选模式标签与方框勾选指示符） */
     questionMultiSelect: "Allow multiple selections (default false)",
     /** 最小勾选数（可选；默认 1，仅多选生效，作者端据此标注强制下限） */
-    questionMinSelect: "Minimum selections (default 1)",
+    questionMinSelect: "Minimum selections, multi-select only (default 1)",
     /** 最大勾选数（可选；默认全部选项，仅多选生效，小于选项总数时作者端追加上限标注） */
-    questionMaxSelect: "Maximum selections (default: all options)",
-    /** 零勾选提交开关（可选；默认 false，仅多选生效，开启后作者端标注可不选） */
-    questionAllowEmpty: "Allow submitting with no selection (default false)",
+    questionMaxSelect: "Maximum selections, multi-select only (default: all options)",
+    /** 零勾选提交开关（可选；默认 false，单选与多选均生效） */
+    questionAllowEmpty: "Allow submitting without a selection (default false)",
     /** 候选选项列表（必须填写；1~{@link MAX_OPTIONS} 项；建议 2~10 项） */
-    questionOptions: `Candidate options (1-${MAX_OPTIONS}, 2-10 recommended)`,
+    questionOptions: `Options (1-${MAX_OPTIONS}, 2-10 recommended)`,
     /** 自由批注开关（可选；默认 true，开启后作者端可额外提交非选项文本） */
     questionAllowCustom: "Allow author notes (default true)",
     /** 作者批注占位符（可选；作者端作为题目补充说明编辑器的输入框占位文本） */
-    questionCustomPlaceholder: "Placeholder for the author note (optional)",
+    questionCustomPlaceholder: "Placeholder for the author's note (optional)",
     /** 题目显示条件（可选；条件不成立时该题不展示，也不计入答卷） */
-    questionShowIf: "Show only when an earlier answer matches (condition or array; all must hold)",
+    questionShowIf: "Show only if an earlier answer matches; array means all must hold (optional)",
     /** 显示条件引用的题目 ID（必须为本次表单中更早出现的题目） */
-    conditionQuestionId: "Id of an earlier question",
+    conditionQuestionId: "Earlier question id",
     /** 显示条件匹配的选项（引用题目的选项标签；作者选中该选项时条件成立） */
-    conditionOption: "Option label that activates the condition",
+    conditionOption: "Option label of that question that activates the condition",
     /** 显示条件的作答存在性（缺省等价于 true；与 option 同时给出时忽略） */
-    conditionAnswered: "Match any answer (default true) or no answer (false); ignored with option",
+    conditionAnswered: "Any answer (default true) or no answer (false); ignored when option is set",
 
     // ===== 表单层字段（AskAuthorParams 批量模式） =====
     /** 问卷标题（必须填写；作者端呈现为卡片标题与总览页标题） */
@@ -90,7 +90,7 @@ export const LLM_TEXTS = {
     /** 问卷背景（可选；作者端呈现为问卷级上下文） */
     formDesc: "Overall context (optional)",
     /** 批量模式题目数组（可选；1~{@link MAX_QUESTIONS} 题；与平铺单题模式互斥） */
-    formQuestions: `Related questions (1-${MAX_QUESTIONS}); batch related decisions into one call`,
+    formQuestions: `Questions (1-${MAX_QUESTIONS}); batch related decisions in one call`,
 
     // ===== 单题平铺模式 =====
     /** 平铺模式的题目标题（可选；与批量模式的 `questionTitle` 同义） */
@@ -99,6 +99,56 @@ export const LLM_TEXTS = {
     flatPrefix: "(Flat single-question mode only) ",
     /** 平铺模式候选选项列表（可选；1~{@link MAX_OPTIONS} 项；建议 2~10 项） */
     flatQuestionOptions: `Options for flat mode (1-${MAX_OPTIONS}, 2-10 recommended)`,
+
+    // ===== 实时推演字段（ExpansionSchema） =====
+    /** 实时推演开关（可选；开启后作者确认答案时由同一模型追加题目与选项） */
+    expansion:
+      "Generate follow-up questions and options while the author answers; insert controls where they land (optional)",
+    /** 推演题目总量上限（可选；缺省为全部可用题目数） */
+    expansionMaxQuestions: `Question cap including declared ones (default ${MAX_QUESTIONS})`,
+    /** 推演方向指示（可选；作为长期要求传给推演模型） */
+    expansionGuidance: "Standing hint for what the expansion should probe (optional)",
+    /** 推演题目插入位置（三选一预设） */
+    expansionInsert:
+      '"follow" (default, after the answered question), "tail" (end of the form), or {"after":"question_id"} (optional)',
+    /** 自定义插入位置的锚点题目 ID */
+    expansionInsertAfter: "Declared question id to insert after",
+  },
+
+  /**
+   * 实时推演协议（作者确认答案后由同一模型追加题目与选项；全英文，输出约束为纯 JSON）
+   */
+  expansion: {
+    /** 推演系统提示词（约束输出结构与新增范围，禁止复述既有内容） */
+    systemPrompt: `You extend an interactive author decision form while the author answers it.
+
+Input JSON: formTitle, formDescription, guidance, insert, maxAdditionalQuestions, questions (with ids), answers (selected labels and notes).
+
+Return JSON only:
+{"questions":[{"id":"unique_id","title":"...","description":"...","options":[{"label":"...","description":"..."}]}],"options":[{"questionId":"existing_id","options":[{"label":"..."}]}]}
+
+Rules:
+- Add at most maxAdditionalQuestions questions; fewer is better.
+- New questions may also set multiSelect, minSelect, maxSelect, allowEmpty; every option needs a label.
+- Add options to a declared question only when the answers reveal a choice it cannot express; use its id and unused labels.
+- Give new questions unique ids and 2-6 concrete options; put consequences in description.
+- Never repeat a declared question or a declared label.
+- showIf takes {"questionId":"id","option":"label"} or {"questionId":"id","answered":true} and may only reference a question above the insertion point or one of your earlier new questions.
+- Reply {"questions":[],"options":[]} when the answers already determine the next step.
+- No prose, no code fences, no trailing commas.`,
+    /** 推演用户消息前缀（英文单行，后接 JSON 载荷） */
+    userPreamble: "Extend this author decision form. Input JSON:",
+    /** 推演失败诊断（英文短句；作者界面经 `status.expansionFailed` 呈现，不直接展示原文） */
+    errors: {
+      /** 当前会话没有可用模型 */
+      noModel: "no model is available for live expansion",
+      /** 推演请求被中止 */
+      aborted: "live expansion was aborted",
+      /** 供应商返回错误终止 */
+      providerFailed: "the expansion request failed",
+      /** 回复不是可解析的 JSON 对象 */
+      invalidReply: "the expansion reply was not a JSON object",
+    },
   },
 
   /**
@@ -133,7 +183,9 @@ export const LLM_TEXTS = {
       /** 构建执行期异常的原因行（`details` 为宿主异常摘要，对应作者端 `status.errorExecutionFailed`） */
       runtimeError: (details: string) => `Consultation UI failed: ${details}`,
       /** 自适应条件引用无效（对应作者端 `status.errorInvalidCondition`） */
-      invalidCondition: (details: string) => `Invalid showIf condition: ${details}`,
+      invalidCondition: (details: string) => `Invalid condition or insertion anchor: ${details}`,
+      /** 请求了实时推演但当前会话没有可用模型 */
+      expansionUnavailable: "Live expansion was requested but no model is available in this session.",
     },
     /** 错误封套纠正指引行字典（英文单句，与 `errorReasons` 一一对应） */
     errorGuidances: {
@@ -144,7 +196,11 @@ export const LLM_TEXTS = {
       /** `runtimeError` 的纠正指引 */
       runtimeError: "Check the arguments and retry with valid questions and options.",
       /** `invalidCondition` 的纠正指引 */
-      invalidCondition: "Reference an earlier question id plus one of its option labels, or use answered.",
+      invalidCondition:
+        "Reference an earlier question id plus one of its option labels, use answered, or point expansion.insert.after at a declared question id.",
+      /** `expansionUnavailable` 的纠正指引 */
+      expansionUnavailable:
+        "Drop the expansion field and declare the questions directly, or retry in a session with a model selected.",
     },
     /** 自适应条件引用校验的英文诊断消息（拼入错误封套原因行） */
     adaptiveErrors: {
@@ -155,6 +211,9 @@ export const LLM_TEXTS = {
       /** 条件引用的选项标签在目标题目中不存在 */
       unknownOption: (questionId: string, option: string) =>
         `showIf option "${option}" does not exist in question "${questionId}"`,
+      /** 推演插入锚点引用的题目 ID 不存在 */
+      unknownInsertAnchor: (questionId: string) =>
+        `expansion.insert.after references unknown question id "${questionId}"`,
     },
     /** 空答卷封套正文（作者未作答时的英文处置指令，位于首尾标识之间） */
     envelopeEmpty: "The author submitted no answers. Use your defaults, or ask a follow-up if the decision is crucial.",

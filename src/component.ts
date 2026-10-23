@@ -9,12 +9,13 @@
  * - 逐题独立光标记忆与 `1~9` 跳转题目；内置编辑器透传 Focusable 以定位 IME 候选框
  * - 无输入框页面把输入法全角字符收敛为半角，`【`/`】` 与全角字母数字一样命中快捷键
  * - 自适应导航：Tab 循环 / 数字跳转 / 确认推进一律沿可见题目序列行走，被条件隐藏的题目自动跳过
+ * - 实时推演：作者确认答案后发起（答案未变则复用既有结果，变了先撤回再请求），结果写入同一表单；只采纳最新请求，中止与卸载作废在途请求
  * - Esc / Ctrl+C 双通道取消（输入模式二次确认）；定时器、Abort 监听与缓存池全量回收
  *
  * 渲染纯度不变量：`render()` 及其可达被调函数禁止写入语义状态（`currentTab`、光标与各 `*ScrollOffset`、`inputMode`、`editTarget`、`editorEscArmed`、`statusMessage`、`isFinished`）；滚动位移归一化一律归属输入路径
  * 可写入透明备忘：`cached*`、`tabCache`、`menuCache`、`previewViewportObservation` 与视图层内部缓存均为「渲染输入的纯函数」缓存
  *
- * 依赖方向：component.ts → theme / texts / format / model / view-editor / view-question / view-rows / view-summary；本组件只做按键路由与整屏缓存编排
+ * 依赖方向：component.ts → theme / texts / format / model / expansion / view-editor / view-question / view-rows / view-summary；本组件只做按键路由、推演编排与整屏缓存编排
  */
 
 import { getSelectListTheme } from "@earendil-works/pi-coding-agent";
@@ -28,20 +29,33 @@ import {
   type TUI,
 } from "@earendil-works/pi-tui";
 import { clamp, clampWindowOffset, normalizeImeKey, safeLine } from "./format.js";
+import type { ExpansionRequest, ExpansionRunner } from "./expansion.js";
 import { LAYOUT_CONFIG } from "./layout.js";
 import {
   AskAuthorFormModel,
   type AskAuthorResult,
   type EditTarget,
+  type ExpansionRecord,
   type MenuItem,
   type NormalizedQuestion,
 } from "./model.js";
+import type { ExpansionPayload } from "./schema.js";
 import { TEXTS } from "./texts.js";
 import type { Theme } from "./theme.js";
 import { renderEditorPage } from "./view-editor.js";
 import { QuestionView, singlePreviewHeight, type PreviewViewport } from "./view-question.js";
 import { buildTabLines, optionLabelOf, pushFrameRule } from "./view-rows.js";
 import { SummaryView, summaryPageSize } from "./view-summary.js";
+
+/**
+ * 实时推演服务（由入口层装配模型调用；缺省表示本表单不推演）
+ */
+export interface ExpansionService {
+  /** 执行一次推演（取消经 `signal` 级联） */
+  readonly run: ExpansionRunner;
+  /** 调用方给出的长期推演方向指示（可选） */
+  readonly guidance?: string;
+}
 
 /**
  * `ask_author` 交互式 TUI 组件（问卷作答与答卷总览）
@@ -130,6 +144,15 @@ export class AskAuthorComponent implements Component, Focusable {
   /** 内置补充说明编辑器实例 */
   private readonly editor: Editor;
 
+  /** 实时推演服务（缺省表示本表单不推演） */
+  private readonly expansion?: ExpansionService;
+  /** 推演请求序号：只有最新序号的结果会被采纳 */
+  private expansionTicket = 0;
+  /** 进行中的推演请求中止器 */
+  private expansionAbort?: AbortController;
+  /** 是否有推演请求正在进行（状态栏据此展示提示） */
+  private expansionPending = false;
+
   /** 题目作答页视图构建器（持有预览与左栏缓存） */
   private readonly questionView: QuestionView;
 
@@ -142,12 +165,20 @@ export class AskAuthorComponent implements Component, Focusable {
    * @param theme - 主题
    * @param model - 问卷模型
    * @param done - 结果回调
+   * @param expansion - 实时推演服务（可选；缺省时表单保持静态）
    */
-  constructor(tui: TUI, theme: Theme, model: AskAuthorFormModel, done: (result: AskAuthorResult) => void) {
+  constructor(
+    tui: TUI,
+    theme: Theme,
+    model: AskAuthorFormModel,
+    done: (result: AskAuthorResult) => void,
+    expansion?: ExpansionService,
+  ) {
     this.tui = tui;
     this.theme = theme;
     this.model = model;
     this.done = done;
+    this.expansion = expansion;
     this.questionView = new QuestionView(theme, model);
     this.summaryView = new SummaryView(theme, model);
 
@@ -213,6 +244,9 @@ export class AskAuthorComponent implements Component, Focusable {
   dispose(): void {
     if (this.disposed) return;
     this.disposed = true;
+    this.expansionTicket++;
+    this.expansionAbort?.abort();
+    this.expansionAbort = undefined;
     this.clearStatusTimer();
     if (this.abortBinding) {
       this.abortBinding.signal.removeEventListener("abort", this.abortBinding.onAbort);
@@ -281,6 +315,14 @@ export class AskAuthorComponent implements Component, Focusable {
       this.touch();
     }, LAYOUT_CONFIG.statusDurationMs);
     this.touch();
+  }
+
+  /**
+   * 底部状态行文案（推演进行中的提示优先于临时通知）
+   * @returns 待展示的状态行文本；无提示时为 null
+   */
+  private get statusLine(): string | null {
+    return this.expansionPending ? TEXTS.status.expansionRunning : this.statusMessage;
   }
 
   /**
@@ -467,6 +509,8 @@ export class AskAuthorComponent implements Component, Focusable {
     }
 
     if (this.model.isQuestionAnswered(this.currentTab)) {
+      // 推演必须在切页前发起：切页后 currentTab 不再是刚确认的题目
+      this.expandAfterConfirm(this.currentTab);
       const order = this.tabOrder;
       const position = order.indexOf(this.currentTab);
       const next = position === -1 ? this.model.questionCount : (order[position + 1] ?? this.model.questionCount);
@@ -474,6 +518,136 @@ export class AskAuthorComponent implements Component, Focusable {
       return;
     }
     this.setStatus(q.multiSelect ? TEXTS.status.minSelectRequired(q.minSelect) : TEXTS.status.pleaseAnswerBeforeSubmit);
+  }
+
+  // ===== 实时推演编排 =====
+
+  /**
+   * 作者确认题目后刷新推演：答案未变则保留既有结果，变了则先撤回再重新请求
+   * @param qIndex - 刚确认的题目索引（0-based）
+   */
+  private expandAfterConfirm(qIndex: number): void {
+    const service = this.expansion;
+    if (!service) return;
+    const signature = this.model.answerSignature(qIndex);
+    if (signature === undefined) return;
+
+    const existing = this.model.getExpansions().find((record) => record.questionIndex === qIndex);
+    if (existing?.signature === signature) return;
+
+    if (this.model.retractFrom(qIndex) > 0) {
+      this.setStatus(TEXTS.status.expansionRetracted);
+      // 被撤回块之后的题目整体前移，其光标记忆随之作废
+      for (const tab of [...this.cursorByTab.keys()]) {
+        if (tab > qIndex) this.cursorByTab.delete(tab);
+      }
+      this.trimTabs();
+      this.touchDerived();
+    }
+
+    const room = this.model.expansionMaxQuestions - this.model.questionCount;
+    if (room <= 0) return;
+
+    const ticket = ++this.expansionTicket;
+    const controller = new AbortController();
+    this.expansionAbort?.abort();
+    this.expansionAbort = controller;
+    this.expansionPending = true;
+    this.touch();
+
+    const request: ExpansionRequest = {
+      formTitle: this.model.formTitle,
+      formDescription: this.model.formDescription,
+      guidance: service.guidance,
+      insert: this.model.expansionInsertLabel,
+      maxAdditionalQuestions: room,
+      questions: this.model.questions,
+      answers: this.model.compileAnswers(),
+    };
+
+    service.run(request, controller.signal).then(
+      (payload) => this.applyExpansion(ticket, qIndex, signature, payload),
+      (err: unknown) => this.reportExpansionFailure(ticket, err),
+    );
+  }
+
+  /**
+   * 写入推演结果（仅采纳最新请求；非最新、已终结或已卸载时丢弃）
+   * @param ticket - 请求序号
+   * @param qIndex - 触发题目索引（0-based）
+   * @param signature - 触发题目当时的答案签名
+   * @param payload - 推演载荷
+   */
+  private applyExpansion(ticket: number, qIndex: number, signature: string, payload: ExpansionPayload): void {
+    if (ticket !== this.expansionTicket || this.isFinished || this.disposed) return;
+    this.expansionPending = false;
+    this.expansionAbort = undefined;
+
+    // 推演题目插在触发题目之后：作者原本停在紧邻位置时随新题目前移，否则按题目身份跟随
+    const wasSubmitTab = this.isSubmitTab;
+    const previousTab = this.currentTab;
+    const anchorId = wasSubmitTab ? undefined : this.model.getQuestion(previousTab)?.id;
+    let record: ExpansionRecord;
+    try {
+      record = this.model.pushExpansion({ questionIndex: qIndex, signature, payload });
+    } catch (err) {
+      // 推演内容的条件非法时整批丢弃，作者已填写的作答保持不变
+      this.setStatus(TEXTS.status.expansionFailed(this.describeError(err)));
+      return;
+    }
+
+    if (record.addedQuestions > 0) {
+      for (const tab of [...this.cursorByTab.keys()]) {
+        if (tab >= record.insertAt) this.cursorByTab.delete(tab);
+      }
+    }
+
+    if (wasSubmitTab) {
+      this.currentTab = record.addedQuestions > 0 ? record.insertAt : this.model.questionCount;
+    } else if (anchorId !== undefined) {
+      // 作者仍停在触发题目的下一题时跟随新插入的题目，否则按题目身份回到原来的题目
+      const landed =
+        previousTab === record.insertAt ? record.insertAt : this.model.questions.findIndex((q) => q.id === anchorId);
+      if (landed >= 0 && landed !== this.currentTab) this.switchTab(landed);
+    }
+    this.trimTabs();
+    this.touchDerived();
+
+    const optionCount = record.addedOptions.reduce((total, addition) => total + addition.count, 0);
+    if (record.addedQuestions === 0 && optionCount === 0) this.setStatus(TEXTS.status.expansionStopped);
+    else this.setStatus(TEXTS.status.expansionAdded(record.addedQuestions, optionCount));
+  }
+
+  /**
+   * 报告推演失败（仅最新请求；作者已填内容保持不变）
+   * @param ticket - 请求序号
+   * @param err - 失败原因
+   */
+  private reportExpansionFailure(ticket: number, err: unknown): void {
+    if (ticket !== this.expansionTicket || this.isFinished || this.disposed) return;
+    this.expansionPending = false;
+    this.expansionAbort = undefined;
+    this.setStatus(TEXTS.status.expansionFailed(this.describeError(err)));
+  }
+
+  /**
+   * 提取异常的可读描述
+   * @param err - 未知异常
+   * @returns `Error` 的 `message`，其余类型取字符串形式
+   */
+  private describeError(err: unknown): string {
+    return err instanceof Error ? err.message : String(err);
+  }
+
+  /** 题目总数变化后收敛 Tab、光标与光标记忆（题数变少时当前页与越界光标一并回退） */
+  private trimTabs(): void {
+    const limit = this.model.questionCount;
+    if (this.currentTab > limit) this.currentTab = limit;
+    for (const tab of [...this.cursorByTab.keys()]) {
+      if (tab > limit) this.cursorByTab.delete(tab);
+    }
+    const count = this.getMenuItems().length;
+    if (count > 0 && this.currentOptionIndex >= count) this.currentOptionIndex = count - 1;
   }
 
   // ===== 键盘输入路由与快捷键体系 =====
@@ -807,7 +981,7 @@ export class AskAuthorComponent implements Component, Focusable {
         ...this.summaryView.render(
           this.summaryScrollOffset,
           summaryPageSize(renderHeight),
-          this.statusMessage,
+          this.statusLine,
           layoutWidth,
         ),
       );
@@ -822,8 +996,9 @@ export class AskAuthorComponent implements Component, Focusable {
           optionIndex: this.currentOptionIndex,
           listScrollOffset: this.listScrollOffset,
           previewScrollOffset: this.previewScrollOffset,
-          statusMessage: this.statusMessage,
+          statusMessage: this.statusLine,
           menuItems: this.getMenuItems(),
+          expandable: this.model.canExpandOnConfirm(this.currentTab, this.expansion !== undefined),
         },
         layoutWidth,
         renderHeight,

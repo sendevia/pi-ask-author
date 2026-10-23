@@ -10,8 +10,10 @@ import {
   detectLocale,
   normalizeImeKey,
   padToVisibleWidth,
+  parseExpansionReply,
   safeLine,
   sanitizeAskAuthorArgs,
+  sanitizeExpansionPayload,
 } from "../dist/index.js";
 import { visibleWidth } from "@earendil-works/pi-tui";
 
@@ -504,6 +506,319 @@ import { visibleWidth } from "@earendil-works/pi-tui";
   };
 
   await registeredToolDef.execute("call-tab-label", sanitized, undefined, undefined, ctx);
+}
+
+// 10. 实时推演：追加、签名、撤回与上限
+{
+  const sanitized = sanitizeAskAuthorArgs({
+    formTitle: "推演验证",
+    description: "作者只见到第一题",
+    expansion: { maxQuestions: 2, guidance: "追问人物动机" },
+    question: "主角如何应对谈判？",
+    options: [{ label: "反击" }, { label: "谈判" }],
+  });
+  assert.equal(sanitized.expansion?.maxQuestions, 2, "推演配置应经清洗进入入参");
+  assert.equal(sanitized.expansion?.guidance, "追问人物动机");
+
+  const model = new AskAuthorFormModel(sanitized);
+  assert.equal(model.questionCount, 1);
+  assert.equal(model.answerSignature(0), undefined, "未作答时没有答案签名");
+
+  model.toggleOption(0, 1);
+  assert.equal(model.answerSignature(0), "谈判", "答案签名应为选中项标签");
+  assert.equal(model.getSelectedIndex(0), 1);
+
+  const record = model.pushExpansion({
+    questionIndex: 0,
+    signature: "谈判",
+    payload: {
+      questions: [
+        { id: "q_next", title: "谈判筹码是什么？", options: [{ label: "人质" }, { label: "情报" }] },
+        { id: "q_last", title: "这是第三题", options: [{ label: "甲" }] },
+      ],
+      optionAdditions: [{ questionId: model.questions[0].id, options: [{ label: "假意谈判" }] }],
+    },
+  });
+  assert.equal(record.addedQuestions, 1, "题数上限为 2 时只应追加一题");
+  assert.deepEqual(record.addedOptions, [{ questionIndex: 0, count: 1 }], "选项追加记录应指向触发题目");
+  assert.equal(model.questionCount, 2);
+  assert.equal(model.getQuestion(0)?.options.length, 3, "追加选项应进入既有题目");
+  assert.equal(model.getQuestion(0)?.maxSelect, 3, "追加选项后上限应随选项总数扩展");
+  assert.equal(model.getQuestion(1)?.id, "q_next");
+  assert.equal(model.getExpansions().length, 1);
+
+  // 撤回：追加的题目与选项一并消失，作者在该题上的作答同时剪除
+  model.toggleOption(0, 2);
+  assert.deepEqual(model.getSelectedIndices(0), [2], "新追加的选项可被勾选");
+  const revisionBefore = model.revision;
+  assert.equal(model.retractFrom(0), 1, "应撤回一条推演记录");
+  assert.ok(model.revision > revisionBefore, "撤回应推进 revision");
+  assert.equal(model.questionCount, 1, "追加的题目应被移除");
+  assert.equal(model.getQuestion(0)?.options.length, 2, "追加的选项应被移除");
+  assert.deepEqual(model.getSelectedIndices(0), [], "被移除选项上的勾选应一并剪除");
+  assert.equal(model.getExpansions().length, 0);
+
+  // 空载荷同样入栈：同一答案不会重复推演
+  const empty = model.pushExpansion({ questionIndex: 0, signature: "谈判", payload: { questions: [], optionAdditions: [] } });
+  assert.equal(empty.addedQuestions, 0);
+  assert.deepEqual(empty.addedOptions, []);
+  assert.equal(model.getExpansions().length, 1);
+
+  // 后续题目的推演记录会随起始题目改动一并撤回
+  model.pushExpansion({
+    questionIndex: 1,
+    signature: "人质",
+    payload: { questions: [], optionAdditions: [] },
+  });
+  assert.equal(model.getExpansions().length, 2);
+  assert.equal(model.retractFrom(0), 2, "起始题目改动应级联撤回后续推演");
+  assert.equal(model.getExpansions().length, 0);
+}
+
+// 11. 推演载荷过滤与回复解析
+{
+  const known = {
+    questionIds: ["q1"],
+    optionLabels: new Map([["q1", ["反击", "谈判"]]]),
+  };
+  const payload = sanitizeExpansionPayload(
+    {
+      questions: [
+        { id: "q1", title: "复用既有 ID", options: [{ label: "甲" }] },
+        { id: "q2", title: "有效新题目", options: [{ label: "乙" }, { label: "乙" }] },
+        { id: "q3", title: "没有选项的题目", options: [] },
+      ],
+      options: [
+        { questionId: "q1", options: [{ label: "谈判" }, { label: "假意谈判" }] },
+        { questionId: "missing", options: [{ label: "无效目标" }] },
+      ],
+    },
+    known,
+  );
+  assert.equal(payload.questions.length, 2, "无选项的生成题目应被丢弃");
+  assert.equal(payload.questions[0].id, undefined, "与既有题目冲突的 ID 应被清除");
+  assert.equal(payload.questions[1].options.length, 1, "重复标签应在同一批次内去重");
+  assert.equal(payload.optionAdditions.length, 1, "只保留指向既有题目的选项追加");
+  assert.equal(payload.optionAdditions[0].questionId, "q1");
+  assert.deepEqual(
+    payload.optionAdditions[0].options.map((option) => option.label),
+    ["假意谈判"],
+    "与既有标签重复的追加选项应被丢弃",
+  );
+
+  const reply = parseExpansionReply(
+    '```json\n{"questions":[{"id":"q9","title":"后续","options":[{"label":"甲"}]}],"options":[]}\n```',
+    known,
+  );
+  assert.equal(reply.questions.length, 1);
+  assert.equal(reply.questions[0].id, "q9");
+  assert.throws(() => parseExpansionReply("没有 JSON", known), /JSON/, "非 JSON 回复应立即抛出");
+}
+
+// 12. 推演标记的判定条件
+{
+  const model = new AskAuthorFormModel(
+    sanitizeAskAuthorArgs({
+      formTitle: "标记验证",
+      expansion: { maxQuestions: 3 },
+      question: "选择方向",
+      options: [{ label: "甲" }, { label: "乙" }],
+    }),
+  );
+  assert.equal(model.canExpandOnConfirm(0, false), false, "未开启推演时不应标记");
+  assert.equal(model.canExpandOnConfirm(0, true), true, "开启推演且未作答时应标记");
+
+  model.toggleOption(0, 0);
+  assert.equal(model.canExpandOnConfirm(0, true), true, "答案变化前仍可标记");
+
+  model.pushExpansion({
+    questionIndex: 0,
+    signature: "甲",
+    payload: { questions: [{ title: "后续题目", options: [{ label: "丙" }] }], optionAdditions: [] },
+  });
+  assert.equal(model.canExpandOnConfirm(0, true), false, "同一答案已推演过时不再标记");
+
+  model.toggleOption(0, 1);
+  assert.equal(model.canExpandOnConfirm(0, true), true, "答案改变后应重新标记");
+
+  model.pushExpansion({
+    questionIndex: 0,
+    signature: "乙",
+    payload: { questions: [{ title: "再追加一题", options: [{ label: "丁" }] }], optionAdditions: [] },
+  });
+  assert.equal(model.questionCount, 3, "两次推演后应达到题数上限");
+  model.toggleOption(0, 0);
+  assert.equal(model.canExpandOnConfirm(0, true), false, "题数达上限后不再标记");
+}
+
+// 13. 题头推演标记疴染验证
+{
+  const { askAuthorExtension } = await import("../dist/index.js");
+  let registeredToolDef;
+  askAuthorExtension({
+    registerTool(def) {
+      registeredToolDef = def;
+    },
+    registerCommand() {},
+  });
+  const { initTheme } = await import("@earendil-works/pi-coding-agent");
+  initTheme();
+
+  const dummyTheme = { fg: (_color, text) => text, bg: (_color, text) => text, bold: (text) => text };
+  const fakeTui = { terminal: { rows: 40 }, requestRender() {} };
+  const renderOnce = async (args) => {
+    let text = "";
+    const ctx = {
+      mode: "tui",
+      model: { id: "stub-model" },
+      modelRegistry: {
+        complete() {
+          throw new Error("渲染验证不应发起推演请求");
+        },
+      },
+      ui: {
+        custom: async (factory) => {
+          const component = factory(fakeTui, dummyTheme, {}, () => {});
+          text = component.render(120).join("\n");
+          component.dispose();
+          return { formTitle: "标记渲染", questions: [], answers: [], cancelled: true };
+        },
+      },
+    };
+    await registeredToolDef.execute("call-badge", args, undefined, undefined, ctx);
+    return text;
+  };
+
+  const body = {
+    formTitle: "标记渲染",
+    question: "选择方向",
+    options: [{ label: "甲" }, { label: "乙" }],
+  };
+  const withExpansion = await renderOnce({ ...body, expansion: { maxQuestions: 3 } });
+  assert.ok(withExpansion.includes(TEXTS.view.expansionBadge), "开启推演时题头应显示推演标记");
+
+  const withoutExpansion = await renderOnce(body);
+  assert.ok(!withoutExpansion.includes(TEXTS.view.expansionBadge), "未开启推演时不应显示推演标记");
+}
+
+// 14. 推演题目插队与索引平移
+{
+  const model = new AskAuthorFormModel(
+    sanitizeAskAuthorArgs({
+      formTitle: "插队验证",
+      expansion: { maxQuestions: 8 },
+      questions: [
+        { id: "q1", title: "第一题", options: [{ label: "甲" }, { label: "乙" }] },
+        {
+          id: "q2",
+          title: "第二题",
+          options: [{ label: "丙" }, { label: "丁" }],
+          showIf: { questionId: "q1", option: "甲" },
+        },
+        { id: "q3", title: "第三题", options: [{ label: "戊" }] },
+      ],
+    }),
+  );
+  model.toggleOption(1, 1);
+  model.toggleOption(2, 0);
+  model.toggleOption(0, 0);
+
+  const record = model.pushExpansion({
+    questionIndex: 0,
+    signature: "甲",
+    payload: {
+      questions: [
+        { id: "g1", title: "推演一", options: [{ label: "己" }] },
+        { id: "g2", title: "推演二", options: [{ label: "庚" }], showIf: { questionId: "g1", option: "己" } },
+      ],
+      optionAdditions: [],
+    },
+  });
+  assert.equal(record.insertAt, 1, "插队位置应为触发题目的下一题");
+  assert.equal(record.addedQuestions, 2);
+  assert.deepEqual(
+    model.questions.map((q) => q.id),
+    ["q1", "g1", "g2", "q2", "q3"],
+    "推演题目应插在触发题目之后，既有题目整体后移",
+  );
+  assert.deepEqual(model.getSelectedIndices(3), [1], "移位后的题目应保留原作答状态");
+  assert.deepEqual(model.getSelectedIndices(4), [0], "末题作答状态同样应随索引平移");
+  assert.equal(model.getQuestion(3)?.showIf[0]?.questionIndex, 0, "既有题目的显示条件应仍然指向原题目");
+  assert.equal(model.getQuestion(2)?.showIf[0]?.questionIndex, 1, "推演题目的条件应指向同批插入的前一题");
+
+  // 在平移后的题目上再次推演：记录索引指向新位置，撤回按栈顶逆序回收
+  const second = model.pushExpansion({
+    questionIndex: 3,
+    signature: "丁",
+    payload: { questions: [{ id: "h1", title: "后续追问", options: [{ label: "辛" }] }], optionAdditions: [] },
+  });
+  assert.equal(second.insertAt, 4);
+  assert.deepEqual(
+    model.questions.map((q) => q.id),
+    ["q1", "g1", "g2", "q2", "h1", "q3"],
+    "第二次推演应插在它自己的触发题目之后",
+  );
+  assert.deepEqual(model.getSelectedIndices(5), [0], "第二次插入后末题状态同样平移正确");
+  assert.equal(model.retractFrom(3), 1, "撤回该题推演不应影响更早的插入块");
+  assert.deepEqual(model.questions.map((q) => q.id), ["q1", "g1", "g2", "q2", "q3"]);
+  assert.deepEqual(model.getSelectedIndices(4), [0], "撤回第二次插入后末题索引应复位");
+
+  const envelope = model.formatAnswers(model.compileAnswers());
+  const order = ["第一题", "第二题", "第三题"].map((title) => envelope.indexOf(`[${title}]`));
+  assert.ok(order.every((position) => position >= 0), "封套应包含已作答的全部题目");
+  assert.deepEqual([...order].sort((a, b) => a - b), order, "封套条目应按插队后的题目顺序输出");
+
+  assert.equal(model.retractFrom(0), 1, "插入的记录应可撤回");
+  assert.deepEqual(model.questions.map((q) => q.id), ["q1", "q2", "q3"], "撤回后应恢复原题目序列");
+}
+
+// 15. 推演插入位置预设（跟随 / 队尾 / 自定义）
+{
+  const build = (insert) =>
+    new AskAuthorFormModel(
+      sanitizeAskAuthorArgs({
+        formTitle: "插入位置",
+        expansion: insert === undefined ? { maxQuestions: 8 } : { maxQuestions: 8, insert },
+        questions: [
+          { id: "q1", title: "第一题", options: [{ label: "甲" }] },
+          { id: "q2", title: "第二题", options: [{ label: "乙" }] },
+          { id: "q3", title: "第三题", options: [{ label: "丙" }] },
+        ],
+      }),
+    );
+  const payload = (id) => ({ questions: [{ id, title: `生成${id}`, options: [{ label: "丁" }] }], optionAdditions: [] });
+
+  const follow = build(undefined);
+  assert.equal(follow.expansionInsert, "follow", "缺省插入位置为跟随");
+  follow.pushExpansion({ questionIndex: 1, signature: "乙", payload: payload("f1") });
+  assert.deepEqual(follow.questions.map((q) => q.id), ["q1", "q2", "f1", "q3"], "跟随时插在触发题目之后");
+
+  const tail = build("tail");
+  tail.pushExpansion({ questionIndex: 0, signature: "甲", payload: payload("t1") });
+  assert.deepEqual(tail.questions.map((q) => q.id), ["q1", "q2", "q3", "t1"], "队尾时排在全部题目之后");
+
+  const custom = build({ after: "q1" });
+  custom.pushExpansion({ questionIndex: 2, signature: "丙", payload: payload("c1") });
+  assert.deepEqual(custom.questions.map((q) => q.id), ["q1", "c1", "q2", "q3"], "自定义锚点时插到锚点题目之后");
+  custom.pushExpansion({ questionIndex: 2, signature: "丙2", payload: payload("c2") });
+  assert.deepEqual(
+    custom.questions.map((q) => q.id),
+    ["q1", "c2", "c1", "q2", "q3"],
+    "同一锚点的后续推演直接排在锚点之后"
+  );
+  assert.equal(custom.retractFrom(2), 2, "两条记录应可逐条撤回");
+  assert.deepEqual(custom.questions.map((q) => q.id), ["q1", "q2", "q3"]);
+  assert.equal(custom.canExpandOnConfirm(1, true), true, "自定义锚点不影响推演标记的判定");
+
+  assert.throws(() => build({ after: "nope" }), AdaptiveConditionError, "未知锚点应在构建期报错");
+
+  const flatArgs = { formTitle: "x", question: "q", options: [{ label: "a" }] };
+  const asPreset = sanitizeAskAuthorArgs({ ...flatArgs, expansion: { insert: "tail" } });
+  assert.equal(asPreset.expansion?.insert, "tail");
+  const asId = sanitizeAskAuthorArgs({ ...flatArgs, expansion: { insert: "q7" } });
+  assert.deepEqual(asId.expansion?.insert, { after: "q7" }, "字符串锚点应收敛为 after 形式");
+  const asObject = sanitizeAskAuthorArgs({ ...flatArgs, expansion: { insert: { after: "q1" } } });
+  assert.deepEqual(asObject.expansion?.insert, { after: "q1" });
 }
 
 console.log("全部功能自检顺利通过。");
