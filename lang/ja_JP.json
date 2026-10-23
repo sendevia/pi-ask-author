@@ -8,12 +8,14 @@
   "common": { "optionSeparator": "、", "bulletPrefix": "• ", "helpSeparator": " • " },
   "tabs": {
     "questionTab": { "template": "第{index}問", "params": ["index"] },
+    "expansionPlaceholder": "展開中…",
     "submitTab": { "template": "{icon.check} 回答を提出" }
   },
   "view": {
     "modeSingle": "[単一選択]",
     "conditionalBadge": "[条件付き]",
     "expansionBadge": "[展開]",
+    "expansionPendingHint": "展開中は質問の切り替えと回答を停止します。完了すると新しい質問と選択肢がその場で展開されます",
     "modeMultiAtLeast": { "template": "[複数選択 {min}項目以上{maxPart}]", "params": ["min", "maxPart"] },
     "modeMultiOptional": { "template": "[複数選択 選択任意{maxPart}]", "params": ["maxPart"] },
     "modeMultiUnconstrained": { "template": "[複数選択{maxPart}]", "params": ["maxPart"] },

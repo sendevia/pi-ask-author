@@ -8,12 +8,14 @@
   "common": { "optionSeparator": ", ", "bulletPrefix": "• ", "helpSeparator": " • " },
   "tabs": {
     "questionTab": { "template": "질문 {index}", "params": ["index"] },
+    "expansionPlaceholder": "전개 중…",
     "submitTab": { "template": "{icon.check} 답변 제출" }
   },
   "view": {
     "modeSingle": "[단일 선택]",
     "conditionalBadge": "[조건부]",
     "expansionBadge": "[전개]",
+    "expansionPendingHint": "전개 중에는 질문 전환과 답변이 일시 중지되며, 완료되면 새 질문과 선택지가 원래 자리에 나타납니다",
     "modeMultiAtLeast": { "template": "[다중 선택 최소 {min}개{maxPart}]", "params": ["min", "maxPart"] },
     "modeMultiOptional": { "template": "[다중 선택 선택 안 함 가능{maxPart}]", "params": ["maxPart"] },
     "modeMultiUnconstrained": { "template": "[다중 선택{maxPart}]", "params": ["maxPart"] },

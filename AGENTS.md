@@ -238,6 +238,7 @@ graph TD
 
 - 开关由调用方声明：只在入参携带 `expansion` 时推演；当前会话没有可用模型时直接返回结构化错误，不静默降级为静态表单。
 - 触发时机唯一：推演只由「作者确认一道题目」触发（`confirmAndAdvance` 路径），勾选、批注与滚动不触发；推演在切页前发起，保证新增题目紧接被确认的题目之后。
+- 在途占位页：请求在途期间激活页的 Tab 标题换成占位文案（`buildTabLines` 的 `expansionPending`，文案取自 `tabs.expansionPlaceholder`），整页内容换成占位提示（`pushExpansionPlaceholder`，取自 `status.expansionRunning` 与 `view.expansionPendingHint`），除取消键外的输入一律忽略（`handleInput` 的在途守卫）；结果写入或失败报告后恢复。
 - 答案签名复用：每道题的推演记录携带该题答案签名（可见选中项标签按序拼接）；同一答案重复确认不重新调用模型，签名变化时先撤回再重新推演。
 - 题头标记：可触发推演的题目在题头展示 `[推演]` 标记，判定集中在 `AskAuthorFormModel.canExpandOnConfirm`（开启推演、题目可见、未达题数上限且该答案尚未推演），组件只在渲染路径读取该结果。
 - 栈式撤回：推演记录按追加顺序入栈，撤回从栈顶开始，撤回该题及后续题目的全部记录；插入与撤回都整体平移后续题目的显示条件、作答状态与记录索引，被撤回题目与其选项上的作答状态一并剪除。

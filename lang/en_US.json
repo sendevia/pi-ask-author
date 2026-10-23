@@ -8,12 +8,14 @@
   "common": { "optionSeparator": ", ", "bulletPrefix": "• ", "helpSeparator": " • " },
   "tabs": {
     "questionTab": { "template": "Q{index}", "params": ["index"] },
+    "expansionPlaceholder": "expanding…",
     "submitTab": { "template": "{icon.check} Submit" }
   },
   "view": {
     "modeSingle": "[Single]",
     "conditionalBadge": "[Conditional]",
     "expansionBadge": "[Expand]",
+    "expansionPendingHint": "Question switching and answering are paused while the follow-up is generated; new questions and options appear in place when it finishes",
     "modeMultiAtLeast": { "template": "[Multi, at least {min}{maxPart}]", "params": ["min", "maxPart"] },
     "modeMultiOptional": { "template": "[Multi, optional{maxPart}]", "params": ["maxPart"] },
     "modeMultiUnconstrained": { "template": "[Multi{maxPart}]", "params": ["maxPart"] },

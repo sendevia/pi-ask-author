@@ -8,12 +8,14 @@
   "common": { "optionSeparator": "、", "bulletPrefix": "• ", "helpSeparator": " • " },
   "tabs": {
     "questionTab": { "template": "第{index}题", "params": ["index"] },
+    "expansionPlaceholder": "推演中…",
     "submitTab": { "template": "{icon.check} 提交答卷" }
   },
   "view": {
     "modeSingle": "[单选]",
     "conditionalBadge": "[条件]",
     "expansionBadge": "[推演]",
+    "expansionPendingHint": "推演期间题目切换与作答暂停，完成后新题目与选项在原位展开",
     "modeMultiAtLeast": { "template": "[多选 至少{min}项{maxPart}]", "params": ["min", "maxPart"] },
     "modeMultiOptional": { "template": "[多选 可不选{maxPart}]", "params": ["maxPart"] },
     "modeMultiUnconstrained": { "template": "[多选{maxPart}]", "params": ["maxPart"] },

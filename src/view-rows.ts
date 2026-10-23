@@ -148,11 +148,13 @@ function tabLabelText(model: AskAuthorFormModel, questionIndex: number, displayI
  * - 提交页标签在全部作答完成时用 `success`，否则 `dim`；激活判定为 `currentTab === model.questionCount`
  * - 分段按 `renderWidth` 贪心折行（段间单空格连接），超宽分段独占一行而不被丢弃；末尾恒追加一条
  *   `dim` 配色的单横分隔线（`LAYOUT_CONFIG.dividerThin`）
+ * - 推演在途时把激活页的 Tab 标题换成占位文案，向作者说明该页正在等待新题目落位
  *
  * @param theme - 主题样式提供者
  * @param model - 问卷表单数据模型（提供可见题目、作答完成度）
  * @param currentTab - 激活页索引（题目顺序索引；`questionCount` 为总览页）
  * @param renderWidth - 终端可视宽度限制
+ * @param expansionPending - 是否有推演请求在途（为 true 时激活页标签改为占位文案）
  * @returns Tab 导航栏终端行数组（至少含末尾分隔线一行；超宽时标签折为多行）
  */
 export function buildTabLines(
@@ -160,24 +162,38 @@ export function buildTabLines(
   model: AskAuthorFormModel,
   currentTab: number,
   renderWidth: number,
+  expansionPending = false,
 ): string[] {
   const isSubmitTab = currentTab === model.questionCount;
   const tabLines: string[] = [];
   const tabSegments: string[] = [];
+  const placeholderText = ` ${TEXTS.tabs.expansionPlaceholder} `;
   for (const [displayIndex, questionIndex] of model.getVisibleQuestionIndices().entries()) {
     const isActive = questionIndex === currentTab;
     const answered = model.isQuestionAnswered(questionIndex);
     const icon = answered ? ICONS.checked : ICONS.unchecked;
-    const color = answered ? "success" : "muted";
-    const text = ` ${icon} ${tabLabelText(model, questionIndex, displayIndex + 1)} `;
-    tabSegments.push(isActive ? theme.bg("selectedBg", theme.fg("accent", theme.bold(text))) : theme.fg(color, text));
+    const activeLabel =
+      isActive && expansionPending
+        ? placeholderText
+        : ` ${icon} ${tabLabelText(model, questionIndex, displayIndex + 1)} `;
+    const color = isActive ? (expansionPending ? "warning" : "accent") : answered ? "success" : "muted";
+    tabSegments.push(
+      isActive ? theme.bg("selectedBg", theme.fg(color, theme.bold(activeLabel))) : theme.fg(color, activeLabel),
+    );
   }
 
-  const submitText = ` ${TEXTS.tabs.submitTab} `;
+  const submitText = isSubmitTab && expansionPending ? placeholderText : ` ${TEXTS.tabs.submitTab} `;
+  const submitColor = isSubmitTab
+    ? expansionPending
+      ? "warning"
+      : "success"
+    : model.areAllQuestionsAnswered()
+      ? "success"
+      : "dim";
   tabSegments.push(
     isSubmitTab
-      ? theme.bg("selectedBg", theme.fg("success", theme.bold(submitText)))
-      : theme.fg(model.areAllQuestionsAnswered() ? "success" : "dim", submitText),
+      ? theme.bg("selectedBg", theme.fg(submitColor, theme.bold(submitText)))
+      : theme.fg(submitColor, submitText),
   );
 
   let row = "";
@@ -199,6 +215,20 @@ export function buildTabLines(
   tabLines.push(theme.fg("dim", divider(renderWidth)));
 
   return tabLines;
+}
+
+/**
+ * 原地追加推演占位页（替换作答页 / 总览页内容，推演在途期间不接受任何作答输入）
+ * @param lines - 输出行数组（原地追加）
+ * @param theme - 主题样式提供者
+ * @param width - 终端可视宽度限制（说明文案超宽时按单空格悬挂缩进折行）
+ */
+export function pushExpansionPlaceholder(lines: string[], theme: Theme, width: number): void {
+  lines.push("");
+  lines.push(` ${theme.fg("warning", theme.bold(TEXTS.status.expansionRunning))}`);
+  lines.push("");
+  pushWrapped(lines, theme.fg("dim", ` ${TEXTS.view.expansionPendingHint}`), width, " ");
+  lines.push("");
 }
 
 /**

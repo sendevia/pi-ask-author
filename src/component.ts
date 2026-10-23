@@ -9,7 +9,7 @@
  * - 逐题独立光标记忆与 `1~9` 跳转题目；内置编辑器透传 Focusable 以定位 IME 候选框
  * - 无输入框页面把输入法全角字符收敛为半角，`【`/`】` 与全角字母数字一样命中快捷键
  * - 自适应导航：Tab 循环 / 数字跳转 / 确认推进一律沿可见题目序列行走，被条件隐藏的题目自动跳过
- * - 实时推演：作者确认答案后发起（答案未变则复用既有结果，变了先撤回再请求），结果写入同一表单；只采纳最新请求，中止与卸载作废在途请求
+ * - 实时推演：作者确认答案后发起（答案未变则复用既有结果，变了先撤回再请求），结果写入同一表单；在途期间当前页的 Tab 标题与整页内容换成占位并暂停一切作答输入，就绪后恢复；只采纳最新请求，中止与卸载作废在途请求
  * - Esc / Ctrl+C 双通道取消（输入模式二次确认）；定时器、Abort 监听与缓存池全量回收
  *
  * 渲染纯度不变量：`render()` 及其可达被调函数禁止写入语义状态（`currentTab`、光标与各 `*ScrollOffset`、`inputMode`、`editTarget`、`editorEscArmed`、`statusMessage`、`isFinished`）；滚动位移归一化一律归属输入路径
@@ -44,7 +44,7 @@ import { TEXTS } from "./texts.js";
 import type { Theme } from "./theme.js";
 import { renderEditorPage } from "./view-editor.js";
 import { QuestionView, singlePreviewHeight, type PreviewViewport } from "./view-question.js";
-import { buildTabLines, optionLabelOf, pushFrameRule } from "./view-rows.js";
+import { buildTabLines, optionLabelOf, pushExpansionPlaceholder, pushFrameRule } from "./view-rows.js";
 import { SummaryView, summaryPageSize } from "./view-summary.js";
 
 /**
@@ -150,7 +150,7 @@ export class AskAuthorComponent implements Component, Focusable {
   private expansionTicket = 0;
   /** 进行中的推演请求中止器 */
   private expansionAbort?: AbortController;
-  /** 是否有推演请求正在进行（状态栏据此展示提示） */
+  /** 是否有推演请求正在进行（在途期间作答页整体换成占位页，一切作答输入暂停） */
   private expansionPending = false;
 
   /** 题目作答页视图构建器（持有预览与左栏缓存） */
@@ -247,6 +247,7 @@ export class AskAuthorComponent implements Component, Focusable {
     this.expansionTicket++;
     this.expansionAbort?.abort();
     this.expansionAbort = undefined;
+    this.expansionPending = false;
     this.clearStatusTimer();
     if (this.abortBinding) {
       this.abortBinding.signal.removeEventListener("abort", this.abortBinding.onAbort);
@@ -318,11 +319,11 @@ export class AskAuthorComponent implements Component, Focusable {
   }
 
   /**
-   * 底部状态行文案（推演进行中的提示优先于临时通知）
+   * 底部状态行文案
    * @returns 待展示的状态行文本；无提示时为 null
    */
   private get statusLine(): string | null {
-    return this.expansionPending ? TEXTS.status.expansionRunning : this.statusMessage;
+    return this.statusMessage;
   }
 
   /**
@@ -690,10 +691,13 @@ export class AskAuthorComponent implements Component, Focusable {
       return;
     }
 
-    // 3. 输入法全角字符收敛为半角：候选词框覆盖时按键常以全角送出（`【`/`】`/`０`/`ｈ`），输入模式已在上方返回，此处只处理无输入框页面
+    // 3. 推演在途：作答页整体是占位页，除取消外的输入全部忽略（入位前改动会让作答快照与插入位置错位）
+    if (this.expansionPending) return;
+
+    // 4. 输入法全角字符收敛为半角：候选词框覆盖时按键常以全角送出（`【`/`】`/`０`/`ｈ`），输入模式已在上方返回，此处只处理无输入框页面
     data = normalizeImeKey(data);
 
-    // 4. 数字键 1~9 快捷跳转题目（按可见题目的展示序号映射；10 题以上经 Tab/hl 循环或总览页跳转）
+    // 5. 数字键 1~9 快捷跳转题目（按可见题目的展示序号映射；10 题以上经 Tab/hl 循环或总览页跳转）
     if (/^[1-9]$/.test(data)) {
       const targetIndex = parseInt(data, 10) - 1;
       const target = this.tabOrder[targetIndex];
@@ -703,7 +707,7 @@ export class AskAuthorComponent implements Component, Focusable {
       }
     }
 
-    // 5. Tab / 方向键左右 / h / l Vim 风格切换题目
+    // 6. Tab / 方向键左右 / h / l Vim 风格切换题目
     if (matchesKey(data, Key.tab) || matchesKey(data, Key.right) || matchesKey(data, "l")) {
       this.switchRelativeTab(1);
       return;
@@ -713,7 +717,7 @@ export class AskAuthorComponent implements Component, Focusable {
       return;
     }
 
-    // 6. 分视图输入路由
+    // 7. 分视图输入路由
     if (this.isSubmitTab) {
       this.handleSummaryInput(data);
     } else {
@@ -970,13 +974,18 @@ export class AskAuthorComponent implements Component, Focusable {
     pushFrameRule(lines, this.theme, layoutWidth);
 
     // 2. Tab 导航栏（块级缓存，整块由 view-rows 层预计算）
-    const tabCacheKey = `${this.currentTab}_${this.model.revision}_${layoutWidth}`;
+    const tabCacheKey = `${this.currentTab}_${this.expansionPending ? "p" : "-"}_${this.model.revision}_${layoutWidth}`;
     if (!this.tabCache || this.tabCache.key !== tabCacheKey) {
-      this.tabCache = { key: tabCacheKey, lines: buildTabLines(this.theme, this.model, this.currentTab, layoutWidth) };
+      this.tabCache = {
+        key: tabCacheKey,
+        lines: buildTabLines(this.theme, this.model, this.currentTab, layoutWidth, this.expansionPending),
+      };
     }
     lines.push(...this.tabCache.lines);
 
-    if (this.isSubmitTab) {
+    if (this.expansionPending) {
+      pushExpansionPlaceholder(lines, this.theme, layoutWidth);
+    } else if (this.isSubmitTab) {
       lines.push(
         ...this.summaryView.render(
           this.summaryScrollOffset,

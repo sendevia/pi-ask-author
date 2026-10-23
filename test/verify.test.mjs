@@ -859,4 +859,84 @@ import { visibleWidth } from "@earendil-works/pi-tui";
   assert.deepEqual(asObject.expansion?.insert, { after: "q1" });
 }
 
+// 16. 推演在途期间把当前页换成占位页并暂停作答输入
+{
+  const { askAuthorExtension } = await import("../dist/index.js");
+  let registeredToolDef;
+  askAuthorExtension({
+    registerTool(def) {
+      registeredToolDef = def;
+    },
+    registerCommand() {},
+  });
+  const { initTheme } = await import("@earendil-works/pi-coding-agent");
+  initTheme();
+
+  const dummyTheme = { fg: (_color, text) => text, bg: (_color, text) => text, bold: (text) => text };
+  const fakeTui = { terminal: { rows: 40 }, requestRender() {} };
+  let settle;
+  const expansionReply = new Promise((resolve) => {
+    settle = resolve;
+  });
+
+  let pendingRender;
+  let frozenRender;
+  let readyRender;
+  let resumedRender;
+  const ctx = {
+    mode: "tui",
+    model: { id: "stub-model" },
+    modelRegistry: {
+      async complete() {
+        const text = await expansionReply;
+        return { stopReason: "endTurn", content: [{ type: "text", text }] };
+      },
+    },
+    ui: {
+      async custom(factory) {
+        const component = factory(fakeTui, dummyTheme, {}, () => {});
+        // 空格勾选首项，Enter 确认并前移：此刻推演请求已在途，作者停在第二题
+        component.handleInput(" ");
+        component.handleInput("\r");
+        pendingRender = component.render(120).join("\n");
+        // 在途期间一切作答输入被忽略：渲染结果与占位页完全一致
+        component.handleInput("\t");
+        component.handleInput("1");
+        component.handleInput("j");
+        frozenRender = component.render(120).join("\n");
+
+        settle(
+          "```json\n{\"questions\":[{\"id\":\"g1\",\"title\":\"推演题\",\"options\":[{\"label\":\"戊\"}]}],\"options\":[]}\n```",
+        );
+        await new Promise((resolve) => setTimeout(resolve, 0));
+        readyRender = component.render(120).join("\n");
+        // 推演就绪后切换恢复
+        component.handleInput("\t");
+        resumedRender = component.render(120).join("\n");
+        return { formTitle: "占位符", questions: [], answers: [], cancelled: true };
+      },
+    },
+  };
+
+  const body = {
+    formTitle: "占位符",
+    expansion: { maxQuestions: 6 },
+    questions: [
+      { id: "q1", title: "第一题", options: [{ label: "甲" }, { label: "乙" }] },
+      { id: "q2", title: "第二题", options: [{ label: "丙" }, { label: "丁" }] },
+    ],
+  };
+  await registeredToolDef.execute("call-placeholder", body, undefined, undefined, ctx);
+
+  assert.ok(pendingRender.includes(TEXTS.tabs.expansionPlaceholder), "推演在途时激活页的 Tab 标题应换成占位文案");
+  assert.ok(pendingRender.includes(TEXTS.status.expansionRunning), "推演在途时占位页应展示运行提示");
+  assert.ok(pendingRender.includes(TEXTS.view.expansionPendingHint), "推演在途时占位页应展示暂停说明");
+  assert.ok(!pendingRender.includes("第二题"), "推演在途时作答页内容应被占位页替换");
+  assert.equal(frozenRender, pendingRender, "推演在途期间作答与切换输入应被忽略");
+  assert.ok(!readyRender.includes(TEXTS.tabs.expansionPlaceholder), "推演就绪后 Tab 占位文案应恢复");
+  assert.ok(!readyRender.includes(TEXTS.view.expansionPendingHint), "推演就绪后占位页应消失");
+  assert.ok(readyRender.includes("推演题"), "推演就绪后生成题目应可见");
+  assert.notEqual(resumedRender, readyRender, "推演就绪后题目切换应恢复");
+}
+
 console.log("全部功能自检顺利通过。");
