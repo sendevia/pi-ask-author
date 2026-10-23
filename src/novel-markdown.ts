@@ -637,7 +637,7 @@ export function buildFullPreviewContentLines(
   if (item.type === "option") {
     // 1. 选项专属作者补充说明（若已填写）
     if (optionNote) {
-      mdSource += `${TEXTS.view.sectionTitle(TEXTS.view.optionNotePanelTitle)}\n\n${TEXTS.view.fieldLabel(TEXTS.view.customNotePanelCurrent)}\n\n${cleanText(optionNote)}\n\n`;
+      mdSource += `${TEXTS.view.sectionTitle(TEXTS.view.optionNotePanelTitle)}\n\n${cleanText(optionNote)}\n\n`;
     }
 
     // 2. 情节设定推演说明
@@ -654,7 +654,7 @@ export function buildFullPreviewContentLines(
   } else if (item.type === "custom_note") {
     mdSource += buildTipsSection(TEXTS.view.customNotePanelTitle, TEXTS.view.customNotePanelTips);
     if (customText) {
-      mdSource += `\n${TEXTS.view.fieldLabel(TEXTS.view.customNotePanelCurrent)}\n\n${cleanText(customText)}\n\n`;
+      mdSource += `\n${cleanText(customText)}\n\n`;
     }
   } else {
     mdSource += buildTipsSection(TEXTS.view.confirmPanelTitle, TEXTS.view.confirmPanelTips);

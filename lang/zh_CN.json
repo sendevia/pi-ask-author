@@ -29,7 +29,6 @@
     "storyDraftPanelTitle": "正文草稿/分镜头试撰写",
     "customNotePanelTitle": "题目补充说明",
     "confirmPanelTitle": "操作说明",
-    "customNotePanelCurrent": "当前填写内容：",
     "previewScrollInfo": { "template": "(行 {start}-{end}/{total}，用 [ ] 滚动)", "params": ["start", "end", "total"] },
     "previewNoDraft": "(无内容预览)",
     "customNotePanelTips": [
@@ -39,7 +38,6 @@
     ],
     "confirmPanelTips": ["• 按 `Enter` 确认本题并前往下一题", "• 最后一题确认后自动进入总览提交页"],
     "sectionTitle": { "template": "### {title}", "params": ["title"] },
-    "fieldLabel": { "template": "**{label}**", "params": ["label"] },
     "italicLine": { "template": "_{text}_", "params": ["text"] }
   },
   "menu": {

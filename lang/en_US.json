@@ -29,7 +29,6 @@
     "storyDraftPanelTitle": "Draft / Storyboard Preview",
     "customNotePanelTitle": "Question Note",
     "confirmPanelTitle": "Controls",
-    "customNotePanelCurrent": "Current content:",
     "previewScrollInfo": {
       "template": "(lines {start}-{end}/{total}, use [ ] to scroll)",
       "params": ["start", "end", "total"]
@@ -45,7 +44,6 @@
       "• Confirming the last question opens the summary and submit page"
     ],
     "sectionTitle": { "template": "### {title}", "params": ["title"] },
-    "fieldLabel": { "template": "**{label}**", "params": ["label"] },
     "italicLine": { "template": "_{text}_", "params": ["text"] }
   },
   "menu": {
