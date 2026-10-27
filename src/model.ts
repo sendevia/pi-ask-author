@@ -854,8 +854,7 @@ export class AskAuthorFormModel {
       return { ...built, question: { ...built.question, id } };
     });
 
-    // 既有题目、作答状态与推演记录先让位，再按新索引解析插入内容的条件
-    this.remapQuestionIndices(at, pending.length);
+    // 先在未改动的题目列表上试算插入后的索引，条件全部合法后才让既有题目、作答状态与推演记录让位
     const scoped = [
       ...this.questionList.slice(0, at),
       ...pending.map((entry) => entry.question),
@@ -875,6 +874,7 @@ export class AskAuthorFormModel {
       };
     });
 
+    this.remapQuestionIndices(at, pending.length);
     this.questionList.splice(at, 0, ...inserted);
     return inserted.length;
   }

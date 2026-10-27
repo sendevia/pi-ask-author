@@ -10,6 +10,7 @@ import {
   MAX_OPTIONS,
   MAX_QUESTIONS,
   TEXTS,
+  askAuthorExtension,
   cleanOptional,
   detectLocale,
   normalizeImeKey,
@@ -20,6 +21,27 @@ import {
   sanitizeExpansionPayload,
 } from "../dist/index.js";
 import { visibleWidth } from "@earendil-works/pi-tui";
+import { initTheme } from "@earendil-works/pi-coding-agent";
+
+// 交互组件共享装载：注册工具与初始化主题只执行一次，各用例只构造自己的上下文
+let registeredToolDef;
+askAuthorExtension({
+  registerTool(def) {
+    registeredToolDef = def;
+  },
+  registerCommand() {},
+});
+initTheme();
+
+/** 纯文本主题：去掉着色并保留全部文本 */
+const dummyTheme = {
+  fg: (_color, text) => text,
+  bg: (_color, text) => text,
+  bold: (text) => text,
+  italic: (text) => text,
+};
+/** 固定终端尺寸的渲染宿主 */
+const fakeTui = { terminal: { rows: 40 }, requestRender() {} };
 
 // 1. 纯函数排版与格式化工具验证
 {
@@ -133,55 +155,24 @@ import { visibleWidth } from "@earendil-works/pi-tui";
 
 // 4. 结果卡片折叠与展开隐式支持验证
 {
-  let registeredToolDef;
-  const mockPi = {
-    registerTool(def) {
-      registeredToolDef = def;
+  const result = {
+    content: [{ type: "text", text: "ok" }],
+    details: {
+      formTitle: "测试",
+      questions: [],
+      answers: [{ questionId: "1", questionTitle: "测试题", multiSelect: false, customText: "备注" }],
+      cancelled: false,
     },
-    registerCommand() {},
   };
-  const { askAuthorExtension } = await import("../dist/index.js");
-  const { initTheme } = await import("@earendil-works/pi-coding-agent");
-  initTheme();
-  askAuthorExtension(mockPi);
 
-  const dummyTheme = { fg: (_color, text) => text, bg: (_color, text) => text, bold: (text) => text };
-
-  const collapsedComponent = registeredToolDef.renderResult(
-    {
-      content: [{ type: "text", text: "ok" }],
-      details: {
-        formTitle: "测试",
-        questions: [],
-        answers: [{ questionId: "1", questionTitle: "测试题", multiSelect: false, customText: "备注" }],
-        cancelled: false,
-      },
-    },
-    { expanded: false },
-    dummyTheme,
-    {},
-  );
-
-  const collapsedText = collapsedComponent.render(80).join("\n");
+  const collapsedText = registeredToolDef
+    .renderResult(result, { expanded: false }, dummyTheme, {})
+    .render(80)
+    .join("\n");
   assert.ok(collapsedText.includes(TEXTS.card.resultCompleted), "折叠态应包含完成状态");
   assert.ok(!collapsedText.includes("展开查看明细"), "折叠态不应包含显式展开快捷键提示");
 
-  const expandedComponent = registeredToolDef.renderResult(
-    {
-      content: [{ type: "text", text: "ok" }],
-      details: {
-        formTitle: "测试",
-        questions: [],
-        answers: [{ questionId: "1", questionTitle: "测试题", multiSelect: false, customText: "备注" }],
-        cancelled: false,
-      },
-    },
-    { expanded: true },
-    dummyTheme,
-    {},
-  );
-
-  const expandedText = expandedComponent.render(80).join("\n");
+  const expandedText = registeredToolDef.renderResult(result, { expanded: true }, dummyTheme, {}).render(80).join("\n");
   assert.ok(expandedText.includes("测试题"), "展开态应展示题目详细作答明细");
 }
 
@@ -351,16 +342,6 @@ import { visibleWidth } from "@earendil-works/pi-tui";
 
 // 7. 工具注册元数据、错误结果与调用卡片摘要验证
 {
-  let registeredToolDef;
-  const mockPi = {
-    registerTool(def) {
-      registeredToolDef = def;
-    },
-    registerCommand() {},
-  };
-  const { askAuthorExtension } = await import("../dist/index.js");
-  askAuthorExtension(mockPi);
-
   assert.equal(registeredToolDef.exposure, "model-only", "交互式工具应只由模型直接发起");
   assert.equal(registeredToolDef.annotations.readOnlyHint, true, "工具应标注只读");
   assert.equal(registeredToolDef.annotations.openWorldHint, false, "工具不应标注开放世界");
@@ -384,12 +365,6 @@ import { visibleWidth } from "@earendil-works/pi-tui";
   assert.equal(cancelledResult.isError, undefined, "取消不是工具错误");
   assert.ok(cancelledResult.content[0].text.startsWith("[Author Decision Cancelled]"), "取消封套前缀应保持稳定");
 
-  const dummyTheme = {
-    fg: (_color, text) => text,
-    bg: (_color, text) => text,
-    bold: (text) => text,
-    italic: (text) => text,
-  };
   const overflowQuestions = MAX_QUESTIONS + 5;
   const streamArgs = {
     formTitle: "\u001b[31m流式摘要\u001b[0m",
@@ -435,25 +410,6 @@ import { visibleWidth } from "@earendil-works/pi-tui";
 
 // 8. 视图渲染冒烟验证
 {
-  let registeredToolDef;
-  const { askAuthorExtension } = await import("../dist/index.js");
-  askAuthorExtension({
-    registerTool(def) {
-      registeredToolDef = def;
-    },
-    registerCommand() {},
-  });
-
-  const { initTheme } = await import("@earendil-works/pi-coding-agent");
-  initTheme();
-
-  const dummyTheme = {
-    fg: (_color, text) => text,
-    bg: (_color, text) => text,
-    bold: (text) => text,
-    italic: (text) => text,
-  };
-  const fakeTui = { terminal: { rows: 40 }, requestRender() {} };
   const widths = [120, 40];
   const assertWidths = (component, stage) => {
     for (const width of widths) {
@@ -513,19 +469,6 @@ import { visibleWidth } from "@earendil-works/pi-tui";
   assert.equal(model.getQuestion(0)?.tabLabel, "视点", "Tab 短标签应经清洗进入模型");
   assert.equal(model.getQuestion(1)?.tabLabel, undefined, "未声明短标签的题目应保持 undefined");
 
-  let registeredToolDef;
-  const { askAuthorExtension } = await import("../dist/index.js");
-  askAuthorExtension({
-    registerTool(def) {
-      registeredToolDef = def;
-    },
-    registerCommand() {},
-  });
-  const { initTheme } = await import("@earendil-works/pi-coding-agent");
-  initTheme();
-
-  const dummyTheme = { fg: (_color, text) => text, bg: (_color, text) => text, bold: (text) => text };
-  const fakeTui = { terminal: { rows: 40 }, requestRender() {} };
   const ctx = {
     mode: "tui",
     ui: {
@@ -597,17 +540,17 @@ import { visibleWidth } from "@earendil-works/pi-tui";
   assert.equal(model.getExpansions().length, 0);
 
   // 空载荷同样入栈：同一答案不会重复推演
-  const empty = model.pushExpansion({ questionIndex: 0, signature: "谈判", payload: { questions: [], optionAdditions: [] } });
+  const empty = model.pushExpansion({
+    questionIndex: 0,
+    signature: "谈判",
+    payload: { questions: [], optionAdditions: [] },
+  });
   assert.equal(empty.addedQuestions, 0);
   assert.deepEqual(empty.addedOptions, []);
   assert.equal(model.getExpansions().length, 1);
 
   // 后续题目的推演记录会随起始题目改动一并撤回
-  model.pushExpansion({
-    questionIndex: 1,
-    signature: "人质",
-    payload: { questions: [], optionAdditions: [] },
-  });
+  model.pushExpansion({ questionIndex: 1, signature: "人质", payload: { questions: [], optionAdditions: [] } });
   assert.equal(model.getExpansions().length, 2);
   assert.equal(model.retractFrom(0), 2, "起始题目改动应级联撤回后续推演");
   assert.equal(model.getExpansions().length, 0);
@@ -615,10 +558,7 @@ import { visibleWidth } from "@earendil-works/pi-tui";
 
 // 11. 推演载荷过滤与回复解析
 {
-  const known = {
-    questionIds: ["q1"],
-    optionLabels: new Map([["q1", ["反击", "谈判"]]]),
-  };
+  const known = { questionIds: ["q1"], optionLabels: new Map([["q1", ["反击", "谈判"]]]) };
   const payload = sanitizeExpansionPayload(
     {
       questions: [
@@ -689,21 +629,8 @@ import { visibleWidth } from "@earendil-works/pi-tui";
   assert.equal(model.canExpandOnConfirm(0, true), false, "题数达上限后不再标记");
 }
 
-// 13. 题头推演标记疴染验证
+// 13. 题头推演标记验证
 {
-  const { askAuthorExtension } = await import("../dist/index.js");
-  let registeredToolDef;
-  askAuthorExtension({
-    registerTool(def) {
-      registeredToolDef = def;
-    },
-    registerCommand() {},
-  });
-  const { initTheme } = await import("@earendil-works/pi-coding-agent");
-  initTheme();
-
-  const dummyTheme = { fg: (_color, text) => text, bg: (_color, text) => text, bold: (text) => text };
-  const fakeTui = { terminal: { rows: 40 }, requestRender() {} };
   const renderOnce = async (args) => {
     let text = "";
     const ctx = {
@@ -727,11 +654,7 @@ import { visibleWidth } from "@earendil-works/pi-tui";
     return text;
   };
 
-  const body = {
-    formTitle: "标记渲染",
-    question: "选择方向",
-    options: [{ label: "甲" }, { label: "乙" }],
-  };
+  const body = { formTitle: "标记渲染", question: "选择方向", options: [{ label: "甲" }, { label: "乙" }] };
   const withExpansion = await renderOnce({ ...body, expansion: { maxQuestions: 3 } });
   assert.ok(withExpansion.includes(TEXTS.view.expansionBadge), "开启推演时题头应显示推演标记");
 
@@ -798,16 +721,30 @@ import { visibleWidth } from "@earendil-works/pi-tui";
   );
   assert.deepEqual(model.getSelectedIndices(5), [0], "第二次插入后末题状态同样平移正确");
   assert.equal(model.retractFrom(3), 1, "撤回该题推演不应影响更早的插入块");
-  assert.deepEqual(model.questions.map((q) => q.id), ["q1", "g1", "g2", "q2", "q3"]);
+  assert.deepEqual(
+    model.questions.map((q) => q.id),
+    ["q1", "g1", "g2", "q2", "q3"],
+  );
   assert.deepEqual(model.getSelectedIndices(4), [0], "撤回第二次插入后末题索引应复位");
 
   const envelope = model.formatAnswers(model.compileAnswers());
   const order = ["第一题", "第二题", "第三题"].map((title) => envelope.indexOf(`[${title}]`));
-  assert.ok(order.every((position) => position >= 0), "封套应包含已作答的全部题目");
-  assert.deepEqual([...order].sort((a, b) => a - b), order, "封套条目应按插队后的题目顺序输出");
+  assert.ok(
+    order.every((position) => position >= 0),
+    "封套应包含已作答的全部题目",
+  );
+  assert.deepEqual(
+    [...order].sort((a, b) => a - b),
+    order,
+    "封套条目应按插队后的题目顺序输出",
+  );
 
   assert.equal(model.retractFrom(0), 1, "插入的记录应可撤回");
-  assert.deepEqual(model.questions.map((q) => q.id), ["q1", "q2", "q3"], "撤回后应恢复原题目序列");
+  assert.deepEqual(
+    model.questions.map((q) => q.id),
+    ["q1", "q2", "q3"],
+    "撤回后应恢复原题目序列",
+  );
 }
 
 // 15. 推演插入位置预设（跟随 / 队尾 / 自定义）
@@ -824,28 +761,46 @@ import { visibleWidth } from "@earendil-works/pi-tui";
         ],
       }),
     );
-  const payload = (id) => ({ questions: [{ id, title: `生成${id}`, options: [{ label: "丁" }] }], optionAdditions: [] });
+  const payload = (id) => ({
+    questions: [{ id, title: `生成${id}`, options: [{ label: "丁" }] }],
+    optionAdditions: [],
+  });
 
   const follow = build(undefined);
   assert.equal(follow.expansionInsert, "follow", "缺省插入位置为跟随");
   follow.pushExpansion({ questionIndex: 1, signature: "乙", payload: payload("f1") });
-  assert.deepEqual(follow.questions.map((q) => q.id), ["q1", "q2", "f1", "q3"], "跟随时插在触发题目之后");
+  assert.deepEqual(
+    follow.questions.map((q) => q.id),
+    ["q1", "q2", "f1", "q3"],
+    "跟随时插在触发题目之后",
+  );
 
   const tail = build("tail");
   tail.pushExpansion({ questionIndex: 0, signature: "甲", payload: payload("t1") });
-  assert.deepEqual(tail.questions.map((q) => q.id), ["q1", "q2", "q3", "t1"], "队尾时排在全部题目之后");
+  assert.deepEqual(
+    tail.questions.map((q) => q.id),
+    ["q1", "q2", "q3", "t1"],
+    "队尾时排在全部题目之后",
+  );
 
   const custom = build({ after: "q1" });
   custom.pushExpansion({ questionIndex: 2, signature: "丙", payload: payload("c1") });
-  assert.deepEqual(custom.questions.map((q) => q.id), ["q1", "c1", "q2", "q3"], "自定义锚点时插到锚点题目之后");
+  assert.deepEqual(
+    custom.questions.map((q) => q.id),
+    ["q1", "c1", "q2", "q3"],
+    "自定义锚点时插到锚点题目之后",
+  );
   custom.pushExpansion({ questionIndex: 2, signature: "丙2", payload: payload("c2") });
   assert.deepEqual(
     custom.questions.map((q) => q.id),
     ["q1", "c2", "c1", "q2", "q3"],
-    "同一锚点的后续推演直接排在锚点之后"
+    "同一锚点的后续推演直接排在锚点之后",
   );
   assert.equal(custom.retractFrom(2), 2, "两条记录应可逐条撤回");
-  assert.deepEqual(custom.questions.map((q) => q.id), ["q1", "q2", "q3"]);
+  assert.deepEqual(
+    custom.questions.map((q) => q.id),
+    ["q1", "q2", "q3"],
+  );
   assert.equal(custom.canExpandOnConfirm(1, true), true, "自定义锚点不影响推演标记的判定");
 
   assert.throws(() => build({ after: "nope" }), AdaptiveConditionError, "未知锚点应在构建期报错");
@@ -861,19 +816,6 @@ import { visibleWidth } from "@earendil-works/pi-tui";
 
 // 16. 推演在途期间把当前页换成占位页并暂停作答输入
 {
-  const { askAuthorExtension } = await import("../dist/index.js");
-  let registeredToolDef;
-  askAuthorExtension({
-    registerTool(def) {
-      registeredToolDef = def;
-    },
-    registerCommand() {},
-  });
-  const { initTheme } = await import("@earendil-works/pi-coding-agent");
-  initTheme();
-
-  const dummyTheme = { fg: (_color, text) => text, bg: (_color, text) => text, bold: (text) => text };
-  const fakeTui = { terminal: { rows: 40 }, requestRender() {} };
   let settle;
   const expansionReply = new Promise((resolve) => {
     settle = resolve;
@@ -905,9 +847,7 @@ import { visibleWidth } from "@earendil-works/pi-tui";
         component.handleInput("j");
         frozenRender = component.render(120).join("\n");
 
-        settle(
-          "```json\n{\"questions\":[{\"id\":\"g1\",\"title\":\"推演题\",\"options\":[{\"label\":\"戊\"}]}],\"options\":[]}\n```",
-        );
+        settle('```json\n{"questions":[{"id":"g1","title":"推演题","options":[{"label":"戊"}]}],"options":[]}\n```');
         await new Promise((resolve) => setTimeout(resolve, 0));
         readyRender = component.render(120).join("\n");
         // 推演就绪后切换恢复

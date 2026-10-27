@@ -90,6 +90,13 @@ pnpm install
 
 # 严格类型检查
 pnpm run check
+
+# 构建产物后运行自检（含组合式用例）
+pnpm run build
+pnpm test
+
+# 只运行组合式用例（单选 / 多选 / 条件 / 推演任意拼装）
+pnpm run test:compose
 ```
 
 ## 开源许可证
