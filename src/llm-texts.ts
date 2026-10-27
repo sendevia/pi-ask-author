@@ -34,6 +34,7 @@ export const LLM_TEXTS = {
       "ask_author: Give a short formTitle and a tabLabel for every long question title; omit fields that use defaults.",
       "ask_author: Add a question id only when a showIf or expansion.insert.after refers to it; showIf may only point at an earlier question's option label or answered.",
       'ask_author: Pass expansion when follow-up decisions depend on the answers: declare only the first question and let the same model add questions and options on each confirmation; expansion.insert picks "follow" (default), "tail", or {"after":"question_id"}.',
+      "ask_author: Set question.expansion per question: false keeps that question static, {guidance, insert} gives it its own follow-up direction; questions without it inherit the form-level expansion.",
       "ask_author: The author can multi-select, add notes, and edit drafts; confirmed drafts return as [Draft directive: ...] lines. Treat [Author Decision Cancelled] as no decision, and [Author Consultation Error] as a request to fix the arguments once.",
     ],
   },
@@ -77,6 +78,9 @@ export const LLM_TEXTS = {
     questionCustomPlaceholder: "Placeholder for the author's note (optional)",
     /** 题目显示条件（可选；条件不成立时该题不展示，也不计入答卷） */
     questionShowIf: "Show only if an earlier answer matches; array means all must hold (optional)",
+    /** 题目级推演配置（可选；缺省继承表单级 `expansion`） */
+    questionExpansion:
+      'Follow-up for this question only: false skips it, {"guidance":"...","insert":"follow"|"tail"|{"after":"question_id"}} overrides the form-level expansion (optional)',
     /** 显示条件引用的题目 ID（必须为本次表单中更早出现的题目） */
     conditionQuestionId: "Earlier question id",
     /** 显示条件匹配的选项（引用题目的选项标签；作者选中该选项时条件成立） */
@@ -101,9 +105,9 @@ export const LLM_TEXTS = {
     flatQuestionOptions: `Options for flat mode (1-${MAX_OPTIONS}, 2-10 recommended)`,
 
     // ===== 实时推演字段（ExpansionSchema） =====
-    /** 实时推演开关（可选；开启后作者确认答案时由同一模型追加题目与选项） */
+    /** 实时推演开关（可选；开启后作者确认答案时由同一模型追加题目与选项，`guidance` / `insert` 作为全部题目的缺省值） */
     expansion:
-      "Generate follow-up questions and options while the author answers; insert controls where they land (optional)",
+      "Generate follow-up questions and options while the author answers; guidance and insert are defaults for every question (optional)",
     /** 推演题目总量上限（可选；缺省为全部可用题目数） */
     expansionMaxQuestions: `Question cap including declared ones (default ${MAX_QUESTIONS})`,
     /** 推演方向指示（可选；作为长期要求传给推演模型） */
@@ -122,19 +126,21 @@ export const LLM_TEXTS = {
     /** 推演系统提示词（约束输出结构与新增范围，禁止复述既有内容） */
     systemPrompt: `You extend an interactive author decision form while the author answers it.
 
-Input JSON: formTitle, formDescription, guidance, insert, maxAdditionalQuestions, questions (with ids), answers (selected labels and notes).
+Input JSON: formTitle, formDescription, guidance, insert, maxAdditionalQuestions, trigger {index, id, title}, questions[].
+Each question carries index (1-based), id, title, tabLabel, description, multiSelect, minSelect, maxSelect, allowEmpty, allowCustom, showIf, expansion {enabled, guidance, insert, addedQuestions, addedOptions}, visible, status ("answered" | "skipped" | "unanswered" | "hidden"), selected (option labels), note, and options[] with label, description, hasPreview, showIf, visible, selected, note.
+trigger is the question the author just confirmed; answered questions are settled, unanswered and hidden ones are still open.
 
 Return JSON only:
 {"questions":[{"id":"unique_id","title":"...","description":"...","options":[{"label":"...","description":"..."}]}],"options":[{"questionId":"existing_id","options":[{"label":"..."}]}]}
 
 Rules:
-- Add at most maxAdditionalQuestions questions; fewer is better.
-- New questions may also set multiSelect, minSelect, maxSelect, allowEmpty; every option needs a label.
-- Add options to a declared question only when the answers reveal a choice it cannot express; use its id and unused labels.
+- Add at most maxAdditionalQuestions questions; fewer is better, and {"questions":[],"options":[]} is valid when the answers already determine the next step.
 - Give new questions unique ids and 2-6 concrete options; put consequences in description.
-- Never repeat a declared question or a declared label.
+- Every new question sets its own mode: multiSelect, minSelect, maxSelect, allowEmpty, allowCustom, showIf, and expansion, independently of the other questions.
+- Set expansion of a new question to false when confirming it needs no follow-up; give {"guidance":"...","insert":"follow"|"tail"|{"after":"question_id"}} when it needs its own.
 - showIf takes {"questionId":"id","option":"label"} or {"questionId":"id","answered":true} and may only reference a question above the insertion point or one of your earlier new questions.
-- Reply {"questions":[],"options":[]} when the answers already determine the next step.
+- Continue from the shown progress: never repeat a declared question, never repeat a declared label, never contradict a selection or note the author already made.
+- Add options to a declared question only when its answers reveal a choice it cannot express; use its id and unused labels.
 - No prose, no code fences, no trailing commas.`,
     /** 推演用户消息前缀（英文单行，后接 JSON 载荷） */
     userPreamble: "Extend this author decision form. Input JSON:",

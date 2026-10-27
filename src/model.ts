@@ -9,7 +9,7 @@
  * - 封套语言单一：自动生成的占位题目/标签在封套编译期替换为英文占位（`Question N` / `Option N`），作者界面保留中文占位
  * - 答卷完整性：显示中的题目即使显式跳过或仅批注提交也产出条目，多选题目恒产出条目，不存在静默消失的作答
  * - 自适应显隐：题目与选项可声明 `showIf` 条件且仅允许引用更早题目；显隐快照按 `revision` 缓存，隐藏项的选择不计入作答与答卷
- * - 实时推演：`pushExpansion` 按 `expansion.insert` 把新题目插到跟随位、队尾或自定义锚点之后，把新选项追加到目标题目末尾，插入与撤回都会平移后续题目的条件、作答状态与推演记录索引
+ * - 实时推演：`pushExpansion` 按生效的插入位置（题目级设置优先于表单级）把新题目插到跟随位、队尾或自定义锚点之后，把新选项追加到目标题目末尾，插入与撤回都会平移后续题目的条件、作答状态与推演记录索引
  *
  * 依赖方向：model.ts → format.ts / layout.ts / schema.ts / texts.ts（纯函数工具、上限常量、Schema 单一类型源与文案字典，无回边）；不引用 `Theme` 与 TUI 组件，渲染细节全部上移组件层
  */
@@ -78,6 +78,12 @@ export interface NormalizedQuestion {
   customPlaceholder: string;
   /** 该题目的显示条件（空数组表示恒显示） */
   showIf: VisibilityCondition[];
+  /** 确认该题目后是否发起实时推演（题目级开关；表单未开启推演时不起作用） */
+  expandOnConfirm: boolean;
+  /** 该题目的推演方向指示（覆盖表单级设置；可选） */
+  expansionGuidance?: string;
+  /** 该题目的推演插入位置（覆盖表单级设置；可选） */
+  expansionInsert?: InsertPosition;
 }
 
 /** 自适应条件非法（引用未知题目、后置题目或不存在的选项）：携带面向 LLM 的英文诊断消息，由入口层映射为结构化错误结果 */
@@ -279,6 +285,7 @@ function toRawConditions(input: ShowIfInput | undefined): RawCondition[] {
  * @returns id/title/label 为空时回退 `TEXTS.fallbacks`；`minSelect` / `maxSelect` 收敛至 `[0, options.length]` 且保证 `minSelect <= maxSelect`；`showIf` 留待 {@link resolveConditions} 解析
  */
 function buildQuestion(q: QuestionInput, index: number): PendingQuestion {
+  const expansion = q.expansion;
   return {
     question: {
       id: cleanOptional(q.id) ?? TEXTS.fallbacks.autoQuestionId(index + 1),
@@ -298,6 +305,9 @@ function buildQuestion(q: QuestionInput, index: number): PendingQuestion {
       allowCustom: q.allowCustom !== false,
       customPlaceholder: cleanOptional(q.customPlaceholder) ?? TEXTS.fallbacks.defaultCustomPlaceholder,
       showIf: [],
+      expandOnConfirm: expansion !== false,
+      expansionGuidance: typeof expansion === "object" ? cleanOptional(expansion.guidance) : undefined,
+      expansionInsert: typeof expansion === "object" ? expansion.insert : undefined,
     },
     questionConditions: toRawConditions(q.showIf),
     optionConditions: q.options.map((o) => toRawConditions(o.showIf)),
@@ -534,6 +544,9 @@ export class AskAuthorFormModel {
 
     // 自定义插入锚点在构建期校验：拼写错误在模型构建阶段就变成结构化错误，不在作者作答中途才暴露
     this.resolveInsertIndex(this.expansionInsert);
+    for (const question of this.questionList) {
+      if (question.expansionInsert) this.resolveInsertIndex(question.expansionInsert);
+    }
   }
 
   /** 归一化后的题目列表（推演会插入新题目，调用方只读） */
@@ -541,11 +554,28 @@ export class AskAuthorFormModel {
     return this.questionList;
   }
 
-  /** 推演题目插入位置的可读描述（供推演模型判定哪些题目位于插入点之前） */
-  get expansionInsertLabel(): string {
-    if (this.expansionInsert === "follow") return "right after the question the author just confirmed";
-    if (this.expansionInsert === "tail") return "at the end of the form";
-    return `right after question "${this.expansionInsert.after}"`;
+  /**
+   * 获取指定题目的推演配置（题目级设置优先，缺省沿用表单级）
+   * 推演题目若带有未知锚点，首次确认该题时再抛出（此时尚未改动任何题目）
+   * @param qIndex - 题目顺序索引（0-based）
+   * @returns 插入位置、插入位置可读描述与题目级方向指示；题目越界或该题不开推演时为 undefined
+   */
+  expansionConfigFor(qIndex: number): { insert: InsertPosition; insertLabel: string; guidance?: string } | undefined {
+    const question = this.questionList[qIndex];
+    if (!question || !question.expandOnConfirm) return undefined;
+    const insert = question.expansionInsert ?? this.expansionInsert;
+    return { insert, insertLabel: this.insertLabel(insert), guidance: question.expansionGuidance };
+  }
+
+  /**
+   * 生成插入位置的可读描述
+   * @param insert - 插入位置预设
+   * @returns 供推演模型判定哪些题目位于插入点之前的英文描述
+   */
+  private insertLabel(insert: InsertPosition): string {
+    if (insert === "follow") return "right after the question the author just confirmed";
+    if (insert === "tail") return "at the end of the form";
+    return `right after question "${insert.after}"`;
   }
 
   /** 当前作答状态版本号（组件层派生缓存失效键） */
@@ -746,14 +776,19 @@ export class AskAuthorFormModel {
   }
 
   /**
-   * 写入一次推演结果（新题目按 {@link expansionInsert} 指定的位置插入，新选项追加到目标题目的选项末尾）
-   * @param input - 记录元数据与推演载荷；超出 {@link expansionMaxQuestions} 的新题目被截断
+   * 写入一次推演结果（新题目按 `insert` 指定的位置插入，缺省使用表单级插入位置；新选项追加到目标题目的选项末尾）
+   * @param input - 记录元数据与推演载荷；`insert` 缺省使用表单级插入位置，超出 {@link expansionMaxQuestions} 的新题目被截断
    * @returns 本次追加记录（无实际追加时计数均为 0，记录仍入栈以标记该答案已推演）
    * @throws AdaptiveConditionError 追加内容的条件引用未知题目、后置题目或不存在的选项时抛出（本次追加整体不生效）
    */
-  pushExpansion(input: { questionIndex: number; signature: string; payload: ExpansionPayload }): ExpansionRecord {
+  pushExpansion(input: {
+    questionIndex: number;
+    signature: string;
+    insert?: InsertPosition;
+    payload: ExpansionPayload;
+  }): ExpansionRecord {
     const room = Math.max(0, this.expansionMaxQuestions - this.questionList.length);
-    const insertAt = this.resolveInsertIndex(this.expansionInsert, input.questionIndex);
+    const insertAt = this.resolveInsertIndex(input.insert ?? this.expansionInsert, input.questionIndex);
     const addedQuestions = this.insertQuestions(insertAt, input.payload.questions.slice(0, room));
     const addedOptions = this.appendOptions(input.payload.optionAdditions);
     const record: ExpansionRecord = {
@@ -788,13 +823,14 @@ export class AskAuthorFormModel {
 
   /**
    * 判定指定题目在确认时是否会发起实时推演
-   * 条件：表单开启推演、该题可见、题目总数未达上限，且该题尚未用当前答案推演过
+   * 条件：表单开启推演、该题声明参与推演且可见、题目总数未达上限，且该题尚未用当前答案推演过
    * @param qIndex - 题目顺序索引（0-based）
    * @param enabled - 本表单是否开启推演（由组件层持有）
    * @returns 确认本题将发起新的推演请求时为 true
    */
   canExpandOnConfirm(qIndex: number, enabled: boolean): boolean {
     if (!enabled) return false;
+    if (!this.questionList[qIndex]?.expandOnConfirm) return false;
     if (!this.isQuestionVisible(qIndex)) return false;
     if (this.questionList.length >= this.expansionMaxQuestions) return false;
     const signature = this.answerSignature(qIndex);

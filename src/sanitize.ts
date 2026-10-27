@@ -178,6 +178,26 @@ function coerceOptions(value: unknown): QuestionOption[] {
 }
 
 /**
+ * 规整题目级推演配置（兼容布尔值 / `enabled` 开关 / 推演方向与插入位置对象）
+ * @param value - `expansion` 原始值
+ * @returns `false`（本题不推演）、仅含 `guidance` / `insert` 的配置对象，或 undefined（缺省继承表单级设置）
+ */
+function coerceQuestionExpansion(value: unknown): QuestionInput["expansion"] {
+  if (value === undefined) return undefined;
+  if (typeof value === "boolean") return value;
+  const parsed = parseJson(value);
+  if (typeof parsed === "boolean") return parsed;
+  if (!isPlainRecord(parsed)) return undefined;
+  if (parsed.enabled !== undefined && !parseBooleanValue(parsed.enabled, true)) return false;
+  const config: NonNullable<Exclude<QuestionInput["expansion"], boolean>> = {};
+  const guidance = cleanOptional(pickString(parsed, ["guidance", "instructions", "hint"]));
+  if (guidance) config.guidance = guidance;
+  const insert = coerceInsertPosition(parsed.insert ?? parsed.position);
+  if (insert !== undefined) config.insert = insert;
+  return config;
+}
+
+/**
  * 判定宽松输入是否形如单题（须含选项类字段 options/choices/items 或显式题目键 question/prompt；`questions` 批量容器一律排除）
  * @param value - 待检测输入
  * @returns 携带选项类字段或显式题目键时为 true；非对象、`null` 与含 `questions` 键的批量容器恒为 false（本函数不排除数组，调用方先 `Array.isArray` 分流）
@@ -218,6 +238,7 @@ function sanitizeQuestionEntry(value: unknown, index: number): QuestionInput {
     allowCustom: parseBooleanValue(o.allowCustom, true),
     customPlaceholder: pickString(o, ["customPlaceholder", "placeholder"]),
     showIf: coerceShowIf(o.showIf ?? o.when ?? o.visibleIf),
+    expansion: coerceQuestionExpansion(o.expansion ?? o.expand),
   };
 }
 

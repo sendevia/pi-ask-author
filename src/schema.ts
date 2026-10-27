@@ -5,6 +5,7 @@
  * 核心架构特性：
  * - 字段名称、可选性与区间约束（`minItems` / `maxItems` / `minimum`）仅在 TypeBox 定义一次，运行时类型经 `Static<typeof>` 派生
  * - 默认值不写入 Schema：题目内字段由 `sanitize.ts` 规整时填入（`multiSelect`→false、`allowCustom`→true），模型层再按同一语义兜底
+ * - 推演配置双层：表单级 `expansion` 提供缺省方向与插入位置，题目级 `expansion` 逐题开关或覆盖，二者共用同一套插入位置与载荷类型
  * - LLM 端字段描述保持单句浓缩英文（取自 `TEXTS.schema`）
  * - 推演载荷（`ExpansionPayload` / `OptionAddition`）的接口类型也在此声明，供 sanitize / model / expansion 共用
  *
@@ -48,6 +49,30 @@ export const OptionSchema = Type.Object({
   showIf: showIfField(TEXTS.schema.optionShowIf),
 });
 
+/** 推演题目的插入位置预设：跟随触发题目 / 排到队尾 / 指定题目之后 */
+export const InsertPositionSchema = Type.Union(
+  [
+    Type.Literal("follow"),
+    Type.Literal("tail"),
+    Type.Object({ after: Type.String({ description: TEXTS.schema.expansionInsertAfter }) }),
+  ],
+  { description: TEXTS.schema.expansionInsert },
+);
+
+/** 题目级推演配置：布尔开关，或本题专属的推演方向与插入位置 */
+export const QuestionExpansionSchema = Type.Union(
+  [
+    Type.Boolean(),
+    Type.Object({
+      /** 本题专属的推演方向指示（可选） */
+      guidance: Type.Optional(Type.String({ description: TEXTS.schema.expansionGuidance })),
+      /** 本题推演题目的插入位置（可选） */
+      insert: Type.Optional(InsertPositionSchema),
+    }),
+  ],
+  { description: TEXTS.schema.questionExpansion },
+);
+
 /** 单个问题的参数 Schema（批量问卷与平铺模式共用） */
 export const QuestionSchema = Type.Object({
   /** 题目唯一标识符（可选；缺省由模型层按顺序生成，跨题重复由模型层去重） */
@@ -74,17 +99,9 @@ export const QuestionSchema = Type.Object({
   customPlaceholder: Type.Optional(Type.String({ description: TEXTS.schema.questionCustomPlaceholder })),
   /** 该题目的显示条件（可选；不成立时不展示，也不计入答卷） */
   showIf: showIfField(TEXTS.schema.questionShowIf),
+  /** 该题目的实时推演配置（可选；缺省继承表单级 `expansion`） */
+  expansion: Type.Optional(QuestionExpansionSchema),
 });
-
-/** 推演题目的插入位置预设：跟随触发题目 / 排到队尾 / 指定题目之后 */
-export const InsertPositionSchema = Type.Union(
-  [
-    Type.Literal("follow"),
-    Type.Literal("tail"),
-    Type.Object({ after: Type.String({ description: TEXTS.schema.expansionInsertAfter }) }),
-  ],
-  { description: TEXTS.schema.expansionInsert },
-);
 
 /** 实时推演参数 Schema：作者确认答案后由同一模型追加题目与选项 */
 export const ExpansionSchema = Type.Object({
@@ -160,6 +177,9 @@ export type QuestionInput = Static<typeof QuestionSchema>;
 
 /** 单个显示条件的运行时类型（由 `ShowIfConditionSchema` 经 `Static<typeof>` 派生） */
 export type VisibilityConditionInput = Static<typeof ShowIfConditionSchema>;
+
+/** 题目级推演配置的运行时类型（由 `QuestionExpansionSchema` 经 `Static<typeof>` 派生） */
+export type QuestionExpansionConfig = Static<typeof QuestionExpansionSchema>;
 
 /** `showIf` 字段的运行时类型：单个条件或条件数组 */
 export type ShowIfInput = VisibilityConditionInput | VisibilityConditionInput[];

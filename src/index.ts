@@ -98,7 +98,7 @@ function createExpansionRunner(
       .filter((part): part is { type: "text"; text: string } => part.type === "text")
       .map((part) => part.text)
       .join("\n");
-    return parseExpansionReply(reply, expansionContext(request.questions));
+    return parseExpansionReply(reply, expansionContext(request.model.questions));
   };
 }
 
@@ -269,11 +269,13 @@ export {
   AskAuthorParams,
   ExpansionSchema,
   OptionSchema,
+  QuestionExpansionSchema,
   QuestionSchema,
   ShowIfConditionSchema,
   type ExpansionConfig,
   type ExpansionPayload,
   type OptionAddition,
+  type QuestionExpansionConfig,
   type RawParams,
 } from "./schema.js";
 export { sanitizeAskAuthorArgs, sanitizeExpansionPayload, type ExpansionContext } from "./sanitize.js";

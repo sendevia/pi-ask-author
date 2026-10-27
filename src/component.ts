@@ -39,7 +39,7 @@ import {
   type MenuItem,
   type NormalizedQuestion,
 } from "./model.js";
-import type { ExpansionPayload } from "./schema.js";
+import type { ExpansionPayload, InsertPosition } from "./schema.js";
 import { TEXTS } from "./texts.js";
 import type { Theme } from "./theme.js";
 import { renderEditorPage } from "./view-editor.js";
@@ -525,11 +525,14 @@ export class AskAuthorComponent implements Component, Focusable {
 
   /**
    * 作者确认题目后刷新推演：答案未变则保留既有结果，变了则先撤回再重新请求
+   * 仅对声明参与推演的题目发起请求（题目级开关关闭时保持静态）
    * @param qIndex - 刚确认的题目索引（0-based）
    */
   private expandAfterConfirm(qIndex: number): void {
     const service = this.expansion;
     if (!service) return;
+    const config = this.model.expansionConfigFor(qIndex);
+    if (!config) return;
     const signature = this.model.answerSignature(qIndex);
     if (signature === undefined) return;
 
@@ -557,17 +560,15 @@ export class AskAuthorComponent implements Component, Focusable {
     this.touch();
 
     const request: ExpansionRequest = {
-      formTitle: this.model.formTitle,
-      formDescription: this.model.formDescription,
-      guidance: service.guidance,
-      insert: this.model.expansionInsertLabel,
+      model: this.model,
+      questionIndex: qIndex,
+      insert: config.insertLabel,
+      guidance: config.guidance ?? service.guidance,
       maxAdditionalQuestions: room,
-      questions: this.model.questions,
-      answers: this.model.compileAnswers(),
     };
 
     service.run(request, controller.signal).then(
-      (payload) => this.applyExpansion(ticket, qIndex, signature, payload),
+      (payload) => this.applyExpansion(ticket, qIndex, signature, config.insert, payload),
       (err: unknown) => this.reportExpansionFailure(ticket, err),
     );
   }
@@ -577,9 +578,16 @@ export class AskAuthorComponent implements Component, Focusable {
    * @param ticket - 请求序号
    * @param qIndex - 触发题目索引（0-based）
    * @param signature - 触发题目当时的答案签名
+   * @param insert - 本次推演使用的插入位置
    * @param payload - 推演载荷
    */
-  private applyExpansion(ticket: number, qIndex: number, signature: string, payload: ExpansionPayload): void {
+  private applyExpansion(
+    ticket: number,
+    qIndex: number,
+    signature: string,
+    insert: InsertPosition,
+    payload: ExpansionPayload,
+  ): void {
     if (ticket !== this.expansionTicket || this.isFinished || this.disposed) return;
     this.expansionPending = false;
     this.expansionAbort = undefined;
@@ -590,7 +598,7 @@ export class AskAuthorComponent implements Component, Focusable {
     const anchorId = wasSubmitTab ? undefined : this.model.getQuestion(previousTab)?.id;
     let record: ExpansionRecord;
     try {
-      record = this.model.pushExpansion({ questionIndex: qIndex, signature, payload });
+      record = this.model.pushExpansion({ questionIndex: qIndex, signature, insert, payload });
     } catch (err) {
       // 推演内容的条件非法时整批丢弃，作者已填写的作答保持不变
       this.setStatus(TEXTS.status.expansionFailed(this.describeError(err)));
