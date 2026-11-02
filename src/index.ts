@@ -54,6 +54,9 @@ function addUsage(total: ToolUsage | undefined, usage: ToolUsage): ToolUsage {
       total: total.cost.total + usage.cost.total,
     },
   };
+  // 只有每部分都由 provider 上报计费时才标记为 provider 上报，与宿主的合并语义一致
+  if (total.cost.totalFromProvider === true && usage.cost.totalFromProvider === true)
+    sum.cost.totalFromProvider = true;
   if (total.cacheWrite1h !== undefined && usage.cacheWrite1h !== undefined)
     sum.cacheWrite1h = total.cacheWrite1h + usage.cacheWrite1h;
   if (total.reasoning !== undefined && usage.reasoning !== undefined) sum.reasoning = total.reasoning + usage.reasoning;
@@ -203,11 +206,15 @@ export default function askAuthorExtension(pi: ExtensionAPI): void {
       try {
         // 宿主回调约定 `(tui, theme, keybindings, done)`：按键分派由组件内部 `matchesKey` 自行持有，
         // 注入的 keybindings 管理器未被消费，故以 `_kb` 标记未使用
-        const result = await ctx.ui.custom<AskAuthorResult>((tui, theme, _kb, done) => {
-          comp = new AskAuthorComponent(tui, theme, formModel, done, expansion);
-          comp.bindAbortSignal(signal);
-          return comp;
-        });
+        const result = await ctx.ui.custom<AskAuthorResult>(
+          (tui, theme, _kb, done) => {
+            comp = new AskAuthorComponent(tui, theme, formModel, done, expansion);
+            comp.bindAbortSignal(signal);
+            return comp;
+          },
+          // 作答期间向支持 OSC 7501 的终端上报「等待作者作答」，作者提交后宿主恢复常规状态
+          { blocked: { kind: "question", message: TEXTS.programStatus.awaitingAuthor } },
+        );
 
         if (!result || result.cancelled) {
           return withUsage(

@@ -78,7 +78,7 @@
 
 - `package.json`：定义扩展元数据、依赖项与入口声明，通过 `pi.extensions` 字段导出 `./dist/index.js`。
 - `tsconfig.json`：配置 TypeScript 严格模式编译选项。
-- `src/index.ts`：插件主入口模块。注册 `ask_author` 工具与 `/ask-author` 辅助命令，编排工具执行过程中的守卫、模型构建、实时推演的模型调用与四类结果分支；工具声明为 `model-only` 并标注只读、封闭世界。
+- `src/index.ts`：插件主入口模块。注册 `ask_author` 工具与 `/ask-author` 辅助命令，编排工具执行过程中的守卫、模型构建、实时推演的模型调用与四类结果分支，并在作答期间向宿主上报等待作者输入的终端程序状态；工具声明为 `model-only` 并标注只读、封闭世界。
 - `src/schema.ts`：工具参数的单一源头。基于 TypeBox 声明参数结构、`showIf` 显示条件、表单级与题目级实时推演配置与校验规则，导出 `AskAuthorParams`、`QuestionSchema`、`OptionSchema`、`ShowIfConditionSchema`、`QuestionExpansionSchema`、`ExpansionSchema`、`InsertPositionSchema` 以及派生类型 `RawParams`、`QuestionInput`、`QuestionOption`、`ExpansionConfig`、`QuestionExpansionConfig`、`InsertPosition`、`ExpansionPayload`、`OptionAddition`。
 - `src/model.ts`：问卷状态机与数据模型。定义 `AskAuthorFormModel`，负责题目数据归一化、自适应显示条件解析与显隐快照、作答状态流转、题目级推演配置解析、实时推演结果的追加与栈式撤回、`revision` 版本推进、答卷结果编译以及 Markdown 封套文本生成。
 - `src/component.ts`：交互式 TUI 核心组件。实现 `AskAuthorComponent`，负责交互状态机、键盘事件路由、内置 `Editor` 文本编辑器集成、实时推演的发起与结果写入、AbortSignal 级联取消与整屏帧缓存；具体排版委托给 `view-*` 模块。
@@ -211,6 +211,7 @@ graph TD
 - 渲染函数纯度约定：`AskAuthorComponent.prototype.render` 及其调用的排版函数必须保持纯净，禁止在渲染周期内修改任何语义状态（例如当前选中项、滚动位移、输入模式标记）。修改语义状态的操作仅允许在键盘事件分发路径中执行。
 - 多级缓存失效控制：模型层通过 `revision` 版本计数器标记作答状态突变；组件层掌握整屏帧缓存与 Tab 栏缓存，`QuestionView` 与 `SummaryView` 各自持有按版本计数器与视口尺寸键失效的内容缓存；作答状态突变与主题切换时由组件的 `clearDerivedCaches` 统一清空，焦点变化时只清空左栏缓存并保留已解析的预览内容。
 - 视图缓存不写语义状态：视图构建模块只读取组件传入的只读状态，滚动位移与光标写入仅发生在键盘事件路径；预览视口观察值由视图返回，组件负责保存。
+- 等待输入上报：作答界面挂载时经 `ctx.ui.custom()` 的 `blocked` 选项上报程序状态（`kind: "question"`），提示文案取自 `lang/*.json` 的 `programStatus.awaitingAuthor`；宿主在作者提交后自行恢复常规状态，组件不管理该状态。
 - 资源生命周期释放：组件实现 `dispose` 方法并保持幂等性。在组件销毁或者执行结束时，必须彻底清理计时器、注销 `AbortSignal` 监听器并清空缓存容器。
 
 #### 2.3.5 封套生成与确定性输出

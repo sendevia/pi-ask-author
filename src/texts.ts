@@ -75,6 +75,8 @@ export const TEXTS = {
 
   /** `/ask-author` 辅助命令的注册元数据与作者可见提示文案 */
   command: LOCALE_TEXTS.command,
+  /** 终端程序状态（OSC 7501）文案：宿主在等作者作答时展示于标签页标题与 agent 面板 */
+  programStatus: LOCALE_TEXTS.programStatus,
   /** 跨视图共享的通用排版片段（枚举分隔符、列表条目前缀与按键帮助分隔符） */
   common: LOCALE_TEXTS.common,
   /** Tab 导航栏标签文案（各题目页与答卷提交页） */

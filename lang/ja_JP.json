@@ -1,5 +1,6 @@
 {
   "tool": { "label": "作者に確認" },
+  "programStatus": { "awaitingAuthor": "作者の回答待ち" },
   "command": {
     "name": "ask-author",
     "description": "ask_author 創作確認ツールの説明を表示",

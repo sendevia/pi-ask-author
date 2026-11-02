@@ -1,5 +1,6 @@
 {
   "tool": { "label": "작가에게 문의" },
+  "programStatus": { "awaitingAuthor": "작성자 응답 대기" },
   "command": {
     "name": "ask-author",
     "description": "ask_author 창작 문의 도구 설명 보기",

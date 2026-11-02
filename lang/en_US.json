@@ -1,5 +1,6 @@
 {
   "tool": { "label": "Consult Author" },
+  "programStatus": { "awaitingAuthor": "Waiting for the author" },
   "command": {
     "name": "ask-author",
     "description": "Show the ask_author consultation tool reference",

@@ -1,5 +1,6 @@
 {
   "tool": { "label": "向作者请示" },
+  "programStatus": { "awaitingAuthor": "等待作者作答" },
   "command": {
     "name": "ask-author",
     "description": "查看 ask_author 创作请示工具说明",

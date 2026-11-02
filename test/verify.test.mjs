@@ -424,7 +424,13 @@ const fakeTui = { terminal: { rows: 40 }, requestRender() {} };
   const ctx = {
     mode: "tui",
     ui: {
-      custom: async (factory) => {
+      custom: async (factory, options) => {
+        assert.equal(options?.blocked?.kind, "question", "作答期间应向终端上报阻塞在作者输入上");
+        assert.equal(
+          options?.blocked?.message,
+          TEXTS.programStatus.awaitingAuthor,
+          "阻塞提示应取自当前语言文案",
+        );
         const component = factory(fakeTui, dummyTheme, {}, () => {});
         assertWidths(component, "题目页");
         assert.ok(component.render(120).join("\n").includes("选择接下来的方向"), "题目页应显示题干");
@@ -877,6 +883,53 @@ const fakeTui = { terminal: { rows: 40 }, requestRender() {} };
   assert.ok(!readyRender.includes(TEXTS.view.expansionPendingHint), "推演就绪后占位页应消失");
   assert.ok(readyRender.includes("推演题"), "推演就绪后生成题目应可见");
   assert.notEqual(resumedRender, readyRender, "推演就绪后题目切换应恢复");
+}
+
+// 17. 逐题确认后自动进入总览页，Enter 提交并把答卷编译进封套
+{
+  const ctx = {
+    mode: "tui",
+    ui: {
+      async custom(factory) {
+        let settle;
+        const done = new Promise((resolve) => {
+          settle = resolve;
+        });
+        const component = factory(fakeTui, dummyTheme, {}, settle);
+        // 每题「空格选定 + Enter 确认」，确认最后一题后自动落入总览页
+        for (const key of [" ", "\r", " ", "\r"]) component.handleInput(key);
+        assert.ok(
+          component.render(120).join("\n").includes(TEXTS.summary.title),
+          "确认最后一题后应自动进入总览页",
+        );
+        component.handleInput("\r");
+        const result = await done;
+        component.dispose();
+        return result;
+      },
+    },
+  };
+
+  const result = await registeredToolDef.execute(
+    "call-submit",
+    {
+      formTitle: "提交验证",
+      questions: [
+        { id: "q1", title: "开场镜头", options: [{ label: "雨夜" }, { label: "清晨" }] },
+        { id: "q2", title: "叙事人称", options: [{ label: "第一人称" }, { label: "第三人称" }] },
+      ],
+    },
+    undefined,
+    undefined,
+    ctx,
+  );
+
+  assert.equal(result.isError, undefined, "提交结果不应标记为错误");
+  assert.equal(result.details.cancelled, false, "提交结果不应标记为取消");
+  assert.equal(result.details.answers.length, 2, "答卷应包含两道已确认题目");
+  const envelope = result.content[0].text;
+  assert.ok(envelope.startsWith(TEXTS.markdown.envelopePrefix), "提交结果应以完成封套开头");
+  assert.ok(envelope.includes("【雨夜】") && envelope.includes("【第一人称】"), "封套应携带各题选定项");
 }
 
 console.log("全部功能自检顺利通过。");
