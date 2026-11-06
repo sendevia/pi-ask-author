@@ -136,6 +136,7 @@ async function drive(body, { turns, replies = [] }) {
   const ctx = {
     mode: "tui",
     model: { id: "compose-model" },
+    sessionManager: { getSessionId: () => "compose-session" },
     modelRegistry: {
       async complete(_model, request) {
         const text = request.messages[0].content[0].text;

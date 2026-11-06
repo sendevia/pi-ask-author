@@ -55,8 +55,7 @@ function addUsage(total: ToolUsage | undefined, usage: ToolUsage): ToolUsage {
     },
   };
   // 只有每部分都由 provider 上报计费时才标记为 provider 上报，与宿主的合并语义一致
-  if (total.cost.totalFromProvider === true && usage.cost.totalFromProvider === true)
-    sum.cost.totalFromProvider = true;
+  if (total.cost.totalFromProvider === true && usage.cost.totalFromProvider === true) sum.cost.totalFromProvider = true;
   if (total.cacheWrite1h !== undefined && usage.cacheWrite1h !== undefined)
     sum.cacheWrite1h = total.cacheWrite1h + usage.cacheWrite1h;
   if (total.reasoning !== undefined && usage.reasoning !== undefined) sum.reasoning = total.reasoning + usage.reasoning;
@@ -90,7 +89,8 @@ function createExpansionRunner(
           },
         ],
       },
-      { signal },
+      // 会话标识是 provider 侧路由与提示缓存的依据：OpenCode 系 provider 缺它会被服务端拒绝（`missing_session_id`）
+      { signal, sessionId: ctx.sessionManager.getSessionId() },
     );
     if (response.usage) onUsage(response.usage);
     if (response.stopReason === "aborted") throw new Error(TEXTS.expansion.errors.aborted);

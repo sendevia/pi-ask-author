@@ -642,6 +642,7 @@ const fakeTui = { terminal: { rows: 40 }, requestRender() {} };
     const ctx = {
       mode: "tui",
       model: { id: "stub-model" },
+      sessionManager: { getSessionId: () => "badge-session" },
       modelRegistry: {
         complete() {
           throw new Error("渲染验证不应发起推演请求");
@@ -834,6 +835,7 @@ const fakeTui = { terminal: { rows: 40 }, requestRender() {} };
   const ctx = {
     mode: "tui",
     model: { id: "stub-model" },
+    sessionManager: { getSessionId: () => "placeholder-session" },
     modelRegistry: {
       async complete() {
         const text = await expansionReply;
@@ -930,6 +932,50 @@ const fakeTui = { terminal: { rows: 40 }, requestRender() {} };
   const envelope = result.content[0].text;
   assert.ok(envelope.startsWith(TEXTS.markdown.envelopePrefix), "提交结果应以完成封套开头");
   assert.ok(envelope.includes("【雨夜】") && envelope.includes("【第一人称】"), "封套应携带各题选定项");
+}
+
+// 18. 推演请求携带当前会话标识（OpenCode 系 provider 靠它路由请求）
+{
+  const calls = [];
+  const ctx = {
+    mode: "tui",
+    model: { id: "opencode-go/stub" },
+    sessionManager: { getSessionId: () => "session-abc123" },
+    modelRegistry: {
+      async complete(model, request, options) {
+        calls.push({ model, request, options });
+        return { stopReason: "endTurn", content: [{ type: "text", text: '{"questions":[],"options":[]}' }] };
+      },
+    },
+    ui: {
+      async custom(factory) {
+        const component = factory(fakeTui, dummyTheme, {}, () => {});
+        component.handleInput(" ");
+        component.handleInput("\r");
+        component.dispose();
+        return { formTitle: "会话标识", questions: [], answers: [], cancelled: true };
+      },
+    },
+  };
+
+  await registeredToolDef.execute(
+    "call-session-header",
+    {
+      formTitle: "会话标识",
+      expansion: { maxQuestions: 4 },
+      questions: [
+        { id: "q1", title: "第一题", options: [{ label: "甲" }, { label: "乙" }] },
+        { id: "q2", title: "第二题", options: [{ label: "丙" }, { label: "丁" }] },
+      ],
+    },
+    undefined,
+    undefined,
+    ctx,
+  );
+
+  assert.equal(calls.length, 1, "确认一道题目应发起一次推演请求");
+  assert.equal(calls[0].options?.sessionId, "session-abc123", "推演请求应携带当前会话标识");
+  assert.ok(calls[0].options?.signal instanceof AbortSignal, "推演请求应携带级联取消信号");
 }
 
 console.log("全部功能自检顺利通过。");

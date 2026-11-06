@@ -14,7 +14,7 @@ parent: ask-author-architecture
 
 - 注册 `ask_author` 工具（含 `renderCall` 与 `renderResult`）与 `/ask-author` 命令；命令只向作者回显用法提示。
 - 编排一次执行的守卫序列：宿主信号已中止返回取消结果；`ctx.mode` 非 `tui` 返回结构化错误；表单构建失败时区分 `AdaptiveConditionError`（条件错误）与其他异常（运行期错误）；题目数量为零返回错误；声明 `expansion` 但当前会话没有可用模型返回结构化错误。
-- 装配推演执行器 `createExpansionRunner`：调用 `ctx.modelRegistry.complete`，解析回复，累计推演用量并挂到工具结果的 `usage` 字段。
+- 装配推演执行器 `createExpansionRunner`：调用 `ctx.modelRegistry.complete`，请求选项携带当前会话标识（`ctx.sessionManager.getSessionId()`）与级联取消信号，解析回复，累计推演用量并挂到工具结果的 `usage` 字段。会话标识是 provider 侧路由的前提：`opencode` / `opencode-go` 系 provider 缺它会被服务端以 `missing_session_id` 拒绝。
 - 通过 `ctx.ui.custom` 挂载 `AskAuthorComponent` 并获得返回值；`finally` 调用 `dispose`，兜住「组件工厂执行后、宿主接管前」的抛出路径。
 
 ## 边界
