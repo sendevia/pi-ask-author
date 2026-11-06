@@ -5,43 +5,32 @@
  * 核心架构特性：
  * - 纯常量模块，零插件内依赖；任何模块可在不装载语言资源的前提下引用布局数值与图标
  * - `LAYOUT_CONFIG` / `ICONS` / `MAX_*` 集中声明可调参数与强制上限，语言文件通过 `{icon.<键>}` 占位符引用图标
+ * - 作答页纵向分带（预览区占满剩余高度）的几何全部由此处取值，视图层只负责按带序输出
  *
  * 依赖方向：layout.ts → 无插件内依赖；被 format / schema / texts / view-rows / view-question / component 消费
  */
 
 // ===== 终端呈现常量 =====
 
-/** TUI 视图几何、分栏与滚动行为配置（数值项均标注单位 ms / cols / lines；分隔线条目为字符文本，不带单位） */
+/** TUI 视图几何与滚动行为配置（数值项均标注单位 ms / cols / lines；分隔线条目为字符文本，不带单位） */
 export const LAYOUT_CONFIG = {
   // ===== 分隔线字符 =====
-  /** 双栏中间分隔符文本 */
-  dividerChar: " │ ",
   /** 外层框架分割线字符（双横线） */
   dividerThick: "═",
   /** 内部内容分割线字符（单横线） */
   dividerThin: "─",
 
-  // ===== 分栏几何 =====
-  /** 中间分隔符可见宽度 (cols) */
-  dividerWidth: 3,
-  /** 左栏最大可见宽度 (cols) */
-  leftColMax: 46,
-  /** 左栏最小可见宽度 (cols) */
-  leftColMin: 30,
-  /** 宽屏双栏下左栏占视口比例 */
-  leftColRatio: 0.42,
-  /** 触发宽屏双栏的终端最小列宽 (cols) */
-  splitViewMinWidth: 72,
+  // ===== 视口几何 =====
   /** Tab 栏自定义短标签的最大可见宽度 (cols)；超出部分由 `truncateToWidth` 截断 */
   tabLabelMaxWidth: 14,
+  /** 工具调用卡片在终端中占用的行数 (lines)；作答页高度据此扣除，保证底部快捷键不被挤出屏幕 */
+  terminalChromeRows: 2,
 
   // ===== 滚动与翻页 =====
   /** 预览区单次翻页滚动行数 (lines) */
   previewScrollStep: 3,
-  /** 窄屏单栏折叠预览区最大可见行数 (lines) */
-  singlePreviewHeight: 7,
-  /** 宽屏双栏右侧预览区最大可见行数 (lines) */
-  splitPreviewHeight: 14,
+  /** 内容预览区最小可见行数 (lines)；预览区占满终端剩余高度，不足此值时页面整体溢出终端 */
+  previewMinHeight: 3,
   /** 总览页单页最大内容行数 (lines) */
   summaryPageSize: 16,
   /** 总览页单次滚动步长 (lines) */

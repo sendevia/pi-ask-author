@@ -1,10 +1,10 @@
 /**
  * @file component.ts
- * @description `ask_author` 交互式 TUI 主组件（双栏问卷视图与答卷总览）
+ * @description `ask_author` 交互式 TUI 主组件（作答页、总览页与补充说明编辑页）
  *
  * 核心架构特性：
  * - 本组件只负责交互状态机、按键路由与整屏帧缓存；题目页、总览页与编辑器页的排版分别由 `view-question` / `view-summary` / `view-editor` 构建
- * - 宽屏双栏 / 窄屏单栏自适应由 `QuestionView` 判定；预览与总览视口行数随终端高度收缩
+ * - 作答页的分带排版与预览区高度由 `QuestionView` 判定；预览与总览视口行数随终端高度伸缩
  * - 多级缓存失效：整屏（尺寸键 + 状态突变清空）、Tab 栏 / 菜单项（`revision` 键）、视图层内容缓存（由 `touchDerived` 统一清空）
  * - 逐题独立光标记忆与 `1~9` 跳转题目；内置编辑器透传 Focusable 以定位 IME 候选框
  * - 无输入框页面把输入法全角字符收敛为半角，`【`/`】` 与全角字母数字一样命中快捷键
@@ -43,7 +43,7 @@ import type { ExpansionPayload, InsertPosition } from "./schema.js";
 import { TEXTS } from "./texts.js";
 import type { Theme } from "./theme.js";
 import { renderEditorPage } from "./view-editor.js";
-import { QuestionView, singlePreviewHeight, type PreviewViewport } from "./view-question.js";
+import { QuestionView, type PreviewViewport } from "./view-question.js";
 import { buildTabLines, optionLabelOf, pushExpansionPlaceholder, pushFrameRule } from "./view-rows.js";
 import { SummaryView, summaryPageSize } from "./view-summary.js";
 
@@ -70,16 +70,14 @@ export class AskAuthorComponent implements Component, Focusable {
   }
   /**
    * 设置焦点状态并级联透传至内置 Editor（同值为无操作）
-   * @param value - 目标焦点状态；同时失效整屏 / Tab 栏 / 左栏缓存
+   * @param value - 目标焦点状态；同时失效整屏帧缓存（预览内容与光标无关，内容缓存保留）
    */
   set focused(value: boolean) {
     if (this._focused === value) return;
     this._focused = value;
     this.editor.focused = this.inputMode && value;
-    // Editor 的 IME 光标标记经视图层进入整屏缓存；左栏缓存一并失效，预览内容与光标无关故保留
+    // Editor 的 IME 光标标记经视图层进入整屏缓存；预览内容与光标无关，内容缓存保留
     this.touch();
-    this.tabCache = undefined;
-    this.questionView.clearColumnCache();
   }
 
   /** TUI 上下文 */
@@ -153,7 +151,7 @@ export class AskAuthorComponent implements Component, Focusable {
   /** 是否有推演请求正在进行（在途期间作答页整体换成占位页，一切作答输入暂停） */
   private expansionPending = false;
 
-  /** 题目作答页视图构建器（持有预览与左栏缓存） */
+  /** 题目作答页视图构建器（持有预览内容缓存） */
   private readonly questionView: QuestionView;
 
   /** 答卷总览页视图构建器（持有内容行缓存） */
@@ -424,7 +422,7 @@ export class AskAuthorComponent implements Component, Focusable {
     this.switchTab(order[(position + delta + order.length) % order.length] ?? this.currentTab);
   }
 
-  /** 收敛光标至合法区间并同步左栏滚动窗口，保证聚焦项可见（菜单项为空时直接返回） */
+  /** 收敛光标至合法区间并同步选项窗口滚动位移，保证聚焦项可见（菜单项为空时直接返回） */
   private adjustScrollForCurrentOption(): void {
     const count = this.getMenuItems().length;
     if (count === 0) return;
@@ -811,7 +809,7 @@ export class AskAuthorComponent implements Component, Focusable {
 
   /**
    * 预览区垂直滚动键（方括号 / Alt+上下）
-   * 滚动位移归一化归属输入路径：以渲染帧写入的 {@link previewViewportObservation} 为界经 `clampWindowOffset` 收敛（缺观察元数据时按单栏预览高度退化）
+   * 滚动位移归一化归属输入路径：以渲染帧写入的 {@link previewViewportObservation} 为界经 `clampWindowOffset` 收敛（缺观察元数据时按预览区最小高度退化）
    * @param data - 按键序列
    * @returns 是否已消费该按键
    */
@@ -824,7 +822,7 @@ export class AskAuthorComponent implements Component, Focusable {
     }
     if (step === 0) return false;
     const observation = this.previewViewportObservation;
-    const viewHeight = observation?.viewHeight ?? singlePreviewHeight(this.terminalRows);
+    const viewHeight = observation?.viewHeight ?? LAYOUT_CONFIG.previewMinHeight;
     const total = observation?.total ?? 0;
     this.previewScrollOffset = clampWindowOffset(this.previewScrollOffset + step, total, viewHeight);
     this.touch();
@@ -959,6 +957,22 @@ export class AskAuthorComponent implements Component, Focusable {
   // ===== 视图渲染层 =====
 
   /**
+   * 当前帧的 Tab 导航栏行（按当前页 / 推演在途 / `revision` / 列宽记忆化）
+   * @param layoutWidth - 终端布局列宽
+   * @returns Tab 栏行（末尾带单横分隔线）
+   */
+  private tabLines(layoutWidth: number): string[] {
+    const key = `${this.currentTab}_${this.expansionPending ? "p" : "-"}_${this.model.revision}_${layoutWidth}`;
+    if (!this.tabCache || this.tabCache.key !== key) {
+      this.tabCache = {
+        key,
+        lines: buildTabLines(this.theme, this.model, this.currentTab, layoutWidth, this.expansionPending),
+      };
+    }
+    return this.tabCache.lines;
+  }
+
+  /**
    * Component 接口约定：渲染整屏行（带整屏缓存）
    * 缓存键绑定真实列宽、布局列宽与终端行数（窄于 20 列时二者截断范围不同，仅绑定 layoutWidth 会串帧；行数变化必须整体重新计算）；本方法及可达被调函数绝不写入语义状态，仅刷新透明备忘 / 观察缓存
    * @param width - 终端真实可视宽度（布局宽度下限 20 列）
@@ -977,23 +991,16 @@ export class AskAuthorComponent implements Component, Focusable {
     }
 
     const lines: string[] = [];
-
-    // 1. 顶部装饰线
-    pushFrameRule(lines, this.theme, layoutWidth);
-
-    // 2. Tab 导航栏（块级缓存，整块由 view-rows 层预计算）
-    const tabCacheKey = `${this.currentTab}_${this.expansionPending ? "p" : "-"}_${this.model.revision}_${layoutWidth}`;
-    if (!this.tabCache || this.tabCache.key !== tabCacheKey) {
-      this.tabCache = {
-        key: tabCacheKey,
-        lines: buildTabLines(this.theme, this.model, this.currentTab, layoutWidth, this.expansionPending),
-      };
-    }
-    lines.push(...this.tabCache.lines);
+    const tabLines = this.tabLines(layoutWidth);
 
     if (this.expansionPending) {
+      // 推演在途占位页没有预览内容，Tab 栏保持在顶部
+      pushFrameRule(lines, this.theme, layoutWidth);
+      lines.push(...tabLines);
       pushExpansionPlaceholder(lines, this.theme, layoutWidth);
     } else if (this.isSubmitTab) {
+      pushFrameRule(lines, this.theme, layoutWidth);
+      lines.push(...tabLines);
       lines.push(
         ...this.summaryView.render(
           this.summaryScrollOffset,
@@ -1003,10 +1010,13 @@ export class AskAuthorComponent implements Component, Focusable {
         ),
       );
     } else if (this.inputMode) {
+      pushFrameRule(lines, this.theme, layoutWidth);
+      lines.push(...tabLines);
       lines.push(
         ...renderEditorPage(this.theme, this.model, this.currentTab, this.editTarget, this.editor, layoutWidth),
       );
     } else {
+      // 作答页自上而下自带框架线、预览区、Tab 栏与选项区
       const view = this.questionView.render(
         {
           tab: this.currentTab,
@@ -1016,6 +1026,7 @@ export class AskAuthorComponent implements Component, Focusable {
           statusMessage: this.statusLine,
           menuItems: this.getMenuItems(),
           expandable: this.model.canExpandOnConfirm(this.currentTab, this.expansion !== undefined),
+          tabLines,
         },
         layoutWidth,
         renderHeight,
