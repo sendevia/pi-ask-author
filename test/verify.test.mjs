@@ -7,6 +7,7 @@ import {
   ACTIVE_LOCALE,
   AdaptiveConditionError,
   AskAuthorFormModel,
+  ICONS,
   MAX_OPTIONS,
   MAX_QUESTIONS,
   TEXTS,
@@ -419,17 +420,18 @@ const fakeTui = { terminal: { rows: 40 }, requestRender() {} };
         assert.ok(visibleWidth(line) <= width, `${stage} 在 ${width} 列存在超宽行：${JSON.stringify(line)}`);
       }
     }
+    assert.equal(component.render(120).length, fakeTui.terminal.rows, `${stage} 应占满终端全高`);
   };
 
   const ctx = {
     mode: "tui",
     ui: {
       custom: async (factory, options) => {
-        assert.equal(options?.blocked?.kind, "question", "作答期间应向终端上报阻塞在作者输入上");
-        assert.equal(
-          options?.blocked?.message,
-          TEXTS.programStatus.awaitingAuthor,
-          "阻塞提示应取自当前语言文案",
+        assert.equal(options?.overlay, true, "作答界面应挂载为整屏覆盖层以接管滚轮");
+        assert.deepEqual(
+          options?.overlayOptions,
+          { width: "100%", maxHeight: "100%", anchor: "top-left", margin: 0 },
+          "覆盖层应铺满整个终端",
         );
         const component = factory(fakeTui, dummyTheme, {}, () => {});
         assertWidths(component, "题目页");
@@ -835,7 +837,8 @@ const fakeTui = { terminal: { rows: 40 }, requestRender() {} };
   const ctx = {
     mode: "tui",
     model: { id: "stub-model" },
-    sessionManager: { getSessionId: () => "placeholder-session" },
+    sessionManager: { getSessionId: () => "placeholder-session", buildSessionProjection: () => ({ messages: [] }) },
+    getSystemPrompt: () => "stub system prompt",
     modelRegistry: {
       async complete() {
         const text = await expansionReply;
@@ -849,6 +852,7 @@ const fakeTui = { terminal: { rows: 40 }, requestRender() {} };
         component.handleInput(" ");
         component.handleInput("\r");
         pendingRender = component.render(120).join("\n");
+        assert.equal(pendingRender.split("\n").length, fakeTui.terminal.rows, "推演占位页应占满终端全高");
         // 在途期间一切作答输入被忽略：渲染结果与占位页完全一致
         component.handleInput("\t");
         component.handleInput("1");
@@ -900,10 +904,7 @@ const fakeTui = { terminal: { rows: 40 }, requestRender() {} };
         const component = factory(fakeTui, dummyTheme, {}, settle);
         // 每题「空格选定 + Enter 确认」，确认最后一题后自动落入总览页
         for (const key of [" ", "\r", " ", "\r"]) component.handleInput(key);
-        assert.ok(
-          component.render(120).join("\n").includes(TEXTS.summary.title),
-          "确认最后一题后应自动进入总览页",
-        );
+        assert.ok(component.render(120).join("\n").includes(TEXTS.summary.title), "确认最后一题后应自动进入总览页");
         component.handleInput("\r");
         const result = await done;
         component.dispose();
@@ -934,13 +935,30 @@ const fakeTui = { terminal: { rows: 40 }, requestRender() {} };
   assert.ok(envelope.includes("【雨夜】") && envelope.includes("【第一人称】"), "封套应携带各题选定项");
 }
 
-// 18. 推演请求携带当前会话标识（OpenCode 系 provider 靠它路由请求）
+// 18. 推演请求接入会话上下文：会话投影 + 主对话系统提示词 + 在途工具调用占位
 {
   const calls = [];
+  const mainSystemPrompt = "You are pi, a coding agent working in this repository.";
   const ctx = {
     mode: "tui",
     model: { id: "opencode-go/stub" },
-    sessionManager: { getSessionId: () => "session-abc123" },
+    sessionManager: {
+      getSessionId: () => "session-abc123",
+      buildSessionProjection: () => ({
+        messages: [
+          { role: "user", content: [{ type: "text", text: "把雨夜追车那场改成第一人称" }], timestamp: 1 },
+          {
+            role: "assistant",
+            content: [
+              { type: "text", text: "先确认叙述人称。" },
+              { type: "toolCall", id: "call-session-header", name: "ask_author", arguments: {} },
+            ],
+            timestamp: 2,
+          },
+        ],
+      }),
+    },
+    getSystemPrompt: () => mainSystemPrompt,
     modelRegistry: {
       async complete(model, request, options) {
         calls.push({ model, request, options });
@@ -976,6 +994,294 @@ const fakeTui = { terminal: { rows: 40 }, requestRender() {} };
   assert.equal(calls.length, 1, "确认一道题目应发起一次推演请求");
   assert.equal(calls[0].options?.sessionId, "session-abc123", "推演请求应携带当前会话标识");
   assert.ok(calls[0].options?.signal instanceof AbortSignal, "推演请求应携带级联取消信号");
+
+  assert.equal(
+    calls[0].request.systemPrompt,
+    `${mainSystemPrompt}\n\n${TEXTS.expansion.systemPrompt}`,
+    "推演系统提示词应由主对话系统提示词与推演协议拼接而成",
+  );
+  const messages = calls[0].request.messages;
+  assert.equal(messages.length, 4, "请求应为会话历史、在途调用占位与推演用户消息");
+  assert.equal(messages[0].role, "user", "会话历史首条应来自会话投影");
+  assert.ok(messages[0].content[0].text.includes("雨夜追车"), "会话历史应保留作者原话");
+  assert.equal(messages[1].role, "assistant", "会话历史应保留助手消息");
+  assert.equal(messages[2].role, "toolResult", "在途工具调用应补上占位结果");
+  assert.equal(messages[2].toolCallId, "call-session-header", "占位结果应挂在本次调用上");
+  assert.equal(messages[2].isError, false, "在途调用不是失败");
+  assert.equal(messages[2].content[0].text, TEXTS.expansion.pendingToolResult, "占位结果应说明作者正在作答");
+  assert.equal(messages[3].role, "user", "推演载荷应作为最后一条用户消息");
+  assert.ok(messages[3].content[0].text.startsWith(TEXTS.expansion.userPreamble), "推演载荷应带协议前缀");
+  assert.ok(messages[3].content[0].text.includes('"formTitle":"会话标识"'), "推演载荷应携带表单真实状态");
+}
+
+// 19. 鼠标滚轮由本工具接管：预览区滚预览、其余位置移光标、总览页滚答卷
+{
+  const ROWS = 30;
+  const WIDTH = 100;
+  const wheel = (y, wheelDelta) => ({
+    type: "wheel",
+    button: "none",
+    x: 10,
+    y,
+    screenX: 10,
+    screenY: y,
+    width: WIDTH,
+    height: ROWS,
+    shift: false,
+    alt: false,
+    ctrl: false,
+    wheelDelta,
+  });
+  const longPreview = Array.from(
+    { length: 10 },
+    (_, i) => `第${i + 1}段：“退无可退，那便无须再退。”林澈反手拔剑，古朴剑脊上泛起暗金光芒。`,
+  ).join("\n\n");
+
+  let frames = {};
+  const ctx = {
+    mode: "tui",
+    ui: {
+      async custom(factory) {
+        const component = factory({ terminal: { rows: ROWS }, requestRender() {} }, dummyTheme, {}, () => {});
+        const render = () => component.render(WIDTH).join("\n").split("\n");
+        frames.page = render();
+        const tabRow = frames.page.findIndex((l) => l.includes(TEXTS.tabs.questionTab(1)));
+        const cursorRow = frames.page.findIndex((l) => l.includes(ICONS.cursor));
+
+        // 非滚轮事件不接管
+        assert.equal(component.handleMouse({ ...wheel(0, 3), type: "press" }), undefined, "非滚轮事件不应处理");
+
+        // 预览区滚轮：预览内容滚动，选项光标不动
+        const previewBandRow = 1;
+        assert.ok(previewBandRow < tabRow, "预览区应在 Tab 栏之前");
+        assert.deepEqual(component.handleMouse(wheel(previewBandRow, 5)), { handled: true }, "滚轮应标记为已消费");
+        frames.scrolled = render();
+        assert.notEqual(frames.scrolled[1], frames.page[1], "预览区滚轮应滚动预览内容");
+        assert.equal(
+          frames.scrolled.findIndex((l) => l.includes(ICONS.cursor)),
+          cursorRow,
+          "预览区滚轮不应移动选项光标",
+        );
+
+        // 选项区滚轮：光标下移，预览位移重置
+        const optionRow = cursorRow;
+        assert.deepEqual(component.handleMouse(wheel(optionRow, 1)), { handled: true }, "选项区滚轮应被接管");
+        frames.moved = render();
+        assert.ok(frames.moved.findIndex((l) => l.includes(ICONS.cursor)) > cursorRow, "选项区滚轮应下移选项光标");
+
+        // 总览页滚轮：滚动答卷内容
+        component.handleInput("\t");
+        frames.summary = render();
+        assert.deepEqual(component.handleMouse(wheel(2, 3)), { handled: true }, "总览页滚轮应被接管");
+        frames.summaryScrolled = render();
+        assert.notEqual(frames.summaryScrolled.join("\n"), frames.summary.join("\n"), "总览页滚轮应滚动答卷内容");
+
+        component.dispose();
+        return { formTitle: "滚轮", questions: [], answers: [], cancelled: true };
+      },
+    },
+  };
+
+  await registeredToolDef.execute(
+    "call-wheel",
+    {
+      formTitle: "滚轮",
+      questions: [
+        {
+          id: "q1",
+          title: "滚轮第一题",
+          options: [
+            { label: "甲", preview: longPreview },
+            { label: "乙", preview: longPreview },
+          ],
+        },
+        ...Array.from({ length: 6 }, (_, i) => ({
+          id: `q${i + 2}`,
+          title: `滚轮第${i + 2}题`,
+          description: "用于把总览内容撑到一页之外。",
+          options: [{ label: `选项${i + 1}` }, { label: `选项${i + 1}b` }],
+        })),
+      ],
+    },
+    undefined,
+    undefined,
+    ctx,
+  );
+
+  assert.equal(frames.page.length, ROWS, "整屏覆盖层下作答页应恰好占满终端行数");
+  assert.ok(frames.summary.length > 0 && frames.summaryScrolled.length > 0, "总览页应可渲染");
+}
+
+// 20. 鼠标点击：Tab 标签切题、选项行移动并激活、总览页全高与带序
+{
+  const ROWS = 24;
+  const WIDTH = 84;
+  const ansi = /\x1b\[[0-9;]*m/g;
+  const plain = (line) => line.replace(ansi, "");
+  const pointer = (type, x, y) => ({
+    type,
+    button: "left",
+    x,
+    y,
+    screenX: x,
+    screenY: y,
+    width: WIDTH,
+    height: ROWS,
+    shift: false,
+    alt: false,
+    ctrl: false,
+  });
+  const click = (component, x, y) => ({
+    press: component.handleMouse(pointer("press", x, y)),
+    click: component.handleMouse(pointer("click", x, y)),
+  });
+
+  const frames = {};
+  const ctx = {
+    mode: "tui",
+    ui: {
+      async custom(factory) {
+        const component = factory({ terminal: { rows: ROWS }, requestRender() {} }, dummyTheme, {}, () => {});
+        const render = () => component.render(WIDTH).join("\n").split("\n");
+        const text = (lines) => plain(lines.join("\n"));
+
+        frames.question = render();
+        const tabRow = frames.question.findIndex((l) => plain(l).includes(TEXTS.tabs.submitTab));
+        assert.ok(tabRow > 0, "Tab 栏应可见");
+        assert.ok(tabRow > frames.question.findIndex((l) => plain(l).includes("第一题")), "Tab 栏应在内容之后");
+        const tabCol = plain(frames.question[tabRow]).indexOf("节奏");
+        assert.ok(tabCol > 0, "自定义短标签应落在 Tab 栏内");
+
+        const tabClick = click(component, tabCol, tabRow);
+        assert.deepEqual(tabClick.press, { handled: true }, "标签按下应被接管");
+        assert.deepEqual(tabClick.click, { handled: true }, "标签松开应被接管");
+        frames.afterTabClick = render();
+        assert.ok(text(frames.afterTabClick).includes("第二题"), "点击标签应切换到对应题目");
+
+        component.handleInput("h");
+        frames.back = render();
+        const optionRow = frames.back.findIndex((l) => plain(l).includes("第三人称"));
+        const optionClick = click(component, 8, optionRow);
+        assert.deepEqual(optionClick.press, { handled: true }, "选项按下应被接管");
+        assert.deepEqual(optionClick.click, { handled: true }, "选项松开应被接管");
+        frames.afterOptionClick = render();
+        assert.ok(text(frames.afterOptionClick).includes("第一题"), "点击选项不应跳题");
+        assert.notEqual(text(frames.afterOptionClick), text(frames.back), "点击选项应改变勾选与光标");
+
+        // 非条目区域的按下不被接管，留给 pi 做文本选择
+        assert.equal(
+          component.handleMouse(pointer("press", 2, frames.afterOptionClick.length - 1)),
+          undefined,
+          "空白处按下不接管",
+        );
+
+        // 总览页：全高且答卷内容在 Tab 栏之上
+        component.handleInput("\t");
+        component.handleInput("\t");
+        frames.summary = render();
+        assert.equal(frames.summary.length, ROWS, `总览页应占满终端 ${ROWS} 行`);
+        const summaryTabRow = frames.summary.findIndex((l) => plain(l).includes(TEXTS.tabs.submitTab));
+        const answerRow = frames.summary.findIndex((l) => plain(l).includes("第一题"));
+        const titleRow = frames.summary.findIndex((l) => plain(l).includes(TEXTS.summary.title));
+        assert.ok(answerRow >= 0 && answerRow < summaryTabRow, "答卷总览内容应在 Tab 栏之上");
+        assert.ok(titleRow > summaryTabRow, "总览标题应在 Tab 栏之下");
+
+        // 总览页点击题目标签切回题目
+        const backCol = plain(frames.summary[summaryTabRow]).indexOf("视角");
+        assert.deepEqual(click(component, backCol, summaryTabRow).click, { handled: true }, "总览页标签点击应被接管");
+        frames.backToQuestion = render();
+        assert.ok(text(frames.backToQuestion).includes("第一章采用哪种叙事视角？"), "总览页点击标签应切回该题");
+
+        component.dispose();
+        return { formTitle: "点击", questions: [], answers: [], cancelled: true };
+      },
+    },
+  };
+
+  await registeredToolDef.execute(
+    "call-click",
+    {
+      formTitle: "点击",
+      questions: [
+        {
+          id: "q1",
+          tabLabel: "视角",
+          title: "第一章采用哪种叙事视角？",
+          options: [
+            { label: "第一人称", preview: "我在雨里站了很久。" },
+            { label: "第三人称", preview: "他在雨里站了很久。" },
+          ],
+        },
+        { id: "q2", tabLabel: "节奏", title: "第二题", options: [{ label: "快" }, { label: "慢" }] },
+      ],
+    },
+    undefined,
+    undefined,
+    ctx,
+  );
+}
+
+// 21. 编辑页整页占满且编辑框内点击可定位光标
+{
+  const ROWS = 22;
+  const WIDTH = 80;
+  const ansi = /\x1b\[[0-9;]*m/g;
+  const plain = (line) => line.replace(ansi, "");
+  const clickAt = (component, x, y) =>
+    component.handleMouse({
+      type: "click",
+      button: "left",
+      x,
+      y,
+      screenX: x,
+      screenY: y,
+      width: WIDTH,
+      height: ROWS,
+      shift: false,
+      alt: false,
+      ctrl: false,
+    });
+
+  const frames = {};
+  const ctx = {
+    mode: "tui",
+    ui: {
+      async custom(factory) {
+        const component = factory({ terminal: { rows: ROWS }, requestRender() {} }, dummyTheme, {}, () => {});
+        const render = () => component.render(WIDTH).join("\n").split("\n");
+
+        component.handleInput("N");
+        for (const ch of "abcdef") component.handleInput(ch);
+        frames.editor = render();
+        assert.equal(frames.editor.length, ROWS, `编辑页应占满 ${ROWS} 行`);
+        assert.ok(plain(frames.editor[ROWS - 1]).includes("═"), "编辑页末行应为框架线");
+
+        const textRow = frames.editor.findIndex((l) => plain(l).includes("abcdef"));
+        assert.ok(textRow > 0, "编辑框文字应可见");
+        const textColumn = plain(frames.editor[textRow]).indexOf("abcdef");
+        assert.deepEqual(
+          clickAt(component, textColumn + 2, textRow),
+          { handled: true, focus: true },
+          "编辑框内点击应由编辑器接管",
+        );
+        component.handleInput("X");
+        frames.afterClick = render();
+        assert.ok(plain(frames.afterClick.join("\n")).includes("abXcdef"), "点击处应成为插入位置");
+        assert.equal(clickAt(component, 2, 0), undefined, "编辑框外点击不接管");
+
+        component.dispose();
+        return { formTitle: "编辑页", questions: [], answers: [], cancelled: true };
+      },
+    },
+  };
+
+  await registeredToolDef.execute(
+    "call-editor-click",
+    { formTitle: "编辑页", questions: [{ id: "q1", title: "第一题", options: [{ label: "甲" }, { label: "乙" }] }] },
+    undefined,
+    undefined,
+    ctx,
+  );
 }
 
 console.log("全部功能自检顺利通过。");

@@ -23,16 +23,12 @@ export const LAYOUT_CONFIG = {
   // ===== 视口几何 =====
   /** Tab 栏自定义短标签的最大可见宽度 (cols)；超出部分由 `truncateToWidth` 截断 */
   tabLabelMaxWidth: 14,
-  /** 工具调用卡片在终端中占用的行数 (lines)；作答页高度据此扣除，保证底部快捷键不被挤出屏幕 */
-  terminalChromeRows: 2,
 
   // ===== 滚动与翻页 =====
   /** 预览区单次翻页滚动行数 (lines) */
   previewScrollStep: 3,
   /** 内容预览区最小可见行数 (lines)；预览区占满终端剩余高度，不足此值时页面整体溢出终端 */
   previewMinHeight: 3,
-  /** 总览页单页最大内容行数 (lines) */
-  summaryPageSize: 16,
   /** 总览页单次滚动步长 (lines) */
   summaryScrollStep: 3,
   /** 菜单每页最大可见选项数 (项) */

@@ -1,6 +1,5 @@
 {
   "tool": { "label": "向作者请示" },
-  "programStatus": { "awaitingAuthor": "等待作者作答" },
   "command": {
     "name": "ask-author",
     "description": "查看 ask_author 创作请示工具说明",
@@ -125,9 +124,7 @@
     "optionNotePrefix": { "template": "{icon.note} 选项补充说明（{optLabel}）：", "params": ["optLabel"] },
     "customNoteLabel": { "template": "{icon.note} 题目补充说明：" },
     "allDonePrompt": { "template": " {icon.check} 全部完成，按 Enter/Ctrl+S 提交答卷，Tab/hl/1-9 返回修改" },
-    "pendingWarning": { "template": " {icon.unchecked} 尚有题目未完成，按 Enter 前往作答，Tab/hl/1-9 切换修改" },
-    "topMore": { "template": "  {icon.scrollUp} 向上还有 {count} 行", "params": ["count"] },
-    "bottomMore": { "template": "  {icon.scrollDown} 向下还有 {count} 行", "params": ["count"] }
+    "pendingWarning": { "template": " {icon.unchecked} 尚有题目未完成，按 Enter 前往作答，Tab/hl/1-9 切换修改" }
   },
   "card": {
     "callQuestionAndOptionCount": { "template": "{qCount} 题 • {optCount} 选项", "params": ["qCount", "optCount"] },

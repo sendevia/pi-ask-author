@@ -4,7 +4,8 @@
  *
  * 核心架构特性：
  * - 只根据编辑目标拼装标题、上下文与编辑器行，编辑器实例由组件传入并保持焦点状态
- * - 不读取也不写入组件的输入模式标记；离开输入模式仍由组件在按键路径决定
+ * - 整页占满终端高度：顶部分割线、Tab 栏、标题块、编辑框、页脚提示与底部分割线，剩余行补在编辑框之后
+ * - 回传编辑框在整页中的位置，组件据此把鼠标点击换算为编辑框内坐标
  *
  * 依赖方向：view-editor.ts → format.ts / model.ts / texts.ts / theme.ts / view-rows.ts；禁止反向导入 component.ts
  */
@@ -16,15 +17,40 @@ import { TEXTS } from "./texts.js";
 import type { Theme } from "./theme.js";
 import { optionLabelOf, pushFrameRule } from "./view-rows.js";
 
+/** 编辑框左右两侧的缩进列数（每行前缀） */
+const EDITOR_INDENT = 2;
+
+/** 编辑框在整页中的位置（鼠标点击换算依据） */
+export interface EditorArea {
+  /** 首行（编辑框顶部边框）在整页中的行号 */
+  readonly top: number;
+  /** 编辑框渲染行数 */
+  readonly height: number;
+  /** 左侧缩进的可见列数 */
+  readonly left: number;
+  /** 传给编辑器的渲染宽度 */
+  readonly width: number;
+}
+
+/** 编辑器页渲染结果 */
+export interface EditorPage {
+  /** 整页终端行（题目缺失时为空数组） */
+  readonly lines: string[];
+  /** 编辑框位置；题目缺失时为 undefined */
+  readonly editorArea?: EditorArea;
+}
+
 /**
- * 渲染补充说明编辑器全屏模式（标题 / 上下文背景 / 编辑框 / 页脚按键提示 / 底部框架线）
+ * 渲染补充说明编辑器全屏页（顶部分割线 / Tab 栏 / 标题与上下文 / 编辑框 / 补充空行 / 页脚按键提示 / 底部分割线）
  * @param theme - 当前 TUI 主题
  * @param model - 问卷模型（读取题目与选项文案）
  * @param tab - 当前题目索引
  * @param target - 编辑目标（题目整体或指定选项）
  * @param editor - 内置编辑器实例
+ * @param tabLines - 题目导航 Tab 栏行（组件缓存）
  * @param renderWidth - 终端可视宽度
- * @returns 编辑器页的完整终端行；题目越界时返回空数组
+ * @param terminalRows - 终端可视行数
+ * @returns 整页终端行与编辑框位置；题目越界时行数组为空且无编辑框位置
  */
 export function renderEditorPage(
   theme: Theme,
@@ -32,12 +58,17 @@ export function renderEditorPage(
   tab: number,
   target: EditTarget | undefined,
   editor: Editor,
+  tabLines: readonly string[],
   renderWidth: number,
-): string[] {
+  terminalRows: number,
+): EditorPage {
   const q = model.getQuestion(tab);
-  if (!q) return [];
+  if (!q) return { lines: [] };
 
   const lines: string[] = [];
+  pushFrameRule(lines, theme, renderWidth);
+  lines.push(...tabLines);
+
   if (target?.type === "option") {
     const optIdx = target.optionIndex;
     const opt = q.options[optIdx];
@@ -60,11 +91,17 @@ export function renderEditorPage(
   }
   lines.push("");
 
-  for (const el of editor.render(Math.max(10, renderWidth - 4))) {
-    lines.push(`  ${el}`);
-  }
-  lines.push("");
-  lines.push(theme.fg("dim", TEXTS.editor.footerHelp));
-  pushFrameRule(lines, theme, renderWidth);
-  return lines;
+  const editorWidth = Math.max(10, renderWidth - EDITOR_INDENT * 2);
+  const editorTop = lines.length;
+  const editorLines = editor.render(editorWidth).map((line) => `${" ".repeat(EDITOR_INDENT)}${line}`);
+  lines.push(...editorLines);
+
+  const tail: string[] = [""];
+  pushWrapped(tail, theme.fg("dim", TEXTS.editor.footerHelp), renderWidth, " ");
+  pushFrameRule(tail, theme, renderWidth);
+
+  for (let i = lines.length + tail.length; i < terminalRows; i++) lines.push("");
+  lines.push(...tail);
+
+  return { lines, editorArea: { top: editorTop, height: editorLines.length, left: EDITOR_INDENT, width: editorWidth } };
 }

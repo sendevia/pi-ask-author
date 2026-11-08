@@ -136,10 +136,11 @@ async function drive(body, { turns, replies = [] }) {
   const ctx = {
     mode: "tui",
     model: { id: "compose-model" },
-    sessionManager: { getSessionId: () => "compose-session" },
+    sessionManager: { getSessionId: () => "compose-session", buildSessionProjection: () => ({ messages: [] }) },
+    getSystemPrompt: () => "stub system prompt",
     modelRegistry: {
       async complete(_model, request) {
-        const text = request.messages[0].content[0].text;
+        const text = request.messages.at(-1).content[0].text;
         requests.push(JSON.parse(text.slice(text.indexOf("\n") + 1)));
         const reply = pendingReplies.shift() ?? '{"questions":[],"options":[]}';
         return { stopReason: "endTurn", content: [{ type: "text", text: reply }] };

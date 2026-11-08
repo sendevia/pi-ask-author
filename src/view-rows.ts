@@ -11,7 +11,7 @@
  */
 
 import { truncateToWidth, visibleWidth, wrapTextWithAnsi } from "@earendil-works/pi-tui";
-import { divider, padToVisibleWidth, pushWrapped, safeLine } from "./format.js";
+import { divider, padToVisibleWidth, pushWrapped, safeLine, windowSlice, clampWindowOffset } from "./format.js";
 import {
   hasQuestionNote,
   type AskAuthorFormModel,
@@ -22,6 +22,40 @@ import {
 import { ICONS, LAYOUT_CONFIG } from "./layout.js";
 import { TEXTS } from "./texts.js";
 import type { Theme } from "./theme.js";
+
+/**
+ * 屏幕行范围（0-based，半开区间）：鼠标命中测试与滚轮分区共用
+ */
+export interface RowRange {
+  /** 首行（含） */
+  readonly start: number;
+  /** 结束行（不含） */
+  readonly end: number;
+}
+
+/**
+ * Tab 栏上一段可点击标签的位置（行号为 Tab 栏内的相对行，列为该行内的可见列区间）
+ */
+export interface TabSegment {
+  /** 该标签对应的页索引（题目索引，`questionCount` 为总览页） */
+  readonly tab: number;
+  /** Tab 栏内的相对行号（0-based） */
+  readonly row: number;
+  /** 起始列（含） */
+  readonly start: number;
+  /** 结束列（不含） */
+  readonly end: number;
+}
+
+/**
+ * Tab 导航栏的渲染产物
+ */
+export interface TabBar {
+  /** Tab 栏行（末尾带单横分隔线） */
+  readonly lines: string[];
+  /** 各标签的可点击位置（供组件做鼠标命中） */
+  readonly segments: readonly TabSegment[];
+}
 
 /**
  * 解析菜单选项的展示标签（作者可见文案兜底入口）
@@ -155,7 +189,7 @@ function tabLabelText(model: AskAuthorFormModel, questionIndex: number, displayI
  * @param currentTab - 激活页索引（题目顺序索引；`questionCount` 为总览页）
  * @param renderWidth - 终端可视宽度限制
  * @param expansionPending - 是否有推演请求在途（为 true 时激活页标签改为占位文案）
- * @returns Tab 导航栏终端行数组（至少含末尾分隔线一行；超宽时标签折为多行）
+ * @returns Tab 栏行与各标签的可点击位置（行数组至少含末尾分隔线一行；超宽时标签折为多行）
  */
 export function buildTabLines(
   theme: Theme,
@@ -163,10 +197,11 @@ export function buildTabLines(
   currentTab: number,
   renderWidth: number,
   expansionPending = false,
-): string[] {
+): TabBar {
   const isSubmitTab = currentTab === model.questionCount;
   const tabLines: string[] = [];
-  const tabSegments: string[] = [];
+  const segments: TabSegment[] = [];
+  const tabSegments: { tab: number; text: string }[] = [];
   const placeholderText = ` ${TEXTS.tabs.expansionPlaceholder} `;
   for (const [displayIndex, questionIndex] of model.getVisibleQuestionIndices().entries()) {
     const isActive = questionIndex === currentTab;
@@ -177,9 +212,10 @@ export function buildTabLines(
         ? placeholderText
         : ` ${icon} ${tabLabelText(model, questionIndex, displayIndex + 1)} `;
     const color = isActive ? (expansionPending ? "warning" : "accent") : answered ? "success" : "muted";
-    tabSegments.push(
-      isActive ? theme.bg("selectedBg", theme.fg(color, theme.bold(activeLabel))) : theme.fg(color, activeLabel),
-    );
+    tabSegments.push({
+      tab: questionIndex,
+      text: isActive ? theme.bg("selectedBg", theme.fg(color, theme.bold(activeLabel))) : theme.fg(color, activeLabel),
+    });
   }
 
   const submitText = isSubmitTab && expansionPending ? placeholderText : ` ${TEXTS.tabs.submitTab} `;
@@ -190,16 +226,17 @@ export function buildTabLines(
     : model.areAllQuestionsAnswered()
       ? "success"
       : "dim";
-  tabSegments.push(
-    isSubmitTab
+  tabSegments.push({
+    tab: model.questionCount,
+    text: isSubmitTab
       ? theme.bg("selectedBg", theme.fg(submitColor, theme.bold(submitText)))
       : theme.fg(submitColor, submitText),
-  );
+  });
 
   let row = "";
   let rowWidth = 0;
   for (const seg of tabSegments) {
-    const segWidth = visibleWidth(seg);
+    const segWidth = visibleWidth(seg.text);
     if (rowWidth > 0 && rowWidth + 1 + segWidth > renderWidth) {
       tabLines.push(safeLine(row, renderWidth));
       row = "";
@@ -208,27 +245,88 @@ export function buildTabLines(
       row += " ";
       rowWidth += 1;
     }
-    row += seg;
+    segments.push({ tab: seg.tab, row: tabLines.length, start: rowWidth, end: rowWidth + segWidth });
+    row += seg.text;
     rowWidth += segWidth;
   }
   tabLines.push(safeLine(row, renderWidth));
   tabLines.push(theme.fg("dim", divider(renderWidth)));
 
-  return tabLines;
+  return { lines: tabLines, segments };
 }
 
 /**
- * 原地追加推演占位页（替换作答页 / 总览页内容，推演在途期间不接受任何作答输入）
- * @param lines - 输出行数组（原地追加）
+ * 构建推演在途占位页（整页：顶部分割线 / Tab 栏 / 运行提示 / 补充空行 / 取消提示 / 底部分割线）
+ * 整页占满终端高度，推演在途期间不接受除取消外的任何输入
  * @param theme - 主题样式提供者
- * @param width - 终端可视宽度限制（说明文案超宽时按单空格悬挂缩进折行）
+ * @param tabLines - 题目导航 Tab 栏行（组件缓存）
+ * @param renderWidth - 终端可视宽度限制（说明文案超宽时按单空格悬挂缩进折行）
+ * @param terminalRows - 终端可视行数
+ * @returns 恰好占满终端高度的整页行数组
  */
-export function pushExpansionPlaceholder(lines: string[], theme: Theme, width: number): void {
+export function renderExpansionPlaceholderPage(
+  theme: Theme,
+  tabLines: readonly string[],
+  renderWidth: number,
+  terminalRows: number,
+): string[] {
+  const lines: string[] = [];
+  pushFrameRule(lines, theme, renderWidth);
+  lines.push(...tabLines);
+
+  const tail: string[] = [];
+  pushHelpFooter(tail, [TEXTS.help.cancel], theme, renderWidth);
+  pushFrameRule(tail, theme, renderWidth);
+
   lines.push("");
   lines.push(` ${theme.fg("warning", theme.bold(TEXTS.status.expansionRunning))}`);
   lines.push("");
-  pushWrapped(lines, theme.fg("dim", ` ${TEXTS.view.expansionPendingHint}`), width, " ");
-  lines.push("");
+  pushWrapped(lines, theme.fg("dim", ` ${TEXTS.view.expansionPendingHint}`), renderWidth, " ");
+
+  const used = lines.length;
+  for (let i = used + tail.length; i < terminalRows; i++) lines.push("");
+  lines.push(...tail);
+  return lines;
+}
+
+/**
+ * 固定高度内容区的渲染产物
+ */
+export interface ScrollBand {
+  /** 恰好 `height` 行的内容区 */
+  readonly lines: string[];
+  /** 本帧可视内容行数（内容超出时已扣除滚动信息行） */
+  readonly viewHeight: number;
+}
+
+/**
+ * 把完整内容切成固定高度的内容区：超出时末行换成滚动信息行，不足时补空行
+ * 作答页的内容预览区与提交页的答卷内容区共用本函数，保证两处的分页与滚动提示完全一致
+ * @param fullLines - 未切片的完整内容行（不修改入参）
+ * @param height - 内容区占用行数
+ * @param scrollOffset - 当前滚动位移（在本地收敛，不写回）
+ * @param theme - 主题样式提供者
+ * @param width - 单行可见宽度上限
+ * @returns 恰好 `height` 行的内容区与本帧可视行数
+ */
+export function buildScrollBand(
+  fullLines: readonly string[],
+  height: number,
+  scrollOffset: number,
+  theme: Theme,
+  width: number,
+): ScrollBand {
+  const total = fullLines.length;
+  const scrollable = total > height;
+  const viewHeight = scrollable ? Math.max(1, height - 1) : height;
+  const offset = clampWindowOffset(scrollOffset, total, viewHeight);
+  const lines = windowSlice(fullLines, offset, viewHeight).map((line) => safeLine(line, width));
+  if (scrollable) {
+    const scrollInfo = TEXTS.view.previewScrollInfo(offset + 1, Math.min(total, offset + viewHeight), total);
+    lines.push(safeLine(`  ${theme.fg("dim", scrollInfo)}`, width));
+  }
+  while (lines.length < height) lines.push("");
+  return { lines, viewHeight };
 }
 
 /**

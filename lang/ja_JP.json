@@ -1,6 +1,5 @@
 {
   "tool": { "label": "作者に確認" },
-  "programStatus": { "awaitingAuthor": "作者の回答待ち" },
   "command": {
     "name": "ask-author",
     "description": "ask_author 創作確認ツールの説明を表示",
@@ -125,9 +124,7 @@
     "optionNotePrefix": { "template": "{icon.note} 選択肢の補足説明（{optLabel}）：", "params": ["optLabel"] },
     "customNoteLabel": { "template": "{icon.note} 質問の補足説明：" },
     "allDonePrompt": { "template": " {icon.check} すべて完了しました。Enter/Ctrl+S で提出、Tab/hl/1〜9 で戻って修正" },
-    "pendingWarning": { "template": " {icon.unchecked} 未完了の質問があります。Enter で回答、Tab/hl/1〜9 で切り替えて修正" },
-    "topMore": { "template": "  {icon.scrollUp} 上にあと {count} 行", "params": ["count"] },
-    "bottomMore": { "template": "  {icon.scrollDown} 下にあと {count} 行", "params": ["count"] }
+    "pendingWarning": { "template": " {icon.unchecked} 未完了の質問があります。Enter で回答、Tab/hl/1〜9 で切り替えて修正" }
   },
   "card": {
     "callQuestionAndOptionCount": { "template": "{qCount} 問 • {optCount} 選択肢", "params": ["qCount", "optCount"] },

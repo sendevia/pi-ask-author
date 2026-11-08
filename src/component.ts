@@ -5,6 +5,7 @@
  * 核心架构特性：
  * - 本组件只负责交互状态机、按键路由与整屏帧缓存；题目页、总览页与编辑器页的排版分别由 `view-question` / `view-summary` / `view-editor` 构建
  * - 作答页的分带排版与预览区高度由 `QuestionView` 判定；预览与总览视口行数随终端高度伸缩
+ * - 作答界面挂载为整屏覆盖层，并实现 `handleMouse`：滚轮在预览区内滚预览内容、其余位置移动选项光标、总览页滚答卷内容；左键点击题目标签切页、点击选项行选定、编辑页点击定位光标
  * - 多级缓存失效：整屏（尺寸键 + 状态突变清空）、Tab 栏 / 菜单项（`revision` 键）、视图层内容缓存（由 `touchDerived` 统一清空）
  * - 逐题独立光标记忆与 `1~9` 跳转题目；内置编辑器透传 Focusable 以定位 IME 候选框
  * - 无输入框页面把输入法全角字符收敛为半角，`【`/`】` 与全角字母数字一样命中快捷键
@@ -13,7 +14,7 @@
  * - Esc / Ctrl+C 双通道取消（输入模式二次确认）；定时器、Abort 监听与缓存池全量回收
  *
  * 渲染纯度不变量：`render()` 及其可达被调函数禁止写入语义状态（`currentTab`、光标与各 `*ScrollOffset`、`inputMode`、`editTarget`、`editorEscArmed`、`statusMessage`、`isFinished`）；滚动位移归一化一律归属输入路径
- * 可写入透明备忘：`cached*`、`tabCache`、`menuCache`、`previewViewportObservation` 与视图层内部缓存均为「渲染输入的纯函数」缓存
+ * 可写入透明备忘：`cached*`、`tabCache`、`menuCache`、`previewViewportObservation`、`previewBandObservation` 与视图层内部缓存均为「渲染输入的纯函数」缓存
  *
  * 依赖方向：component.ts → theme / texts / format / model / expansion / view-editor / view-question / view-rows / view-summary；本组件只做按键路由、推演编排与整屏缓存编排
  */
@@ -27,6 +28,8 @@ import {
   type EditorTheme,
   type Focusable,
   type TUI,
+  type TuiMouseEvent,
+  type TuiMouseEventResult,
 } from "@earendil-works/pi-tui";
 import { clamp, clampWindowOffset, normalizeImeKey, safeLine } from "./format.js";
 import type { ExpansionRequest, ExpansionRunner } from "./expansion.js";
@@ -42,10 +45,17 @@ import {
 import type { ExpansionPayload, InsertPosition } from "./schema.js";
 import { TEXTS } from "./texts.js";
 import type { Theme } from "./theme.js";
-import { renderEditorPage } from "./view-editor.js";
-import { QuestionView, type PreviewViewport } from "./view-question.js";
-import { buildTabLines, optionLabelOf, pushExpansionPlaceholder, pushFrameRule } from "./view-rows.js";
-import { SummaryView, summaryPageSize } from "./view-summary.js";
+import { renderEditorPage, type EditorArea } from "./view-editor.js";
+import { QuestionView, type MenuItemHit, type PreviewViewport } from "./view-question.js";
+import {
+  buildTabLines,
+  optionLabelOf,
+  renderExpansionPlaceholderPage,
+  type RowRange,
+  type TabBar,
+  type TabSegment,
+} from "./view-rows.js";
+import { SummaryView, type SummaryViewport } from "./view-summary.js";
 
 /**
  * 实时推演服务（由入口层装配模型调用；缺省表示本表单不推演）
@@ -127,14 +137,33 @@ export class AskAuthorComponent implements Component, Focusable {
   /** 整屏已格式化终端行缓存 */
   private cachedLines?: string[];
 
-  /** Tab 栏行缓存（键：当前页 + `revision` + 列宽） */
-  private tabCache?: { key: string; lines: string[] };
+  /** Tab 栏行缓存（键：当前页 + `revision` + 列宽；行与标签可点击位置一并缓存） */
+  private tabCache?: { key: string; bar: TabBar };
 
   /** 菜单项派生缓存（键：题号 + `revision`，消除 render/输入路径重复构建） */
   private menuCache?: { tab: number; revision: number; items: MenuItem[] };
 
   /** 上一帧预览视口的观察元数据（渲染写入、输入路径读取以归一化位移） */
   private previewViewportObservation?: PreviewViewport;
+
+  /** 上一帧内容预览区的行范围（渲染写入；鼠标滚轮据此区分预览区与选项区） */
+  private previewBandObservation?: RowRange;
+
+  /** 上一帧 Tab 栏的行范围与各标签可点击位置（渲染写入；鼠标点击据此切换题目） */
+  private tabHitAreas?: { readonly band: RowRange; readonly segments: readonly TabSegment[] };
+
+  /** 上一帧菜单项的整页行范围（渲染写入；鼠标点击据此移动光标与激活条目） */
+  private menuHitAreas?: readonly MenuItemHit[];
+
+  /** 上一帧总览页内容视口（渲染写入；滚动位移据此归一化） */
+  private summaryViewportObservation?: SummaryViewport;
+
+  /** 上一帧编辑框位置（渲染写入；输入模式下把鼠标点击换算为编辑框内坐标） */
+  private editorAreaObservation?: EditorArea;
+
+  /** 鼠标按下时的目标（按下与松开同在该目标上才算一次点击） */
+  private mousePressedTab?: number;
+  private mousePressedItem?: number;
 
   /** 当前编辑器针对的目标（题目整体或指定选项） */
   private editTarget?: EditTarget;
@@ -253,6 +282,13 @@ export class AskAuthorComponent implements Component, Focusable {
     }
     this.clearDerivedCaches();
     this.previewViewportObservation = undefined;
+    this.previewBandObservation = undefined;
+    this.tabHitAreas = undefined;
+    this.menuHitAreas = undefined;
+    this.summaryViewportObservation = undefined;
+    this.editorAreaObservation = undefined;
+    this.mousePressedTab = undefined;
+    this.mousePressedItem = undefined;
     this.clearFrameCaches();
   }
 
@@ -357,11 +393,6 @@ export class AskAuthorComponent implements Component, Focusable {
   private get terminalRows(): number {
     const rows = this.tui.terminal?.rows;
     return typeof rows === "number" && rows > 0 ? rows : 24;
-  }
-
-  /** 总览页视口行数上限（随终端高度自适应；区间 `[4, LAYOUT_CONFIG.summaryPageSize]`） */
-  private get summaryViewportHeight(): number {
-    return summaryPageSize(this.terminalRows);
   }
 
   /**
@@ -732,6 +763,120 @@ export class AskAuthorComponent implements Component, Focusable {
   }
 
   /**
+   * Component 接口约定：接收鼠标事件
+   * 作答界面是整屏覆盖层，滚轮一律标记为已消费，不再让会话记录跟着滚动；区域分工为「预览区内滚预览内容，其余位置移动选项光标」
+   * 左键单击沿 pi 列表组件的习惯：按下先把光标移到指针下的条目，同一条目上松开才算一次点击并激活它；Tab 标签按松开动作切页
+   * 未命中的按下与松开不接管，交回 pi 做文本选择
+   * 鼠标事件属于输入路径，本方法写回滚动位移与光标
+   * @param event - 归一化鼠标事件（宿主编排已把坐标换算为组件内坐标）
+   * @returns 已消费的滚轮与命中点击；其余鼠标事件不处理
+   */
+  handleMouse(event: TuiMouseEvent): TuiMouseEventResult | undefined {
+    if (event.type === "wheel") {
+      if (this.isFinished || this.disposed || this.expansionPending || this.inputMode) return { handled: true };
+
+      const delta = event.wheelDelta ?? 0;
+      if (this.isSubmitTab) {
+        this.scrollSummaryBy(delta);
+        return { handled: true };
+      }
+
+      const band = this.previewBandObservation;
+      if (band && event.y >= band.start && event.y < band.end) {
+        this.scrollPreviewBy(delta);
+      } else {
+        this.moveCursor({ delta: delta < 0 ? -1 : 1 });
+      }
+      return { handled: true };
+    }
+
+    if (this.isFinished || this.disposed || this.expansionPending) return undefined;
+
+    // 输入模式下只转发左键点击：按下与拖动留给 pi 的文本选择，松开时宿主合成的 click 才是定位光标的动作
+    if (this.inputMode) {
+      if (event.type !== "click" || event.button !== "left") return undefined;
+      const area = this.editorAreaObservation;
+      if (!area) return undefined;
+      const y = event.y - area.top;
+      const x = event.x - area.left;
+      if (y < 0 || y >= area.height || x < 0 || x >= area.width) return undefined;
+      const result = this.editor.handleMouse({
+        ...event,
+        x,
+        y,
+        width: area.width,
+        height: area.height,
+        screenX: event.screenX - area.left,
+        screenY: event.screenY - area.top,
+      });
+      if (!result) return undefined;
+      // 编辑器内部光标移动不会改变它的渲染输入，需主动作废整屏帧缓存
+      this.touch();
+      return result;
+    }
+
+    if (event.button !== "left" || (event.type !== "press" && event.type !== "click")) return undefined;
+
+    if (event.type === "press") {
+      const tab = this.tabAt(event.y, event.x);
+      if (tab !== undefined) {
+        this.mousePressedTab = tab;
+        return { handled: true };
+      }
+      const itemIndex = this.menuItemAt(event.y);
+      if (itemIndex === undefined) return undefined;
+      this.mousePressedItem = itemIndex;
+      this.moveCursor(itemIndex);
+      return { handled: true };
+    }
+
+    const pressedTab = this.mousePressedTab;
+    const pressedItem = this.mousePressedItem;
+    this.mousePressedTab = undefined;
+    this.mousePressedItem = undefined;
+
+    if (pressedTab !== undefined && this.tabAt(event.y, event.x) === pressedTab) {
+      this.switchTab(pressedTab);
+      return { handled: true };
+    }
+    if (pressedItem !== undefined && this.menuItemAt(event.y) === pressedItem) {
+      const q = this.model.getQuestion(this.currentTab);
+      const item = this.currentMenuItem();
+      if (q && item) this.activateMenuItem(item, q);
+      return { handled: true };
+    }
+    return undefined;
+  }
+
+  /**
+   * 命中题目导航标签
+   * @param y - 组件内行号
+   * @param x - 组件内列号
+   * @returns 命中的页索引；未落在任何标签上时为 undefined
+   */
+  private tabAt(y: number, x: number): number | undefined {
+    const areas = this.tabHitAreas;
+    if (!areas || y < areas.band.start || y >= areas.band.end) return undefined;
+    const row = y - areas.band.start;
+    for (const segment of areas.segments) {
+      if (segment.row === row && x >= segment.start && x < segment.end) return segment.tab;
+    }
+    return undefined;
+  }
+
+  /**
+   * 命中选项菜单条目
+   * @param y - 组件内行号
+   * @returns 菜单项索引；未落在条目行上时为 undefined
+   */
+  private menuItemAt(y: number): number | undefined {
+    for (const hit of this.menuHitAreas ?? []) {
+      if (y >= hit.range.start && y < hit.range.end) return hit.index;
+    }
+    return undefined;
+  }
+
+  /**
    * 题目作答页常规键路由（移动 / 勾选 / 前进 / 补充说明；子路由均为先匹配先消费）
    * @param data - 终端按键序列
    */
@@ -809,7 +954,6 @@ export class AskAuthorComponent implements Component, Focusable {
 
   /**
    * 预览区垂直滚动键（方括号 / Alt+上下）
-   * 滚动位移归一化归属输入路径：以渲染帧写入的 {@link previewViewportObservation} 为界经 `clampWindowOffset` 收敛（缺观察元数据时按预览区最小高度退化）
    * @param data - 按键序列
    * @returns 是否已消费该按键
    */
@@ -821,12 +965,35 @@ export class AskAuthorComponent implements Component, Focusable {
       step = LAYOUT_CONFIG.previewScrollStep;
     }
     if (step === 0) return false;
+    this.scrollPreviewBy(step);
+    return true;
+  }
+
+  /**
+   * 按行数滚动预览区内容
+   * 滚动位移归一化归属输入路径：以渲染帧写入的 {@link previewViewportObservation} 为界经 `clampWindowOffset` 收敛（缺观察元数据时按预览区最小高度退化）
+   * @param lines - 行位移（正下负上）
+   */
+  private scrollPreviewBy(lines: number): void {
     const observation = this.previewViewportObservation;
     const viewHeight = observation?.viewHeight ?? LAYOUT_CONFIG.previewMinHeight;
     const total = observation?.total ?? 0;
-    this.previewScrollOffset = clampWindowOffset(this.previewScrollOffset + step, total, viewHeight);
+    this.previewScrollOffset = clampWindowOffset(this.previewScrollOffset + lines, total, viewHeight);
     this.touch();
-    return true;
+  }
+
+  /**
+   * 按行数滚动总览页内容
+   * @param lines - 行位移（正下负上）
+   */
+  private scrollSummaryBy(lines: number): void {
+    const observation = this.summaryViewportObservation;
+    const pageSize = observation?.viewHeight ?? LAYOUT_CONFIG.previewMinHeight;
+    const total = observation?.total ?? 0;
+    // 先归一化过期位移（End 的超大值 / 题目变更后总行数变短）再叠加步进，保证 End 后按 ↑ 能回退
+    const base = clampWindowOffset(this.summaryScrollOffset, total, pageSize);
+    this.summaryScrollOffset = clampWindowOffset(base + lines, total, pageSize);
+    this.touch();
   }
 
   /**
@@ -933,12 +1100,7 @@ export class AskAuthorComponent implements Component, Focusable {
     let step = this.summaryScrollStep(data);
     if (step === 0 && matchesKey(data, Key.space)) step = LAYOUT_CONFIG.summaryScrollStep;
     if (step === 0) return;
-    const total = this.summaryView.contentLineCount;
-    const pageSize = this.summaryViewportHeight;
-    // 先归一化过期位移（End 的超大值 / 题目变更后总行数变短）再叠加步进，保证 End 后按 ↑ 能回退
-    const base = clampWindowOffset(this.summaryScrollOffset, total, pageSize);
-    this.summaryScrollOffset = clampWindowOffset(base + step, total, pageSize);
-    this.touch();
+    this.scrollSummaryBy(step);
   }
 
   /**
@@ -957,19 +1119,19 @@ export class AskAuthorComponent implements Component, Focusable {
   // ===== 视图渲染层 =====
 
   /**
-   * 当前帧的 Tab 导航栏行（按当前页 / 推演在途 / `revision` / 列宽记忆化）
+   * 当前帧的 Tab 导航栏（按当前页 / 推演在途 / `revision` / 列宽记忆化）
    * @param layoutWidth - 终端布局列宽
-   * @returns Tab 栏行（末尾带单横分隔线）
+   * @returns Tab 栏行与各标签可点击位置
    */
-  private tabLines(layoutWidth: number): string[] {
+  private tabBar(layoutWidth: number): TabBar {
     const key = `${this.currentTab}_${this.expansionPending ? "p" : "-"}_${this.model.revision}_${layoutWidth}`;
     if (!this.tabCache || this.tabCache.key !== key) {
       this.tabCache = {
         key,
-        lines: buildTabLines(this.theme, this.model, this.currentTab, layoutWidth, this.expansionPending),
+        bar: buildTabLines(this.theme, this.model, this.currentTab, layoutWidth, this.expansionPending),
       };
     }
-    return this.tabCache.lines;
+    return this.tabCache.bar;
   }
 
   /**
@@ -991,30 +1153,46 @@ export class AskAuthorComponent implements Component, Focusable {
     }
 
     const lines: string[] = [];
-    const tabLines = this.tabLines(layoutWidth);
+    const tabBar = this.tabBar(layoutWidth);
 
     if (this.expansionPending) {
-      // 推演在途占位页没有预览内容，Tab 栏保持在顶部
-      pushFrameRule(lines, this.theme, layoutWidth);
-      lines.push(...tabLines);
-      pushExpansionPlaceholder(lines, this.theme, layoutWidth);
+      // 推演在途占位页也是整页：在途期间不响应鼠标点击
+      lines.push(...renderExpansionPlaceholderPage(this.theme, tabBar.lines, layoutWidth, renderHeight));
+      this.tabHitAreas = undefined;
+      this.menuHitAreas = undefined;
+      this.summaryViewportObservation = undefined;
+      this.editorAreaObservation = undefined;
     } else if (this.isSubmitTab) {
-      pushFrameRule(lines, this.theme, layoutWidth);
-      lines.push(...tabLines);
-      lines.push(
-        ...this.summaryView.render(
-          this.summaryScrollOffset,
-          summaryPageSize(renderHeight),
-          this.statusLine,
-          layoutWidth,
-        ),
+      // 总览页自带框架线与 Tab 栏，答卷内容占满顶部分内容区
+      const view = this.summaryView.render(
+        tabBar.lines,
+        this.summaryScrollOffset,
+        this.statusLine,
+        layoutWidth,
+        renderHeight,
       );
+      lines.push(...view.lines);
+      this.tabHitAreas = { band: view.tabRange, segments: tabBar.segments };
+      this.menuHitAreas = undefined;
+      this.summaryViewportObservation = view.viewport;
+      this.editorAreaObservation = undefined;
     } else if (this.inputMode) {
-      pushFrameRule(lines, this.theme, layoutWidth);
-      lines.push(...tabLines);
-      lines.push(
-        ...renderEditorPage(this.theme, this.model, this.currentTab, this.editTarget, this.editor, layoutWidth),
+      // 编辑页同样整页占满：编辑框之后补空行，帮助栏与框架线贴在底部
+      const page = renderEditorPage(
+        this.theme,
+        this.model,
+        this.currentTab,
+        this.editTarget,
+        this.editor,
+        tabBar.lines,
+        layoutWidth,
+        renderHeight,
       );
+      lines.push(...page.lines);
+      this.tabHitAreas = undefined;
+      this.menuHitAreas = undefined;
+      this.summaryViewportObservation = undefined;
+      this.editorAreaObservation = page.editorArea;
     } else {
       // 作答页自上而下自带框架线、预览区、Tab 栏与选项区
       const view = this.questionView.render(
@@ -1026,13 +1204,18 @@ export class AskAuthorComponent implements Component, Focusable {
           statusMessage: this.statusLine,
           menuItems: this.getMenuItems(),
           expandable: this.model.canExpandOnConfirm(this.currentTab, this.expansion !== undefined),
-          tabLines,
+          tabLines: tabBar.lines,
         },
         layoutWidth,
         renderHeight,
       );
       lines.push(...view.lines);
       if (view.previewViewport) this.previewViewportObservation = view.previewViewport;
+      if (view.previewBand) this.previewBandObservation = view.previewBand;
+      if (view.tabRange) this.tabHitAreas = { band: view.tabRange, segments: tabBar.segments };
+      this.menuHitAreas = view.menuItemHits;
+      this.summaryViewportObservation = undefined;
+      this.editorAreaObservation = undefined;
     }
 
     // 3. 最终行宽保护（按调用方真实列宽截断）与缓存写入

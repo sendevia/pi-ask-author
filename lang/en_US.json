@@ -1,6 +1,5 @@
 {
   "tool": { "label": "Consult Author" },
-  "programStatus": { "awaitingAuthor": "Waiting for the author" },
   "command": {
     "name": "ask-author",
     "description": "Show the ask_author consultation tool reference",
@@ -147,9 +146,7 @@
     },
     "pendingWarning": {
       "template": " {icon.unchecked} Some questions are unanswered; press Enter to answer, Tab/hl/1-9 to switch"
-    },
-    "topMore": { "template": "  {icon.scrollUp} {count} more lines above", "params": ["count"] },
-    "bottomMore": { "template": "  {icon.scrollDown} {count} more lines below", "params": ["count"] }
+    }
   },
   "card": {
     "callQuestionAndOptionCount": {

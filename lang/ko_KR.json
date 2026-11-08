@@ -1,6 +1,5 @@
 {
   "tool": { "label": "작가에게 문의" },
-  "programStatus": { "awaitingAuthor": "작성자 응답 대기" },
   "command": {
     "name": "ask-author",
     "description": "ask_author 창작 문의 도구 설명 보기",
@@ -125,9 +124,7 @@
     "optionNotePrefix": { "template": "{icon.note} 선택지 추가 설명（{optLabel}）: ", "params": ["optLabel"] },
     "customNoteLabel": { "template": "{icon.note} 질문 추가 설명: " },
     "allDonePrompt": { "template": " {icon.check} 모두 완료되었습니다. Enter/Ctrl+S로 제출, Tab/hl/1~9로 돌아가서 수정" },
-    "pendingWarning": { "template": " {icon.unchecked} 미완료된 질문이 있습니다. Enter로 답변, Tab/hl/1~9로 전환하여 수정" },
-    "topMore": { "template": "  {icon.scrollUp} 위에 {count}줄 더 있음", "params": ["count"] },
-    "bottomMore": { "template": "  {icon.scrollDown} 아래에 {count}줄 더 있음", "params": ["count"] }
+    "pendingWarning": { "template": " {icon.unchecked} 미완료된 질문이 있습니다. Enter로 답변, Tab/hl/1~9로 전환하여 수정" }
   },
   "card": {
     "callQuestionAndOptionCount": { "template": "{qCount}개 질문 • {optCount}개 선택지", "params": ["qCount", "optCount"] },

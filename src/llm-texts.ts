@@ -126,6 +126,8 @@ export const LLM_TEXTS = {
     /** 推演系统提示词（约束输出结构与新增范围，禁止复述既有内容） */
     systemPrompt: `You extend an interactive author decision form while the author answers it.
 
+The conversation above is the author's live writing session: take story facts, character names, established tone, and standing requests from it instead of inventing them.
+
 Input JSON: formTitle, formDescription, guidance, insert, maxAdditionalQuestions, trigger {index, id, title}, questions[].
 Each question carries index (1-based), id, title, tabLabel, description, multiSelect, minSelect, maxSelect, allowEmpty, allowCustom, showIf, expansion {enabled, guidance, insert, addedQuestions, addedOptions}, visible, status ("answered" | "skipped" | "unanswered" | "hidden"), selected (option labels), note, and options[] with label, description, hasPreview, showIf, visible, selected, note.
 trigger is the question the author just confirmed; answered questions are settled, unanswered and hidden ones are still open.
@@ -144,6 +146,8 @@ Rules:
 - No prose, no code fences, no trailing commas.`,
     /** 推演用户消息前缀（英文单行，后接 JSON 载荷） */
     userPreamble: "Extend this author decision form. Input JSON:",
+    /** 在途工具调用的占位结果正文（推演发生在该调用执行期内，结果将在表单提交后返回） */
+    pendingToolResult: "The author is answering this form in the terminal; this call's result arrives once the form is submitted.",
     /** 推演失败诊断（英文短句；作者界面经 `status.expansionFailed` 呈现，不直接展示原文） */
     errors: {
       /** 当前会话没有可用模型 */

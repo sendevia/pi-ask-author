@@ -12,7 +12,7 @@
  */
 
 import { visibleWidth } from "@earendil-works/pi-tui";
-import { clampWindowOffset, pushWrapped, safeLine, windowSlice } from "./format.js";
+import { pushWrapped } from "./format.js";
 import { LAYOUT_CONFIG } from "./layout.js";
 import {
   hasQuestionNote,
@@ -24,7 +24,15 @@ import {
 import { buildFullPreviewContentLines } from "./novel-markdown.js";
 import { TEXTS } from "./texts.js";
 import type { Theme } from "./theme.js";
-import { formatMenuItemRow, optionLabelOf, pushFrameRule, pushHelpFooter, pushStatusMessage } from "./view-rows.js";
+import {
+  buildScrollBand,
+  formatMenuItemRow,
+  optionLabelOf,
+  pushFrameRule,
+  pushHelpFooter,
+  pushStatusMessage,
+  type RowRange,
+} from "./view-rows.js";
 
 /** 预览缓存池容量上限（条目数），防止长会话下缓存无界增长 */
 const PREVIEW_CACHE_CAPACITY = 32;
@@ -57,12 +65,26 @@ export interface PreviewViewport {
   readonly viewHeight: number;
 }
 
+/** 菜单项在整页中的可点击行范围 */
+export interface MenuItemHit {
+  /** 菜单项索引（`state.menuItems` 的下标） */
+  readonly index: number;
+  /** 该条目占用的整页行范围 */
+  readonly range: RowRange;
+}
+
 /** 题目作答页渲染结果 */
 export interface QuestionViewResult {
   /** 整页终端行（含底部状态、帮助与框架线） */
   readonly lines: string[];
   /** 本帧预览视口；未渲染预览时为 undefined（沿用上一帧观察值） */
   readonly previewViewport?: PreviewViewport;
+  /** 本帧内容预览区行范围（滚轮路由依据） */
+  readonly previewBand?: RowRange;
+  /** Tab 栏占用的整页行范围（鼠标点击路由依据） */
+  readonly tabRange?: RowRange;
+  /** 各菜单项的整页行范围（鼠标点击路由依据） */
+  readonly menuItemHits?: readonly MenuItemHit[];
 }
 
 /**
@@ -89,7 +111,7 @@ function hasRichContent(
 /**
  * 内容预览区的本帧渲染结果
  */
-interface PreviewBand {
+interface RenderedPreviewBand {
   /** 恰好 `height` 行的预览区行 */
   readonly lines: string[];
   /** 本帧预览视口观察值（可视行数已扣除滚动信息行） */
@@ -121,7 +143,7 @@ export class QuestionView {
    * 渲染题目作答页：顶部分割线 → 内容预览区 → Tab 栏 → 标题块 → 选项区 → 状态与快捷键 → 底部分割线
    * @param state - 只读视口状态（当前题、光标、滚动位移、状态通知、菜单项与 Tab 栏）
    * @param renderWidth - 终端布局列宽
-   * @param terminalRows - 终端可视行数（扣除工具调用卡片与预览区以下的各带后，剩余行全部给预览区）
+   * @param terminalRows - 终端可视行数（作答页是整屏覆盖层，除预览区外的各带占完后剩余行全部给预览区）
    * @returns 整页终端行与本帧预览视口
    */
   render(state: QuestionViewState, renderWidth: number, terminalRows: number): QuestionViewResult {
@@ -164,7 +186,7 @@ export class QuestionView {
     }
     body.push("");
 
-    this.pushListItems(body, q, st, state, renderWidth - 2);
+    const menuItemHits = this.pushListItems(body, q, st, state, renderWidth - 2);
 
     pushStatusMessage(body, this.theme, state.statusMessage);
 
@@ -201,7 +223,7 @@ export class QuestionView {
     // 2. 预览区占满终端剩余高度（不设上限）
     const previewHeight = Math.max(
       LAYOUT_CONFIG.previewMinHeight,
-      terminalRows - LAYOUT_CONFIG.terminalChromeRows - 1 - state.tabLines.length - body.length,
+      terminalRows - 1 - state.tabLines.length - body.length,
     );
     const currentOptNote =
       currentItem?.type === "option" && currentItem.optionIndex !== undefined
@@ -217,11 +239,21 @@ export class QuestionView {
       state.previewScrollOffset,
     );
 
-    // 3. 按带序输出整页
+    // 3. 按带序输出整页（顶部分割线占首行，预览区紧接其后）
     const lines: string[] = [];
     pushFrameRule(lines, this.theme, renderWidth);
     lines.push(...preview.lines, ...state.tabLines, ...body);
-    return { lines, previewViewport: preview.viewport };
+    const bodyStart = 1 + previewHeight + state.tabLines.length;
+    return {
+      lines,
+      previewViewport: preview.viewport,
+      previewBand: { start: 1, end: 1 + previewHeight },
+      tabRange: { start: 1 + previewHeight, end: 1 + previewHeight + state.tabLines.length },
+      menuItemHits: menuItemHits.map((hit) => ({
+        index: hit.index,
+        range: { start: bodyStart + hit.range.start, end: bodyStart + hit.range.end },
+      })),
+    };
   }
 
   /**
@@ -277,22 +309,10 @@ export class QuestionView {
     targetWidth: number,
     height: number,
     scrollOffset: number,
-  ): PreviewBand {
+  ): RenderedPreviewBand {
     const fullLines = item ? this.previewContentLines(tab, item, customText, optionNote, targetWidth) : [];
-    const total = fullLines.length;
-    // 内容超出预览区时末行让给滚动信息行
-    const scrollable = total > height;
-    const visible = scrollable ? Math.max(1, height - 1) : height;
-    const offset = clampWindowOffset(scrollOffset, total, visible);
-    const lines = windowSlice(fullLines, offset, visible).map((line) => safeLine(line, targetWidth));
-
-    if (scrollable) {
-      const scrollInfo = TEXTS.view.previewScrollInfo(offset + 1, Math.min(total, offset + visible), total);
-      lines.push(safeLine(`  ${this.theme.fg("dim", scrollInfo)}`, targetWidth));
-    }
-    while (lines.length < height) lines.push("");
-
-    return { lines, viewport: { total, viewHeight: visible } };
+    const band = buildScrollBand(fullLines, height, scrollOffset, this.theme, targetWidth);
+    return { lines: band.lines, viewport: { total: fullLines.length, viewHeight: band.viewHeight } };
   }
 
   /**
@@ -302,6 +322,7 @@ export class QuestionView {
    * @param st - 作答状态
    * @param state - 只读视口状态
    * @param rowWidth - 选项行可用列宽
+   * @returns 各菜单项在 `lines` 中的相对行范围（供视图换算为整页行号）
    */
   private pushListItems(
     lines: string[],
@@ -309,7 +330,8 @@ export class QuestionView {
     st: QuestionAnswerState,
     state: QuestionViewState,
     rowWidth: number,
-  ): void {
+  ): MenuItemHit[] {
+    const hits: MenuItemHit[] = [];
     if (state.listScrollOffset > 0) {
       lines.push(this.theme.fg("dim", TEXTS.view.listTopMore(state.listScrollOffset)));
     }
@@ -329,12 +351,15 @@ export class QuestionView {
         lines.push("");
       }
 
-      lines.push(...formatMenuItemRow(this.theme, item, isFocused, q, st, rowWidth));
+      const rowLines = formatMenuItemRow(this.theme, item, isFocused, q, st, rowWidth);
+      hits.push({ index: globalIndex, range: { start: lines.length, end: lines.length + rowLines.length } });
+      lines.push(...rowLines);
     }
 
     const remainingBelow = state.menuItems.length - (state.listScrollOffset + LAYOUT_CONFIG.visibleOptionCount);
     if (remainingBelow > 0) {
       lines.push(this.theme.fg("dim", TEXTS.view.listBottomMore(remainingBelow)));
     }
+    return hits;
   }
 }

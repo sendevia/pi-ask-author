@@ -4,7 +4,7 @@
  *
  * 核心架构特性：
  * - 执行流程只做守卫与分支：信号已中止 → 取消；非 TUI → 结构化错误；模型构建失败 → 条件错误或运行期异常；无题目 → 空题目错误；请求推演但无可用模型 → 结构化错误；UI 返回 → 取消或完成
- * - 实时推演的模型调用只在本文件装配（`createExpansionRunner`），推演用量累加后挂在工具结果的 `usage` 上
+ * - 实时推演的模型调用只在本文件装配（`createExpansionRunner`）：请求上下文取会话投影与生效系统提示词，与主对话同源，推演用量累加后挂在工具结果的 `usage` 上
  * - 结果构造、卡片渲染与执行编排分属 `tool-result.ts` / `tool-card.ts` / 本文件，宿主边界代码保持可独立测试
  * - 工具声明为 `model-only`（交互式 UI 只由模型直接发起），并标注只读、封闭世界，供权限扩展判断
  * - 本文件不注册监听器与定时器；组件级 AbortSignal 级联取消与 `dispose()` 幂等回收由 `AskAuthorComponent` 负责
@@ -13,6 +13,7 @@
  */
 
 import type { AgentToolResult, ExtensionAPI, ExtensionToolContext } from "@earendil-works/pi-coding-agent";
+import { convertToLlm } from "@earendil-works/pi-coding-agent";
 import { AskAuthorComponent, type ExpansionService } from "./component.js";
 import { buildExpansionUserMessage, expansionContext, parseExpansionReply, type ExpansionRunner } from "./expansion.js";
 import { cleanOptional } from "./format.js";
@@ -63,9 +64,38 @@ function addUsage(total: ToolUsage | undefined, usage: ToolUsage): ToolUsage {
 }
 
 /**
+ * 组装推演请求的历史消息：取会话投影，并为尚未返回的工具调用补上占位结果
+ * @param ctx - 扩展上下文
+ * @returns 与主对话同源的 provider 消息序列
+ */
+function buildSessionHistory(ctx: ExtensionToolContext) {
+  // 压缩感知的分支投影就是主对话送给模型的消息，推演与它共享前缀
+  const history = convertToLlm(ctx.sessionManager.buildSessionProjection().messages);
+  const answered = new Set(
+    history.flatMap((message) => (message.role === "toolResult" ? [message.toolCallId] : [])),
+  );
+  // 推演发生在 ask_author 的执行期内，本次调用（可能还有并行调用）尚无结果；补齐占位，保持调用与结果相邻
+  const pending = history.flatMap((message) =>
+    message.role === "assistant"
+      ? message.content.flatMap((part) => (part.type === "toolCall" && !answered.has(part.id) ? [part] : []))
+      : [],
+  );
+  for (const call of pending) {
+    history.push({
+      role: "toolResult",
+      toolCallId: call.id,
+      toolName: call.name,
+      content: [{ type: "text", text: TEXTS.expansion.pendingToolResult }],
+      isError: false,
+      timestamp: Date.now(),
+    });
+  }
+  return history;
+}
+
+/**
  * 构建实时推演执行器：用当前会话模型为表单追加后续题目与选项
- * @param ctx - 扩展上下文（提供当前模型与模型注册表）
- * @param questions - 当前表单的题目快照提供者（解析回复时用于过滤未知题目与重复标签）
+ * @param ctx - 扩展上下文（提供当前模型、模型注册表、会话投影与生效系统提示词）
  * @param onUsage - 用量回调（推演调用不计入主对话上下文，需回传宿主做成本统计）
  * @returns 推演执行器；当前会话无模型时返回 undefined
  */
@@ -80,8 +110,10 @@ function createExpansionRunner(
     const response = await ctx.modelRegistry.complete(
       model,
       {
-        systemPrompt: TEXTS.expansion.systemPrompt,
+        // 推演协议接在主对话系统提示词之后：写作规范与语言要求同源，JSON 输出契约仍居末位
+        systemPrompt: `${ctx.getSystemPrompt()}\n\n${TEXTS.expansion.systemPrompt}`,
         messages: [
+          ...buildSessionHistory(ctx),
           {
             role: "user",
             content: [{ type: "text", text: buildExpansionUserMessage(request) }],
@@ -212,8 +244,8 @@ export default function askAuthorExtension(pi: ExtensionAPI): void {
             comp.bindAbortSignal(signal);
             return comp;
           },
-          // 作答期间向支持 OSC 7501 的终端上报「等待作者作答」，作者提交后宿主恢复常规状态
-          { blocked: { kind: "question", message: TEXTS.programStatus.awaitingAuthor } },
+          // 作答界面是整屏覆盖层：指针在任何位置按下滚轮都由本工具接收，不再滚动会话记录
+          { overlay: true, overlayOptions: { width: "100%", maxHeight: "100%", anchor: "top-left", margin: 0 } },
         );
 
         if (!result || result.cancelled) {
