@@ -1,13 +1,8 @@
 /**
  * @file view-summary.ts
- * @description 答卷总览确认页的视图构建层：内容区、分页、提示与操作栏
+ * @description 答卷总览确认页的视图构建：内容区、分页、提示与操作栏
  *
- * 核心架构特性：
- * - 内容构建器与提示构建器为无状态纯函数；`SummaryView` 只持有按（列宽, `revision`）失效的内容行缓存
- * - 内容区与作答页的内容预览区同构：均在顶部分割线之后、Tab 栏之前，占满剩余高度
- * - 多选分支一律经 `model.getSelectedIndices`（升序不变量由模型层集中保证）
- *
- * 依赖方向：view-summary.ts → format.ts / layout.ts / model.ts / texts.ts / theme.ts / view-rows.ts；禁止反向导入 `component.ts`
+ * 内容构建器与提示构建器无状态；`SummaryView` 只持有按列宽与 `revision` 失效的内容行缓存
  */
 
 import { pushWrapped } from "./format.js";
@@ -18,9 +13,9 @@ import type { Theme } from "./theme.js";
 import { buildScrollBand, pushFrameRule, pushHelpFooter, pushStatusMessage, type RowRange } from "./view-rows.js";
 
 /**
- * 构建总览页底部按键提示片段（依据可见题目数量动态增删跳转题目提示）
- * @param model - 问卷表单数据模型（提供可见题目数与作答完成度）
- * @returns 包含切换题目 / 滚动 / 提交 / 取消四项，可见题目数 > 1 时额外插入跳转题目提示
+ * 构建总览页底部按键提示片段（可见题目数大于 1 时插入跳转题目提示）
+ * @param model - 问卷模型
+ * @returns 切换题目 / 滚动 / 提交 / 取消，可见题目数大于 1 时额外插入跳转题目
  */
 export function buildSummaryHelpParts(model: AskAuthorFormModel): string[] {
   return [
@@ -32,9 +27,7 @@ export function buildSummaryHelpParts(model: AskAuthorFormModel): string[] {
   ];
 }
 
-/**
- * 总览页内容视口的观察值（渲染后回传组件，供输入路径归一化滚动位移）
- */
+/** 总览页内容视口的观察值（渲染后回传组件，用于归一化滚动位移） */
 export interface SummaryViewport {
   /** 未切片的完整内容行数 */
   readonly total: number;
@@ -42,9 +35,7 @@ export interface SummaryViewport {
   readonly viewHeight: number;
 }
 
-/**
- * 总览页渲染结果
- */
+/** 总览页渲染结果 */
 export interface SummaryViewResult {
   /** 整页终端行（含顶部分割线、内容区、Tab 栏、提示与帮助栏） */
   readonly lines: string[];
@@ -54,16 +45,14 @@ export interface SummaryViewResult {
   readonly tabRange: RowRange;
 }
 
-/**
- * 答卷总览与提交页构建器（持有内容行缓存，模型与主题在构造期固定）
- */
+/** 答卷总览与提交页构建器（持有内容行缓存，主题与模型在构造期固定） */
 export class SummaryView {
   /** 未切片内容行缓存（键：列宽 + `revision`） */
   private cache?: { width: number; revision: number; lines: string[] };
 
   /**
    * @param theme - 当前 TUI 主题
-   * @param model - 问卷模型（只读访问）
+   * @param model - 问卷模型
    */
   constructor(
     private readonly theme: Theme,
@@ -76,11 +65,11 @@ export class SummaryView {
   }
 
   /**
-   * 渲染总览页：顶部分割线 → 答卷总览内容区 → Tab 栏 → 标题与提示 → 帮助栏 → 底部分割线
-   * 内容区占满终端剩余高度，长答卷用 `[ ]` 或滚轮分页
+   * 渲染总览页：顶部分割线 → 内容区 → Tab 栏 → 标题与提示 → 帮助栏 → 底部分割线
+   * 内容区占满终端剩余高度，长答卷按滚轮分页
    * @param tabLines - 题目导航 Tab 栏行（组件缓存）
    * @param scrollOffset - 当前滚动位移（在本地收敛，不写回）
-   * @param statusMessage - 底部临时状态通知（可为空）
+   * @param statusMessage - 底部临时状态通知
    * @param renderWidth - 终端布局列宽
    * @param terminalRows - 终端可视行数
    * @returns 整页终端行、本帧内容视口与 Tab 栏行范围
@@ -132,12 +121,11 @@ export class SummaryView {
 
 /**
  * 构建未切片的完整答卷总览内容行
- * 逐题输出四段（状态徽章 + 题目标题 / 已选项 / 选项专属批注 / 题目整体批注），题间以空行分隔；隐条件隐藏的题目不入列，
- * 显式跳过与仅批注提交的题目同样入列；题目序号为可见题目的展示序号
- * @param model - 问卷表单数据模型（作答状态的唯一权威来源）
+ * 逐题输出四段（状态徽章 + 标题 / 已选项 / 选项专属批注 / 题目整体批注），题间以空行分隔；隐藏题目不入列，显式跳过与仅批注提交的题目同样入列
+ * @param model - 问卷模型（作答状态的唯一来源）
  * @param theme - 主题样式提供者
- * @param contentWidth - 总览主体可用列宽（列），超宽行沿各段悬挂前缀折行
- * @returns 完整未切片的内容行数组；无效题目跳过，无可见题目时返回空数组
+ * @param contentWidth - 总览主体可用列宽，超宽行沿悬挂前缀折行
+ * @returns 完整未切片的内容行数组；无可见题目时为空数组
  */
 export function buildSubmitSummaryContentLines(
   model: AskAuthorFormModel,
@@ -163,7 +151,7 @@ export function buildSubmitSummaryContentLines(
 
     const selectedLabels: string[] = [];
     if (q.multiSelect) {
-      // 升序展示与 compileAnswers 保持一致（排序不变量由模型 getSelectedIndices 集中保证，已剔除隐藏选项）
+      // 升序展示与 compileAnswers 保持一致（排序不变量由 getSelectedIndices 保证，已剔除隐藏选项）
       for (const idx of model.getSelectedIndices(i)) {
         const opt = q.options[idx];
         if (!opt) continue;

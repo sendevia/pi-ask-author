@@ -1,14 +1,8 @@
 /**
  * @file view-question.ts
- * @description 题目作答页的视图构建器：内容预览区、题目导航 Tab 栏、题目标题块、选项菜单与底部按键提示
+ * @description 题目作答页的视图构建：内容预览区、Tab 栏、题目标题块、选项菜单与底部按键提示
  *
- * 核心架构特性：
- * - 只读取组件传入的视口状态并返回终端行，滚动位移与光标写入仍由组件在输入路径完成
- * - 作答页按「顶部分割线 → 内容预览区 → Tab 栏 → 题目标题块 → 选项区 → 状态与快捷键」纵向分区，
- *   预览区高度等于终端行数减去除它以外各带的实测行数（下限 `LAYOUT_CONFIG.previewMinHeight`）
- * - 预览完整内容按「题号 + 条目 + 列宽 + 批注」缓存；`clear()` 由组件在状态突变与主题切换时调用
- *
- * 依赖方向：view-question.ts → format.ts / layout.ts / model.ts / novel-markdown.ts / texts.ts / theme.ts / view-rows.ts；禁止反向导入 component.ts
+ * 只读取组件传入的视口状态并返回终端行，滚动位移与光标写入由组件在输入路径完成
  */
 
 import { visibleWidth } from "@earendil-works/pi-tui";
@@ -34,7 +28,7 @@ import {
   type RowRange,
 } from "./view-rows.js";
 
-/** 预览缓存池容量上限（条目数），防止长会话下缓存无界增长 */
+/** 预览缓存池容量上限（条目数），防止长会话下无界增长 */
 const PREVIEW_CACHE_CAPACITY = 32;
 
 /** 题目作答页的只读视口状态（全部字段来自组件，构建器不写回） */
@@ -47,13 +41,13 @@ export interface QuestionViewState {
   readonly listScrollOffset: number;
   /** 预览区滚动位移（行） */
   readonly previewScrollOffset: number;
-  /** 底部临时状态通知（可为空） */
+  /** 底部临时状态通知 */
   readonly statusMessage: string | null;
   /** 当前题目的菜单项（由模型派生并记忆化） */
   readonly menuItems: readonly MenuItem[];
   /** 本题确认后是否会发起实时推演（题头展示推演标记） */
   readonly expandable: boolean;
-  /** 题目导航 Tab 栏行（组件缓存的现成行，作答页按带序插在预览区之后） */
+  /** 题目导航 Tab 栏行（组件缓存，作答页插在预览区之后） */
   readonly tabLines: readonly string[];
 }
 
@@ -93,7 +87,7 @@ export interface QuestionViewResult {
  * @param tab - 题目索引
  * @param q - 归一化题目
  * @param st - 作答状态
- * @returns 任一可见选项满足富内容条件时为 true
+ * @returns 任一可见选项描述超过 30 列、带预览或带批注时为 true
  */
 function hasRichContent(
   model: AskAuthorFormModel,
@@ -108,9 +102,7 @@ function hasRichContent(
   );
 }
 
-/**
- * 内容预览区的本帧渲染结果
- */
+/** 内容预览区的本帧渲染结果 */
 interface RenderedPreviewBand {
   /** 恰好 `height` 行的预览区行 */
   readonly lines: string[];
@@ -118,23 +110,21 @@ interface RenderedPreviewBand {
   readonly viewport: PreviewViewport;
 }
 
-/**
- * 题目作答页视图构建器（持有预览缓存；模型与主题在构造期固定）
- */
+/** 题目作答页视图构建器（持有预览缓存；模型与主题在构造期固定） */
 export class QuestionView {
-  /** 预览框完整渲染行缓存池（键：题号 + 条目身份 + 列宽 + 补充说明；超容量按插入序淘汰） */
+  /** 预览完整渲染行缓存池（键：题号 + 条目身份 + 列宽 + 批注；超容量按插入序淘汰） */
   private readonly previewCache = new Map<string, string[]>();
 
   /**
    * @param theme - 当前 TUI 主题
-   * @param model - 问卷模型（只读访问）
+   * @param model - 问卷模型
    */
   constructor(
     private readonly theme: Theme,
     private readonly model: AskAuthorFormModel,
   ) {}
 
-  /** 清空预览池（状态突变、主题切换与组件回收时调用） */
+  /** 清空预览缓存池（状态突变、主题切换与组件回收时调用） */
   clear(): void {
     this.previewCache.clear();
   }
@@ -143,7 +133,7 @@ export class QuestionView {
    * 渲染题目作答页：顶部分割线 → 内容预览区 → Tab 栏 → 标题块 → 选项区 → 状态与快捷键 → 底部分割线
    * @param state - 只读视口状态（当前题、光标、滚动位移、状态通知、菜单项与 Tab 栏）
    * @param renderWidth - 终端布局列宽
-   * @param terminalRows - 终端可视行数（作答页是整屏覆盖层，除预览区外的各带占完后剩余行全部给预览区）
+   * @param terminalRows - 终端可视行数（除预览区外的各带占完后，剩余行全部给预览区）
    * @returns 整页终端行与本帧预览视口
    */
   render(state: QuestionViewState, renderWidth: number, terminalRows: number): QuestionViewResult {
@@ -257,13 +247,13 @@ export class QuestionView {
   }
 
   /**
-   * 获取聚焦条目的预渲染完整内容行（`previewCache` 透明备忘缓存，跨条目 / 切换题目零重复解析）
+   * 获取聚焦条目的完整内容行（经 `previewCache` 缓存，跨条目切换零重复解析）
    * @param tab - 题目索引
    * @param item - 目标菜单项
    * @param customText - 题目整体补充说明
    * @param optionNote - 选项专属补充说明
    * @param targetWidth - 预览可用列宽
-   * @returns 未切片的完整内容行数组；`item` 缺省时返回空数组
+   * @returns 未切片的完整内容行数组
    */
   private previewContentLines(
     tab: number,
@@ -297,7 +287,7 @@ export class QuestionView {
    * @param customText - 题目整体补充说明
    * @param optionNote - 选项专属补充说明
    * @param targetWidth - 预览可用列宽
-   * @param height - 预览区占用的终端行数（内容不足时补空行）
+   * @param height - 预览区占用的终端行数（不足时补空行）
    * @param scrollOffset - 当前预览滚动位移
    * @returns 恰好 `height` 行的预览区与本帧视口观察值
    */
@@ -316,13 +306,13 @@ export class QuestionView {
   }
 
   /**
-   * 遍历输出菜单项行（选项窗口，聚焦项以反白行标出）
+   * 遍历输出菜单项行（聚焦项以反白行标出）
    * @param lines - 输出行数组（原地追加）
    * @param q - 当前题目
    * @param st - 作答状态
    * @param state - 只读视口状态
    * @param rowWidth - 选项行可用列宽
-   * @returns 各菜单项在 `lines` 中的相对行范围（供视图换算为整页行号）
+   * @returns 各菜单项在 `lines` 中的相对行范围（供调用方换算为整页行号）
    */
   private pushListItems(
     lines: string[],

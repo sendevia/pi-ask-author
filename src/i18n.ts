@@ -1,16 +1,13 @@
 /**
  * @file i18n.ts
- * @description 语言资源注册、系统语言探测与模板字典编译的完整实现
+ * @description 语言资源注册、系统语言探测与模板字典编译
  *
- * 资源约定：
- * - 语言文件位于仓库根 `lang/`，文件名即 locale 标识，新增语言只需在 {@link LOCALE_PACKAGES} 追加一项导入
- * - 纯字符串即原样文案；字符串数组即文案列表；`{ "template": "…", "params": ["a", "b"] }` 为带插值的模板对象，声明形参时编译为定参函数，省略 `params` 时在装载期求值为常量文案
- * - 模板占位符 `{name}` 取 `params` 同名形参，`{icon.<键>}` 取调用方传入的共享常量解析器结果
- * - `en_US` 为规范语言：键集合、参数个数与取值种类以它为准；其余语言缺失的键回退 `en_US`，结构与规范语言不符时立即抛出异常
+ * - 语言文件位于 `lang/`，文件名即 locale 标识，新增语言在 {@link LOCALE_PACKAGES} 追加导入
+ * - 纯字符串为文案，字符串数组为文案列表，`{ template, params }` 为带插值的模板
+ * - 占位符 `{name}` 取 `params` 同名形参，`{icon.<键>}` 取调用方传入的常量解析器
+ * - `en_US` 为规范语言：键集合、形参个数与取值种类以它为准，其余语言缺失的键回退 `en_US`
  *
- * 语言探测：按 GNU gettext 优先级读取 `LANGUAGE`（冒号分隔的候选列表）→ `LC_ALL` → `LC_MESSAGES` → `LANG`，再以 `Intl` 解析出的系统语言兜底；候选值先精确匹配 locale，再按主语言匹配同族语言，全部落空时回退规范语言
- *
- * 依赖方向：i18n.ts 仅导入 `lang/` 下的语言文件，不导入项目内任何模块；由 `texts.ts` 装载并组装为全局文案字典
+ * 语言探测按 `LANGUAGE` → `LC_ALL` → `LC_MESSAGES` → `LANG` → `Intl` 的优先级，先精确匹配 locale 再匹配同族语言
  */
 
 import enUS from "../lang/en_US.json" with { type: "json" };
@@ -18,7 +15,7 @@ import jaJP from "../lang/ja_JP.json" with { type: "json" };
 import koKR from "../lang/ko_KR.json" with { type: "json" };
 import zhCN from "../lang/zh_CN.json" with { type: "json" };
 
-/** 带插值的模板声明（`params` 为规范语言声明的形参名，决定编译后函数的形参个数） */
+/** 带插值的模板声明（`params` 决定编译后函数的形参个数） */
 export interface TemplateSpec {
   /** 模板原文，占位符写作 `{形参名}` 或 `{icon.<ICONS 键>}` */
   readonly template: string;
@@ -29,7 +26,7 @@ export interface TemplateSpec {
 /** 语言资源树节点：文案、文案列表、模板声明或嵌套分组 */
 export type TreeNode = string | readonly string[] | TemplateSpec | { readonly [key: string]: TreeNode };
 
-/** 编译结果类型：声明形参的模板转为定参函数，无形参模板折叠为常量文案，数组转为只读列表，分组递归展开 */
+/** 编译结果类型：声明形参的模板转为定参函数，无形参模板折叠为常量文案 */
 export type CompiledTree<T> = T extends { readonly template: string; readonly params: readonly string[] }
   ? (...args: Array<string | number>) => string
   : T extends { readonly template: string }
@@ -71,9 +68,9 @@ function normalizeLocale(raw: string): string | undefined {
 
 /**
  * 依据系统语言环境选择界面语言
- * @param environment - 环境变量表（生产传入 `process.env`，测试可传入任意白名单对象）
- * @param systemLocale - `Intl` 解析出的系统 locale（可选，作为最后一位候选）
- * @returns 注册表中命中的 locale 键；无任何命中时为 {@link CANONICAL_LOCALE}
+ * @param environment - 环境变量表
+ * @param systemLocale - `Intl` 解析出的系统 locale，作为最后一位候选
+ * @returns 注册表中命中的 locale 键；无命中时为 {@link CANONICAL_LOCALE}
  */
 export function detectLocale(environment: Record<string, string | undefined>, systemLocale?: string): string {
   const candidates: string[] = [];
@@ -126,9 +123,9 @@ type TemplateSegment = string | number;
 
 /**
  * 编译单个模板为定参函数
- * @param spec - 生效的模板声明（参数名以规范语言声明为准，故从 `params` 单独传入）
- * @param params - 规范语言声明的形参名列表
- * @param resolveConstant - 占位符常量解析器（`{icon.x}` 等）
+ * @param spec - 生效的模板声明
+ * @param params - 规范语言声明的形参名列表，决定形参个数
+ * @param resolveConstant - 占位符常量解析器
  * @returns 形参个数与 `params` 一致的渲染函数；占位符未声明时在装载期抛出，实参个数不符时在调用期抛出
  */
 function compileTemplate(
@@ -165,9 +162,9 @@ function compileTemplate(
 /**
  * 以规范语言为骨架合并并编译语言资源树
  * @param canonical - 规范语言节点
- * @param localized - 当前语言节点（缺失时为 undefined，整棵子树回退规范语言）
+ * @param localized - 当前语言节点（缺失时整棵子树回退规范语言）
  * @param resolveConstant - 占位符常量解析器
- * @param path - 当前键路径（仅用于异常信息）
+ * @param path - 当前键路径，仅用于异常信息
  * @returns 编译后的节点
  */
 function compileTree(

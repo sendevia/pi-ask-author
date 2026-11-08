@@ -1,18 +1,10 @@
 /**
  * @file novel-markdown.ts
- * @description 小说语法高亮引擎：把语义定界符（`「」` / `（）`）标注为携带哨兵的原生行内代码，折行与配色交还 Pi 原生 Markdown 引擎
+ * @description 小说语法高亮：把 `「」` 与 `（）` 标注为携带哨兵的原生行内代码，折行与配色交给 Pi 原生 Markdown 引擎
  *
- * 核心架构特性：
- * - 声明式语法模板表（定义于 `novel-syntax.ts` 的 `NOVEL_TEMPLATES` 与派生索引）驱动「定界符 → 语义哨兵 → 行内代码载体 → 主题样式」映射
- * - 对话台词「...」与旁白心理（...）由 `MarkdownOptions.transform` 在 marked 解析前完成标注
- * - `theme.code` 回调兼作哨兵分类器，未命中哨兵即完整交还原生行内代码样式
- * - 折行、嵌套与配色全部由原生 Markdown 引擎回填，插件不触碰任何 ANSI 转义流
- * - 零文本改动不变量：输出剥离哨兵与新增反引号后与输入完全等价
- *
- * 索引约定：全文「扁平索引 / 行内列索引」一律指 UTF-16 码元下标，含义与 `String.prototype.length` / `charAt` / `slice` 一致
- *
- * 依赖方向：novel-markdown.ts → format.ts / novel-syntax.ts / texts.ts / theme.ts（另行引入 model.ts 的 `MenuItem` 类型，无回环依赖）；外部依赖 `@earendil-works/pi-tui` 的 `Markdown` / `MarkdownTheme` 与 `@earendil-works/pi-coding-agent` 的 `getMarkdownTheme`
- * 宿主主题耦合：围栏代码块由 `getMarkdownTheme()` 的 `highlightCode` 着色，提取颜色读取宿主全局活动主题（须宿主已 `initTheme`，本模块不自行持有主题）；行内代码仅在未命中哨兵时走同一全局 `code` 提取颜色
+ * 语法模板表在 `novel-syntax.ts`；`theme.code` 回调兼作哨兵分类器，未命中即交还原生行内代码样式
+ * 不变量：输出剥离哨兵与新增反引号后与输入完全等价
+ * 索引约定：下文「扁平索引 / 行内列索引」均为 UTF-16 码元下标
  */
 
 import { getMarkdownTheme } from "@earendil-works/pi-coding-agent";
@@ -29,10 +21,10 @@ import { TEXTS } from "./texts.js";
 import type { Theme } from "./theme.js";
 
 /**
- * 基于 `getMarkdownTheme()` 定制小说预览主题；`code` 回调兼作哨兵分类器（命中即着色并剥离哨兵，未命中交还原生样式）
- * 覆盖项统一收敛到注入的 TUI 主题前景色族（仅 `code` 未命中哨兵时回退 `getMarkdownTheme()` 的 `mdCode` 提取颜色，即 Pi 运行时全局活动主题）；取自 `getMarkdownTheme()` 的原生实现（代码块由 `highlightCode` 走原生语法高亮）
+ * 基于 `getMarkdownTheme()` 定制小说预览主题；`code` 回调兼作哨兵分类器（命中即着色并剥离哨兵）
+ * 覆盖项统一收敛到注入的 TUI 主题前景色；未命中哨兵时回退 `code` 提取颜色
  * @param theme - 当前 TUI 主题实例
- * @returns 字段集已由 `getMarkdownTheme()` 展开补齐的完整 `MarkdownTheme`
+ * @returns 字段集已展开补齐的完整 `MarkdownTheme`
  */
 function createNovelMarkdownTheme(theme: Theme): MarkdownTheme {
   const base = getMarkdownTheme();
@@ -50,11 +42,11 @@ function createNovelMarkdownTheme(theme: Theme): MarkdownTheme {
 }
 
 /**
- * 解析行内代码文本中的哨兵序列并按语法模板逐段着色；未命中哨兵返回 undefined 交还原生样式
- * 内容为「`{@link NOVEL_MARKER_PREFIX}` + 哨兵 + 语义原文」的可重复序列，相邻语义片段打包进同一围栏
+ * 按哨兵序列逐段着色行内代码；未命中哨兵返回 undefined 交还原生样式
+ * 内容为「`{@link NOVEL_MARKER_PREFIX}` + 哨兵 + 语义原文」的可重复序列
  * @param theme - 当前 TUI 主题实例
  * @param text - `theme.code` 收到的行内代码原文
- * @returns 逐段着色后的文本（哨兵前缀与哨兵字符已剥离）；文本不以哨兵前缀开头，或哨兵序列损坏（缺失哨兵字符 / 中途再现前缀）时返回 `undefined`，由调用方回退原生行内代码样式
+ * @returns 逐段着色后的文本（哨兵已剥离）；不以哨兵前缀开头或序列损坏时为 `undefined`
  */
 function classifyNovelCode(theme: Theme, text: string): string | undefined {
   if (!text.startsWith(NOVEL_MARKER_PREFIX)) return undefined;
@@ -187,7 +179,7 @@ interface NovelLineSegment {
 /**
  * 计算源码各行行首的扁平索引表（相邻行首差值恒为「本行长度 + 1」，故严格递增）
  * @param lines - 源码行数组（行间以单个 `\n` 连接，元素不含行尾换行符）
- * @returns 行索引 → 行首扁平索引（UTF-16 码元下标）的只读数组，长度与 `lines` 相同；仅含行首项，末行之后的位置由 {@link resolveLineIndex} 收敛至末行
+ * @returns 行索引 → 行首扁平索引的只读数组，长度与 `lines` 相同
  */
 function indexLineStarts(lines: readonly string[]): LineStartIndex {
   const starts: number[] = [];
@@ -200,8 +192,8 @@ function indexLineStarts(lines: readonly string[]): LineStartIndex {
 }
 
 /**
- * 计算源码的「代码上下文」掩码：围栏代码块整行、缩进代码行、行内代码片段，以及会被原生引擎按原文输出的块级上下文（表格 / HTML / LaTeX / 链接定义行）
- * 分词与标注一律跳过被标记字符：既不会改动作者书写的代码，也杜绝哨兵进入不经主题回调的渲染路径（代价是表格内放弃着色）
+ * 计算源码的代码上下文掩码：围栏代码块、缩进代码行、行内代码，以及原生引擎按原文渲染的块级上下文（表格 / HTML / LaTeX / 链接定义行）
+ * 标注一律跳过被标记码元：既不改动作者写的代码，也避免哨兵进入不经主题回调的渲染路径
  * @param source - 完整源码（行间以 `\n` 连接）
  * @param lines - 源码行数组
  * @param lineStarts - 行首扁平索引表
@@ -353,8 +345,8 @@ function findInlineCodeClosing(source: string, mask: NovelCodeMask, from: number
 
 /**
  * 对源码执行小说语法定界符嵌套配对
- * 逐字符线性扫描并跳过掩码命中字符；闭合帧时按 `startFlat >= frame.start` 回退剔除其内层已入列跨距（等价于「外层优先」的区间包含语义，且跨距互不重叠）
- * 超长 / 跨空行或块级结构行 / 内容含行内标记字符（详见 {@link MARKDOWN_SENSITIVE_PATTERN}）的跨距一律放弃高亮
+ * 逐字符线性扫描并跳过掩码命中字符；闭合帧时剔除其内层已入列跨距（外层优先，跨距互不重叠）
+ * 超长 / 跨空行或块级结构行 / 内容含行内标记字符的跨距一律放弃高亮
  * @param source - 完整源码
  * @param mask - 代码上下文掩码
  * @param lines - 源码行数组
@@ -451,7 +443,7 @@ function resolveLineIndex(lineStarts: LineStartIndex, flatIndex: number): number
  * @param lines - 源码行数组
  * @param startLine - 起始行索引（0-based）
  * @param endLine - 结束行索引（0-based，含）
- * @returns 单行跨距恒为 true；多行跨距仅校验 `(startLine, endLine]` 区间的空行与 {@link BLOCK_STRUCTURE_PATTERN} 块级结构行（起始行不参与校验：其块级结构在原生引擎中仍按行内内容解析，标注不破坏结构）
+ * @returns 单行跨距恒为 true；多行跨距仅校验 `(startLine, endLine]` 区间的空行与块级结构行（起始行不参与校验）
  */
 function isSpanWithinParagraph(lines: readonly string[], startLine: number, endLine: number): boolean {
   if (startLine === endLine) return true;
@@ -463,10 +455,10 @@ function isSpanWithinParagraph(lines: readonly string[], startLine: number, endL
 }
 
 /**
- * 把一组首尾相接的语义片段包装为单个携带哨兵序列的原生行内代码（固定单反引号围栏；相邻片段合并）
+ * 把一组首尾相接的语义片段包装为单个携带哨兵的围栏（固定单反引号，相邻片段合并）
  * @param line - 该行原始文本
  * @param group - 首尾相接的语义片段组（按位置升序，左闭右开且互不重叠）
- * @returns 单反引号围栏包裹的片段序列（每段为「哨兵前缀 + 哨兵字符 + 语义原文」，逐字透传、不插入任何空白）
+ * @returns 单反引号围栏包裹的片段序列（每段为哨兵前缀 + 哨兵字符 + 语义原文，逐字透传）
  */
 function wrapNovelCode(line: string, group: readonly NovelLineSegment[]): string {
   const runs: string[] = [];
@@ -520,8 +512,8 @@ function annotateNovelLine(line: string, segments: readonly NovelLineSegment[]):
 }
 
 /**
- * 判定扁平区间内是否存在代码上下文字符
- * @param mask - 代码上下文掩码（长度等于源码 UTF-16 码元数）
+ * 判定扁平区间内是否存在代码上下文码元
+ * @param mask - 代码上下文掩码（长度等于源码码元数）
  * @param from - 区间起点（含，扁平索引）
  * @param to - 区间终点（不含，扁平索引）
  * @returns 区间内存在掩码为 `1` 的码元时为 true；空区间恒为 false
@@ -535,13 +527,13 @@ function hasCodeCharacter(mask: NovelCodeMask, from: number, to: number): boolea
 
 /**
  * 把已配对的语义跨距逐行标注为携带哨兵的原生行内代码并重组源码
- * 跨行跨距按源码行分别标注，换行语义、块级结构与折行行为保持原样，并天然获得原生引擎对折行片段的样式续色
- * 与代码上下文重叠的行片段一律放弃标注（行内代码无法嵌套），作者书写的反引号仍由原生引擎呈现
+ * 跨行跨距按源码行分别标注，换行语义、块级结构与折行保持原样，并天然获得原生引擎对折行片段的样式续色
+ * 与代码上下文重叠的行片段一律放弃标注（行内代码无法嵌套）
  * @param lines - 源码行数组
  * @param lineStarts - 行首扁平索引表
  * @param mask - 代码上下文掩码
  * @param spans - 通过约束校验的语义跨距列表
- * @returns 重新以 `\n` 连接的行文本；无片段行原样返回，已标注行仅在语义片段两侧插入哨兵与原生化反引号
+ * @returns 重新以 `\n` 连接的行文本；无片段行原样返回，已标注行仅在语义片段两侧插入哨兵与反引号
  */
 function annotateNovelSource(
   lines: readonly string[],
@@ -580,14 +572,12 @@ function annotateNovelSource(
 
 /**
  * 小说语法原生化 transform：把源码中的语义跨距标注为携带哨兵的原生行内代码
- * 作为 `MarkdownOptions.transform` 传入原生 `Markdown` 组件，在 marked 解析前执行「代码上下文掩码 → 定界符嵌套配对 → 逐行行内标注」三步扫描，折行、缩进与配色由原生引擎回填
+ * 作为 `MarkdownOptions.transform` 传入原生 `Markdown` 组件，在 marked 解析前依次执行代码上下文掩码、定界符嵌套配对与逐行标注，折行与配色由原生引擎回填
  *
- * 复杂度：掩码与标注均摊 O(n)（n 为源码 UTF-16 码元数，区间标记与分行切片的扫描区间互不重叠）；
- * 配对扫描为 O(n·d)，d 为同时未闭合的开定界符层级深度——闭定界符查找 {@link findClosingDepth} 对每个非开定界符码元自顶向下遍历整个列表，
- * 故「大量未闭合 `「` / `（` 之后接续正文」的最坏情形退化为平方级，正常成对文本仍为线性
+ * 复杂度：掩码与标注均摊 O(n)；配对扫描为 O(n·d)，d 为未闭合开定界符的层级深度，故大量未闭合定界符后接续正文会退化为平方级
  *
- * 不变量：输出源码剥离哨兵与新增反引号后与输入完全等价，且不改变换行与块级结构语义；为此含未配对反引号时整体放弃标注，
- * 语义跨距含行内标记字符时放弃该跨距（详见 {@link MARKDOWN_SENSITIVE_PATTERN}）
+ * 不变量：输出剥离哨兵与新增反引号后与输入完全等价，且不改变换行与块级结构语义
+ * 含未配对反引号时整体放弃标注；语义跨距含行内标记字符时放弃该跨距
  *
  * @param source - 面板组装的原始 Markdown 源码
  * @returns 标注了语义哨兵的原生 Markdown 源码
@@ -605,7 +595,7 @@ function markNovelSyntax(source: string): string {
 
 /**
  * 把面板标题与提示行序列组装为单个 Markdown 区块
- * 固定为「{@link TEXTS.view.sectionTitle} 三级标题行 + 空行 + 每条提示独占一行」，每行（含最后一条）保留行尾换行，便于以 `\n` 续接后续区块；`tips` 为空时退化为仅含标题与空行
+ * 固定为标题行 + 空行 + 每条提示独占一行，每行保留行尾换行，便于续接后续区块；`tips` 为空时仅含标题与空行
  * @param title - 面板标题文案
  * @param tips - 面板提示行文案序列，按数组顺序逐行输出
  * @returns 组装后的 Markdown 区块字符串
@@ -615,13 +605,13 @@ function buildTipsSection(title: string, tips: readonly string[]): string {
 }
 
 /**
- * 构建选项详情/正文草稿预览框的完整未切片内容行列表（原生 Markdown 渲染 + 小说语法语义标注）
+ * 构建预览框的完整未切片内容行（原生 Markdown 渲染 + 小说语法标注）
  * @param item - 当前选中的菜单项
  * @param customText - 当前填写的题目自由补充说明
  * @param optionNote - 当前选项填写的专属补充说明
- * @param targetWidth - 预览框渲染总列宽 (cols)，含 `Markdown` 组件自身左右各 1 列 `paddingX`（正文可用宽度为其减 2）
+ * @param targetWidth - 预览区渲染总列宽，含 `Markdown` 组件左右各 1 列 `paddingX`（正文可用宽度为其减 2）
  * @param theme - TUI 主题实例
- * @returns 未切片的完整内容行（每行已补足至 `targetWidth`），供组件层做视口切片；`item` 缺省时返回空数组
+ * @returns 未切片的完整内容行（每行已补足至 `targetWidth`）；`item` 缺省时为空数组
  */
 export function buildFullPreviewContentLines(
   item: MenuItem | undefined,

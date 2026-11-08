@@ -1,15 +1,10 @@
 /**
  * @file index.ts
- * @description 作者请示插件入口：注册 `ask_author` 工具与 `/ask-author` 命令，并编排工具执行生命周期
+ * @description 插件入口：注册 `ask_author` 工具与 `/ask-author` 命令，并编排工具执行生命周期
  *
- * 核心架构特性：
- * - 执行流程只做守卫与分支：信号已中止 → 取消；非 TUI → 结构化错误；模型构建失败 → 条件错误或运行期异常；无题目 → 空题目错误；请求推演但无可用模型 → 结构化错误；UI 返回 → 取消或完成
- * - 实时推演的模型调用只在本文件装配（`createExpansionRunner`）：请求上下文取会话投影与生效系统提示词，与主对话同源，推演用量累加后挂在工具结果的 `usage` 上
- * - 结果构造、卡片渲染与执行编排分属 `tool-result.ts` / `tool-card.ts` / 本文件，宿主边界代码保持可独立测试
- * - 工具声明为 `model-only`（交互式 UI 只由模型直接发起），并标注只读、封闭世界，供权限扩展判断
- * - 本文件不注册监听器与定时器；组件级 AbortSignal 级联取消与 `dispose()` 幂等回收由 `AskAuthorComponent` 负责
- *
- * 依赖方向：index.ts 为模块依赖图的入口；`component` / `expansion` / `model` / `schema` / `sanitize` / `texts` / `tool-card` / `tool-result` 均为其直接依赖
+ * - 执行流程只做守卫与分支：信号已中止、非 TUI、模型构建失败、无题目、请求推演但无模型，之后进入交互界面
+ * - 实时推演的模型调用只在本文件装配（`createExpansionRunner`），请求上下文与主对话同源
+ * - 工具声明为 `model-only`，并标注只读、封闭世界
  */
 
 import type { AgentToolResult, ExtensionAPI, ExtensionToolContext } from "@earendil-works/pi-coding-agent";
@@ -30,7 +25,7 @@ import {
   type AskAuthorToolResult,
 } from "./tool-result.js";
 
-/** 工具结果中携带的用量字段（结构与宿主 `AgentToolResult.usage` 一致，避免引入额外依赖） */
+/** 工具结果中携带的用量字段（结构与宿主 `AgentToolResult.usage` 一致） */
 type ToolUsage = NonNullable<AgentToolResult<unknown>["usage"]>;
 
 /**
@@ -74,7 +69,7 @@ function buildSessionHistory(ctx: ExtensionToolContext) {
   const answered = new Set(
     history.flatMap((message) => (message.role === "toolResult" ? [message.toolCallId] : [])),
   );
-  // 推演发生在 ask_author 的执行期内，本次调用（可能还有并行调用）尚无结果；补齐占位，保持调用与结果相邻
+  // 推演发生在 ask_author 的执行期内，本次调用（可能还有并行调用）尚无结果；补齐占位以保持调用与结果相邻
   const pending = history.flatMap((message) =>
     message.role === "assistant"
       ? message.content.flatMap((part) => (part.type === "toolCall" && !answered.has(part.id) ? [part] : []))
@@ -95,9 +90,9 @@ function buildSessionHistory(ctx: ExtensionToolContext) {
 
 /**
  * 构建实时推演执行器：用当前会话模型为表单追加后续题目与选项
- * @param ctx - 扩展上下文（提供当前模型、模型注册表、会话投影与生效系统提示词）
- * @param onUsage - 用量回调（推演调用不计入主对话上下文，需回传宿主做成本统计）
- * @returns 推演执行器；当前会话无模型时返回 undefined
+ * @param ctx - 扩展上下文
+ * @param onUsage - 用量回调（推演调用不计入主对话用量）
+ * @returns 推演执行器；当前会话无模型时为 undefined
  */
 function createExpansionRunner(
   ctx: ExtensionToolContext,
@@ -110,7 +105,7 @@ function createExpansionRunner(
     const response = await ctx.modelRegistry.complete(
       model,
       {
-        // 推演协议接在主对话系统提示词之后：写作规范与语言要求同源，JSON 输出契约仍居末位
+        // 推演协议接在主对话系统提示词之后，JSON 输出约束仍居末位
         systemPrompt: `${ctx.getSystemPrompt()}\n\n${TEXTS.expansion.systemPrompt}`,
         messages: [
           ...buildSessionHistory(ctx),
@@ -121,7 +116,7 @@ function createExpansionRunner(
           },
         ],
       },
-      // 会话标识是 provider 侧路由与提示缓存的依据：OpenCode 系 provider 缺它会被服务端拒绝（`missing_session_id`）
+      // 会话标识是 provider 侧路由与提示缓存的依据：OpenCode 系 provider 缺它会被服务端拒绝
       { signal, sessionId: ctx.sessionManager.getSessionId() },
     );
     if (response.usage) onUsage(response.usage);
@@ -138,7 +133,7 @@ function createExpansionRunner(
 }
 
 /**
- * `ask-author` 扩展插件主入口工厂（仅完成注册，启动期不执行任何交互）
+ * `ask-author` 插件主入口工厂（仅完成注册）
  * @param pi - Pi 扩展运行时 API 实例
  */
 export default function askAuthorExtension(pi: ExtensionAPI): void {
@@ -148,7 +143,7 @@ export default function askAuthorExtension(pi: ExtensionAPI): void {
     label: TEXTS.tool.label,
     description: TEXTS.tool.description,
     promptSnippet: TEXTS.tool.promptSnippet,
-    // 宿主接口要求可变 `string[]`；TEXTS 为 `as const` 只读元组，故展开构造可变副本
+    // 宿主接口要求可变 `string[]`，故展开 `as const` 只读元组
     promptGuidelines: [...TEXTS.tool.promptGuidelines],
     parameters: AskAuthorParams,
     // 交互式 UI 独占编辑器（`ctx.ui.custom`）：串行执行
@@ -157,17 +152,17 @@ export default function askAuthorExtension(pi: ExtensionAPI): void {
     exposure: "model-only",
     // 只读取对话上下文并收集作者输入，不修改工作区
     annotations: { readOnlyHint: true, openWorldHint: false },
-    // 宿主在 Schema 校验前调用：清洗为白名单形状，并兼容未按当前 Schema 书写的别名/包裹入参
+    // 宿主在 Schema 校验前调用：清洗为白名单形状，并兼容别名与包裹入参
     prepareArguments: sanitizeAskAuthorArgs,
 
     /**
      * 工具执行主流程：归一化标题 → 守卫 → 构建模型 → 启动交互式 TUI → 映射四类结果
-     * @param _toolCallId - 宿主工具调用 ID（本实现不使用）
-     * @param rawParams - `prepareArguments` 清洗并经宿主 Schema 校验后的入参
-     * @param signal - 宿主取消信号（可缺省；Esc / Ctrl+C 级联终止交互界面）
-     * @param _onUpdate - 流式进度回调（本实现不使用；本工具不上报部分结果）
+     * @param _toolCallId - 宿主工具调用 ID（未使用）
+     * @param rawParams - 清洗并经宿主 Schema 校验后的入参
+     * @param signal - 宿主取消信号（可缺省；Esc / Ctrl+C 级联终止界面）
+     * @param _onUpdate - 流式进度回调（未使用）
      * @param ctx - Pi 扩展上下文（`mode` 守卫与 `ui.custom` 组件挂载）
-     * @returns 取消 / 结构化报错 / 运行期异常 / 完成四类结果之一
+     * @returns 取消 / 结构化错误 / 运行期异常 / 完成四类结果之一
      */
     async execute(_toolCallId, rawParams, signal, _onUpdate, ctx) {
       const initialFormTitle = cleanOptional(rawParams?.formTitle) ?? TEXTS.fallbacks.defaultFormTitle;
@@ -281,9 +276,9 @@ export default function askAuthorExtension(pi: ExtensionAPI): void {
   pi.registerCommand(TEXTS.command.name, {
     description: TEXTS.command.description,
     /**
-     * 命令处理函数：向作者回显 ask_author 使用提示（不解析参数，通知后立即完成）
-     * @param _args - 命令参数（本命令不接收参数，不使用）
-     * @param ctx - Pi 扩展上下文（经 `ui.notify` 投递 info 级通知）
+     * 命令处理函数：向作者回显使用提示（不解析参数）
+     * @param _args - 命令参数（未使用）
+     * @param ctx - Pi 扩展上下文
      */
     handler: async (_args, ctx) => {
       ctx.ui.notify(TEXTS.command.notify, "info");

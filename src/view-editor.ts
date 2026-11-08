@@ -2,12 +2,7 @@
  * @file view-editor.ts
  * @description 补充说明编辑器的全屏视图构建器
  *
- * 核心架构特性：
- * - 只根据编辑目标拼装标题、上下文与编辑器行，编辑器实例由组件传入并保持焦点状态
- * - 整页占满终端高度：顶部分割线、Tab 栏、标题块、编辑框、页脚提示与底部分割线，剩余行补在编辑框之后
- * - 回传编辑框在整页中的位置，组件据此把鼠标点击换算为编辑框内坐标
- *
- * 依赖方向：view-editor.ts → format.ts / model.ts / texts.ts / theme.ts / view-rows.ts；禁止反向导入 component.ts
+ * 编辑框实例由组件传入并保持焦点；构造后回传编辑框位置供鼠标点击换算
  */
 
 import type { Editor } from "@earendil-works/pi-tui";
@@ -17,7 +12,7 @@ import { TEXTS } from "./texts.js";
 import type { Theme } from "./theme.js";
 import { optionLabelOf, pushFrameRule } from "./view-rows.js";
 
-/** 编辑框左右两侧的缩进列数（每行前缀） */
+/** 编辑框左右两侧的缩进列数 */
 const EDITOR_INDENT = 2;
 
 /** 编辑框在整页中的位置（鼠标点击换算依据） */
@@ -41,7 +36,7 @@ export interface EditorPage {
 }
 
 /**
- * 渲染补充说明编辑器全屏页（顶部分割线 / Tab 栏 / 标题与上下文 / 编辑框 / 补充空行 / 页脚按键提示 / 底部分割线）
+ * 渲染补充说明编辑器全屏页（顶部分割线 / Tab 栏 / 标题与上下文 / 编辑框 / 页脚按键提示 / 底部分割线）
  * @param theme - 当前 TUI 主题
  * @param model - 问卷模型（读取题目与选项文案）
  * @param tab - 当前题目索引
@@ -50,7 +45,7 @@ export interface EditorPage {
  * @param tabLines - 题目导航 Tab 栏行（组件缓存）
  * @param renderWidth - 终端可视宽度
  * @param terminalRows - 终端可视行数
- * @returns 整页终端行与编辑框位置；题目越界时行数组为空且无编辑框位置
+ * @returns 整页终端行与编辑框位置；题目不存在时行数组为空且无编辑框位置
  */
 export function renderEditorPage(
   theme: Theme,

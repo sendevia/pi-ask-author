@@ -2,21 +2,10 @@
  * @file component.ts
  * @description `ask_author` 交互式 TUI 主组件（作答页、总览页与补充说明编辑页）
  *
- * 核心架构特性：
- * - 本组件只负责交互状态机、按键路由与整屏帧缓存；题目页、总览页与编辑器页的排版分别由 `view-question` / `view-summary` / `view-editor` 构建
- * - 作答页的分带排版与预览区高度由 `QuestionView` 判定；预览与总览视口行数随终端高度伸缩
- * - 作答界面挂载为整屏覆盖层，并实现 `handleMouse`：滚轮在预览区内滚预览内容、其余位置移动选项光标、总览页滚答卷内容；左键点击题目标签切页、点击选项行选定、编辑页点击定位光标
- * - 多级缓存失效：整屏（尺寸键 + 状态突变清空）、Tab 栏 / 菜单项（`revision` 键）、视图层内容缓存（由 `touchDerived` 统一清空）
- * - 逐题独立光标记忆与 `1~9` 跳转题目；内置编辑器透传 Focusable 以定位 IME 候选框
- * - 无输入框页面把输入法全角字符收敛为半角，`【`/`】` 与全角字母数字一样命中快捷键
- * - 自适应导航：Tab 循环 / 数字跳转 / 确认推进一律沿可见题目序列行走，被条件隐藏的题目自动跳过
- * - 实时推演：作者确认答案后发起（答案未变则复用既有结果，变了先撤回再请求），结果写入同一表单；在途期间当前页的 Tab 标题与整页内容换成占位并暂停一切作答输入，就绪后恢复；只采纳最新请求，中止与卸载作废在途请求
- * - Esc / Ctrl+C 双通道取消（输入模式二次确认）；定时器、Abort 监听与缓存池全量回收
- *
- * 渲染纯度不变量：`render()` 及其可达被调函数禁止写入语义状态（`currentTab`、光标与各 `*ScrollOffset`、`inputMode`、`editTarget`、`editorEscArmed`、`statusMessage`、`isFinished`）；滚动位移归一化一律归属输入路径
- * 可写入透明备忘：`cached*`、`tabCache`、`menuCache`、`previewViewportObservation`、`previewBandObservation` 与视图层内部缓存均为「渲染输入的纯函数」缓存
- *
- * 依赖方向：component.ts → theme / texts / format / model / expansion / view-editor / view-question / view-rows / view-summary；本组件只做按键路由、推演编排与整屏缓存编排
+ * - 本组件只负责交互状态机、按键与鼠标路由、整屏帧缓存，排版由 `view-*` 构建
+ * - 作答界面挂载为整屏覆盖层；多级缓存分别按尺寸、`revision` 与状态突变失效
+ * - 推演只采纳最新请求，在途期间页面换成占位并暂停作答输入
+ * - `render()` 及其可达被调函数禁止写入语义状态，滚动位移只在输入路径归一化
  */
 
 import { getSelectListTheme } from "@earendil-works/pi-coding-agent";
@@ -69,7 +58,7 @@ export interface ExpansionService {
 
 /**
  * `ask_author` 交互式 TUI 组件（问卷作答与答卷总览）
- * 状态机：作答突变经 `AskAuthorFormModel`，`revision` 驱动多级缓存失效；`render()` 只写入透明备忘 / 观察缓存，绝不写回滚动位移等语义状态；`dispose()` 幂等且只设置 `disposed`，`finish()` 以 `isFinished` 保证 `done` 至多投递一次
+ * 状态突变经 `AskAuthorFormModel` 完成并由 `revision` 驱动缓存失效；`dispose()` 幂等，`finish()` 保证 `done` 至多投递一次
  */
 export class AskAuthorComponent implements Component, Focusable {
   /** Focusable 接口要求：输入模式焦点指示 */
@@ -79,8 +68,8 @@ export class AskAuthorComponent implements Component, Focusable {
     return this._focused;
   }
   /**
-   * 设置焦点状态并级联透传至内置 Editor（同值为无操作）
-   * @param value - 目标焦点状态；同时失效整屏帧缓存（预览内容与光标无关，内容缓存保留）
+   * 设置焦点状态并级联透传至内置 Editor（同值为无操作，仅失效整屏帧缓存）
+   * @param value - 目标焦点状态
    */
   set focused(value: boolean) {
     if (this._focused === value) return;
@@ -94,7 +83,7 @@ export class AskAuthorComponent implements Component, Focusable {
   private readonly tui: TUI;
   /** 主题 */
   private readonly theme: Theme;
-  /** 问卷模型（作答状态唯一权威，mutation 自动推进 revision） */
+  /** 问卷模型（作答状态的唯一来源，mutation 自动推进 revision） */
   private readonly model: AskAuthorFormModel;
   /** 结果达成回调 */
   private readonly done: (result: AskAuthorResult) => void;
@@ -114,7 +103,7 @@ export class AskAuthorComponent implements Component, Focusable {
 
   /** 是否处于补充说明文本输入模式 */
   private inputMode = false;
-  /** Esc 丢弃确认武装标记：编辑器非空时首次 Esc 仅武装，再次 Esc 才丢弃内容 */
+  /** Esc 丢弃确认标记：编辑器非空时首次 Esc 仅标记，再次 Esc 才丢弃内容 */
   private editorEscArmed = false;
   /** 底部临时状态通知文案 */
   private statusMessage: string | null = null;
@@ -362,7 +351,7 @@ export class AskAuthorComponent implements Component, Focusable {
 
   /**
    * 终结作答流程并触发 `done`（至多投递一次）
-   * `isFinished` 单守卫防止重复投递；不以 `disposed` 阻断（资源已回收但 `done` 未投递时仍须结算），跳转入 {@link dispose}
+   * `isFinished` 防止重复投递；不以 `disposed` 阻断（资源已回收但 `done` 未投递时仍需结算）
    * @param cancelled - 是否用户主动取消
    */
   finish(cancelled: boolean): void {
@@ -764,12 +753,11 @@ export class AskAuthorComponent implements Component, Focusable {
 
   /**
    * Component 接口约定：接收鼠标事件
-   * 作答界面是整屏覆盖层，滚轮一律标记为已消费，不再让会话记录跟着滚动；区域分工为「预览区内滚预览内容，其余位置移动选项光标」
-   * 左键单击沿 pi 列表组件的习惯：按下先把光标移到指针下的条目，同一条目上松开才算一次点击并激活它；Tab 标签按松开动作切页
-   * 未命中的按下与松开不接管，交回 pi 做文本选择
+   * 作答界面是整屏覆盖层：滚轮一律标记为已消费，预览区内滚预览内容，其余位置移动选项光标
+   * 左键单击：按下先把光标移到指针下的条目，同一条目上松开才激活它；Tab 标签按松开动作切页；未命中的不接管，交回 pi 做文本选择
    * 鼠标事件属于输入路径，本方法写回滚动位移与光标
-   * @param event - 归一化鼠标事件（宿主编排已把坐标换算为组件内坐标）
-   * @returns 已消费的滚轮与命中点击；其余鼠标事件不处理
+   * @param event - 归一化鼠标事件（坐标已换算为组件内坐标）
+   * @returns 已消费的滚轮与命中点击；其余事件不处理
    */
   handleMouse(event: TuiMouseEvent): TuiMouseEventResult | undefined {
     if (event.type === "wheel") {
@@ -971,7 +959,7 @@ export class AskAuthorComponent implements Component, Focusable {
 
   /**
    * 按行数滚动预览区内容
-   * 滚动位移归一化归属输入路径：以渲染帧写入的 {@link previewViewportObservation} 为界经 `clampWindowOffset` 收敛（缺观察元数据时按预览区最小高度退化）
+   * 滚动位移在输入路径归一化：以渲染帧写入的 {@link previewViewportObservation} 为界收敛，缺观察元数据时按预览区最小高度退化
    * @param lines - 行位移（正下负上）
    */
   private scrollPreviewBy(lines: number): void {
@@ -1136,7 +1124,7 @@ export class AskAuthorComponent implements Component, Focusable {
 
   /**
    * Component 接口约定：渲染整屏行（带整屏缓存）
-   * 缓存键绑定真实列宽、布局列宽与终端行数（窄于 20 列时二者截断范围不同，仅绑定 layoutWidth 会串帧；行数变化必须整体重新计算）；本方法及可达被调函数绝不写入语义状态，仅刷新透明备忘 / 观察缓存
+   * 缓存键绑定真实列宽、布局列宽与终端行数（窄于 20 列时两种宽度截断范围不同）；本方法及可达被调函数只刷新缓存，不写入语义状态
    * @param width - 终端真实可视宽度（布局宽度下限 20 列）
    * @returns 不超过 width 的终端行数组（命中缓存时直接返回）
    */

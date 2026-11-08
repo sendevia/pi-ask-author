@@ -2,12 +2,9 @@
  * @file expansion.ts
  * @description 实时推演协议：请求载荷构建、模型回复解析与推演结果的不可信边界收敛
  *
- * 核心架构特性：
- * - 请求载荷把表单当前进度完整交给模型：每题的类型、区间、显示条件、推演配置、显隐、作答状态、选中项与批注
- * - 回复约束为纯 JSON 对象，解析失败即抛出明确异常，由组件层在状态栏报告并保留既有作答
- * - 载荷过滤（未知题目、重复标签、ID 冲突）全部委托 `sanitize.ts`，本模块不重复实现清洗规则
- *
- * 依赖方向：expansion.ts → schema.ts（载荷类型）/ model.ts（只读模型）/ sanitize.ts / texts.ts；被 component.ts（运行器类型）与 index.ts（模型调用装配）消费
+ * - 请求载荷完整携带表单当前进度，便于模型接着现有进度续写
+ * - 回复约束为纯 JSON，解析失败即抛出异常，由组件层报告并保留既有作答
+ * - 载荷过滤全部委托 `sanitize.ts`，本模块不重复实现清洗规则
  */
 
 import type { AskAuthorFormModel, NormalizedQuestion, VisibilityCondition } from "./model.js";
@@ -17,7 +14,7 @@ import { TEXTS } from "./texts.js";
 
 /** 一次推演的输入：表单模型、触发题目与本次新增上限 */
 export interface ExpansionRequest {
-  /** 表单模型（只读；推演在途期间作者输入被锁定，模型不会变化） */
+  /** 表单模型（只读；推演在途期间作者输入被锁定） */
   readonly model: AskAuthorFormModel;
   /** 触发本次推演的题目索引（0-based） */
   readonly questionIndex: number;
@@ -29,17 +26,17 @@ export interface ExpansionRequest {
   readonly maxAdditionalQuestions: number;
 }
 
-/** 推演执行器：由入口层装配模型调用，组件层只等待载荷（取消经 `signal` 级联） */
+/** 推演执行器：由入口层装配模型调用，组件层只等待载荷 */
 export type ExpansionRunner = (request: ExpansionRequest, signal: AbortSignal) => Promise<ExpansionPayload>;
 
 /** 显示条件的协议形状（与 `showIf` 入参同构：引用题目 ID 加选项标签或作答存在性） */
 type ConditionPayload = { questionId: string; option: string } | { questionId: string; answered: boolean };
 
 /**
- * 把显示条件翻译为可回传的协议形状（引用题目 ID 与选项标签，与 `showIf` 入参同构）
- * @param model - 表单模型（用于把条件引用的索引换回题目 ID 与标签）
+ * 把显示条件翻译为可回传的协议形状
+ * @param model - 表单模型（用于把索引换回题目 ID 与选项标签）
  * @param conditions - 已解析的显示条件
- * @returns 条件数组；无条件时为 undefined
+ * @returns 条件数组（无法解析的条目跳过）；无条件入参时为 undefined
  */
 function describeConditions(
   model: AskAuthorFormModel,
@@ -146,7 +143,7 @@ export function buildExpansionUserMessage(request: ExpansionRequest): string {
  * 从回复文本中提取并校验 JSON 对象
  * @param reply - 模型回复原文（可能包含代码围栏或前后说明）
  * @returns 已过滤的推演载荷
- * @throws Error 回复中不存在 JSON 对象、JSON 解析失败时抛出（由组件层在状态栏报告）
+ * @throws Error 回复中不存在 JSON 对象或解析失败时抛出（由组件层报告）
  */
 export function parseExpansionReply(reply: string, context: ExpansionContext): ExpansionPayload {
   const start = reply.indexOf("{");

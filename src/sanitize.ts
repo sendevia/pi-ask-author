@@ -1,14 +1,10 @@
 /**
  * @file sanitize.ts
- * @description 入参防御性清洗：`prepareArguments` 钩子与不可信工具边界的容错体系
+ * @description 入参防御性清洗：`prepareArguments` 钩子与不可信工具边界的容错处理
  *
- * 核心架构特性：
  * - 容错范围：JSON 串包裹 / `raw` 包装键 / 字段别名 / 纯字符串选项 / 空选项兜底
- * - 白名单收敛：产物仅含 `RawParams` 声明字段（丢弃未知键），保障宿主 Schema 校验通过
- * - 推演载荷清洗：`sanitizeExpansionPayload` 丢弃引用未知题目的选项追加、重复标签、与既有 ID 冲突的新题目与无选项题目
- * - 防御纵深：本层做类型收敛 / 别名映射 / 结构规整 / 区间兜底，模型层再幂等兜底一次
- *
- * 依赖方向：sanitize.ts → format.ts / layout.ts / texts.ts / schema.ts（类型）；被 index / expansion / tool-card 消费
+ * - 白名单收敛：产物仅含 `RawParams` 声明字段，保障宿主 Schema 校验通过
+ * - 本层做类型收敛、别名映射与区间兜底，模型层再幂等兜底一次
  */
 
 import { cleanOptional, parseJson } from "./format.js";
@@ -26,25 +22,25 @@ import type {
   VisibilityConditionInput,
 } from "./schema.js";
 
-/** 字段别名提取源对象形状（不可信边界，统一经 `pickString` 收敛） */
+/** 不可信边界源对象形状（字段一律经 `pickString` 等提取器收敛） */
 type LooseRecord = Record<string, unknown>;
 
-/** `pickString` 别名表类型：按声明顺序获取第一个命中的字符串字段 */
+/** 别名表：按声明顺序取第一个命中的字符串字段 */
 type StringAliases = readonly string[];
 
 /**
- * 判定不可信输入是否为宽松记录（非 null、非数组对象），工具入参边界的运行时守卫
+ * 判定不可信输入是否为普通对象（非 null、非数组）
  * @param value - 待检测值
- * @returns 非 null 的非数组对象时为 true（充当 `LooseRecord` 类型守卫）
+ * @returns 是普通对象时为 true（充当 `LooseRecord` 类型守卫）
  */
 function isPlainRecord(value: unknown): value is LooseRecord {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 /**
- * 解包 `raw` 包装键（载荷为可用对象时整体替换外层，否则在浅拷贝上摘除该键）
+ * 解包 `raw` 包装键
  * @param source - 外层参数对象浅拷贝
- * @returns 权威对象（`raw` 载荷或已摘除 `raw` 的外层对象）
+ * @returns `raw` 载荷为可用对象时整体替换外层，否则在浅拷贝上摘除该键
  */
 function unwrapRawPayload(source: LooseRecord): LooseRecord {
   const raw = parseJson(source.raw);
@@ -54,10 +50,10 @@ function unwrapRawPayload(source: LooseRecord): LooseRecord {
 }
 
 /**
- * 依别名表提取第一个字符串型字段
- * @param o - 宽松源对象
+ * 依别名表提取首个字符串型字段
+ * @param o - 源对象
  * @param aliases - 别名键列表（按声明顺序优先）
- * @returns 首个命中的字符串值（可为空串，不做空白清洗）；全部未命中返回 undefined
+ * @returns 首个命中的字符串（可为空串，不做空白清洗）；未命中为 undefined
  */
 function pickString(o: LooseRecord, aliases: StringAliases): string | undefined {
   for (const key of aliases) {
@@ -68,10 +64,10 @@ function pickString(o: LooseRecord, aliases: StringAliases): string | undefined 
 }
 
 /**
- * 宽松解析布尔值（兼容布尔值 / 数字 `0`|`1` / 字符串 `"true"`|`"false"`|`"1"`|`"0"`，字符串大小写不敏感且忽略首尾空白）
+ * 宽松解析布尔值（兼容布尔值、数字 `0`|`1` 与字符串 `"true"`|`"false"`|`"1"`|`"0"`，不区分大小写）
  * @param val - 原始输入
  * @param defaultVal - 缺省默认值
- * @returns 解析结果；无法识别时返回 `defaultVal`
+ * @returns 解析结果；无法识别时为 `defaultVal`
  */
 function parseBooleanValue(val: unknown, defaultVal: boolean): boolean {
   if (typeof val === "boolean") return val;
@@ -86,9 +82,9 @@ function parseBooleanValue(val: unknown, defaultVal: boolean): boolean {
 }
 
 /**
- * 宽松解析整数（兼容数字字符串；非有限数值返回 undefined）
+ * 宽松解析整数（兼容数字字符串）
  * @param val - 原始输入
- * @returns 向下取整后的整数；数字非有限、字符串无法解析或类型不符时返回 undefined
+ * @returns 向下取整的整数；非有限数值、无法解析或类型不符时为 undefined
  */
 function parseIntegerValue(val: unknown): number | undefined {
   if (typeof val === "number" && Number.isFinite(val)) return Math.floor(val);
@@ -102,7 +98,7 @@ function parseIntegerValue(val: unknown): number | undefined {
 /**
  * 规整最少勾选数
  * @param val - 原始下限输入
- * @returns 负值收敛为 0；缺省、非整数或无法解析时返回 undefined（由 Schema 默认值裁决）
+ * @returns 负值收敛为 0；无法解析时为 undefined（由 Schema 默认值裁决）
  */
 function sanitizeMinSelect(val: unknown): number | undefined {
   const n = parseIntegerValue(val);
@@ -112,7 +108,7 @@ function sanitizeMinSelect(val: unknown): number | undefined {
 /**
  * 规整最多勾选数
  * @param val - 原始上限输入
- * @returns 不小于 1 的整数；缺省、非整数、无法解析或小于 1 时返回 undefined（由 Schema/模型裁决为选项总数）
+ * @returns 不小于 1 的整数；无法解析或小于 1 时为 undefined（由 Schema / 模型裁决为选项总数）
  */
 function sanitizeMaxSelect(val: unknown): number | undefined {
   const n = parseIntegerValue(val);
@@ -122,7 +118,7 @@ function sanitizeMaxSelect(val: unknown): number | undefined {
 /**
  * 规整单个显示条件（兼容 `questionId` / `question` 与 `option` / `optionLabel` / `label` 别名）
  * @param value - 不可信条件输入
- * @returns 仅含 `questionId` / `option` / `answered` 白名单字段的条件；缺失 `questionId` 或非对象时返回 undefined
+ * @returns 仅含 `questionId` / `option` / `answered` 的条件；非对象或缺 `questionId` 时为 undefined
  */
 function coerceCondition(value: unknown): VisibilityConditionInput | undefined {
   if (!isPlainRecord(value)) return undefined;
@@ -136,9 +132,9 @@ function coerceCondition(value: unknown): VisibilityConditionInput | undefined {
 }
 
 /**
- * 规整 `showIf` 字段（兼容 JSON 串包裹 / 单条件对象 / 条件数组，丢弃无法识别的条目）
+ * 规整 `showIf` 字段（兼容 JSON 串包裹、单条件对象与条件数组，丢弃无法识别的条目）
  * @param value - `showIf` 原始值
- * @returns 单个条件、条件数组（非空）或 undefined（无条件可识别）
+ * @returns 单个条件、非空条件数组，或 undefined（无可识别条件）
  */
 function coerceShowIf(value: unknown): ShowIfInput | undefined {
   const parsed = parseJson(value);
@@ -151,20 +147,20 @@ function coerceShowIf(value: unknown): ShowIfInput | undefined {
 }
 
 /**
- * 规整选项列表为 `QuestionOption[]`（兼容纯字符串项、宽松对象项与字段别名，上限 `MAX_OPTIONS`）
+ * 规整选项列表为 `QuestionOption[]`（兼容纯字符串项、普通对象项与字段别名，上限 `MAX_OPTIONS`）
  * @param value - 原始输入
- * @returns 规整后的选项数组；JSON 串解析失败或非数组输入返回空数组（调用方再经 `withDefaultOption` 兜底）
+ * @returns 规整后的选项数组；解析失败或非数组输入为空数组（调用方再经 `withDefaultOption` 兜底）
  */
 function coerceOptions(value: unknown): QuestionOption[] {
   const opts = parseJson(value);
   if (!Array.isArray(opts)) return [];
   return opts.slice(0, MAX_OPTIONS).map((item, idx): QuestionOption => {
     if (typeof item === "string") return { label: item.trim() || TEXTS.fallbacks.autoOptionLabel(idx + 1) };
-    // 不可信边界收窄：守卫失败项回退自动标签，不做属性读取
+    // 不可信边界收窄：守卫失败项回退自动标签，不读属性
     if (!isPlainRecord(item)) return { label: TEXTS.fallbacks.autoOptionLabel(idx + 1) };
     const o = item;
 
-    // 声明式别名表：标签 / 推演 / 草稿 / 批注占位 / 显示条件各按优先级命中
+    // 别名表：标签 / 推演 / 草稿 / 批注占位 / 显示条件各按优先级命中
     return {
       label:
         cleanOptional(pickString(o, ["label", "name", "title", "text", "value", "choice"])) ??
@@ -178,9 +174,9 @@ function coerceOptions(value: unknown): QuestionOption[] {
 }
 
 /**
- * 规整题目级推演配置（兼容布尔值 / `enabled` 开关 / 推演方向与插入位置对象）
+ * 规整题目级推演配置（兼容布尔值、`enabled` 开关与推演方向、插入位置对象）
  * @param value - `expansion` 原始值
- * @returns `false`（本题不推演）、仅含 `guidance` / `insert` 的配置对象，或 undefined（缺省继承表单级设置）
+ * @returns `false`（本题不推演）、仅含 `guidance` / `insert` 的对象，或 undefined（继承表单级设置）
  */
 function coerceQuestionExpansion(value: unknown): QuestionInput["expansion"] {
   if (value === undefined) return undefined;
@@ -198,9 +194,9 @@ function coerceQuestionExpansion(value: unknown): QuestionInput["expansion"] {
 }
 
 /**
- * 判定宽松输入是否形如单题（须含选项类字段 options/choices/items 或显式题目键 question/prompt；`questions` 批量容器一律排除）
+ * 判定输入是否形如单题（含选项类字段 options/choices/items 或题目键 question/prompt；带 `questions` 的批量容器一律排除）
  * @param value - 待检测输入
- * @returns 携带选项类字段或显式题目键时为 true；非对象、`null` 与含 `questions` 键的批量容器恒为 false（本函数不排除数组，调用方先 `Array.isArray` 分流）
+ * @returns 形如单题时为 true；非对象、`null` 与批量容器恒为 false
  */
 function isQuestionLike(value: unknown): value is LooseRecord {
   if (typeof value !== "object" || value === null || "questions" in value) return false;
@@ -208,16 +204,16 @@ function isQuestionLike(value: unknown): value is LooseRecord {
 }
 
 /**
- * 规整单题条目为符合 Schema 的输入结构（兼容别名字段；字符串条目直接充当标题，其余非对象条目回退自动标题 + 默认选项）
+ * 规整单题条目为符合 Schema 的输入结构（兼容别名字段；字符串条目充当标题，非对象条目回退自动标题与默认选项）
  * @param value - 单题输入
  * @param index - 题目顺序索引
- * @returns 字段集与 `QuestionSchema` 完全一致的单题对象（`options` 为空时至少含一个默认方案）
+ * @returns 字段集与 `QuestionSchema` 一致的单题对象（`options` 为空时至少含一个默认方案）
  */
 function sanitizeQuestionEntry(value: unknown, index: number): QuestionInput {
   if (typeof value === "string") {
     return { title: value, options: withDefaultOption([]) };
   }
-  // 不可信边界收窄：经运行时守卫后按宽松记录读取别名，非对象条目回退自动标题 + 默认选项
+  // 不可信边界收窄：经运行时守卫后按普通对象读取别名，非对象条目回退自动标题与默认选项
   if (!isPlainRecord(value)) {
     return { title: TEXTS.fallbacks.autoQuestionTitle(index + 1), options: withDefaultOption([]) };
   }
@@ -243,10 +239,9 @@ function sanitizeQuestionEntry(value: unknown, index: number): QuestionInput {
 }
 
 /**
- * 归一化题目列表（兼容 JSON 串包裹 / 单题对象包裹 / 数组，上限 `MAX_QUESTIONS`）
- * 边界：空列表或无法识别为题目结构的输入视为未提供
+ * 归一化题目列表（兼容 JSON 串包裹、单题对象包裹与数组，上限 `MAX_QUESTIONS`）
  * @param value - `questions` / `form` / `survey` 容器键的原始值
- * @returns 规整后的题目数组（至少一项）；入参为 undefined / 空列表 / 无法识别时返回 undefined
+ * @returns 规整后的题目数组（至少一项）；未提供、空列表或无法识别时为 undefined
  */
 function normalizeQuestions(value: unknown): QuestionInput[] | undefined {
   if (value === undefined) return undefined;
@@ -259,16 +254,16 @@ function normalizeQuestions(value: unknown): QuestionInput[] | undefined {
 /**
  * 空选项数组兜底为单个默认方案
  * @param options - 已规整的选项数组
- * @returns 原数组（非空时）或单元素默认方案数组（恒非空，满足 Schema `minItems: 1`）
+ * @returns 原数组，或单元素默认方案（恒非空，满足 `minItems: 1`）
  */
 function withDefaultOption(options: QuestionOption[]): QuestionOption[] {
   return options.length > 0 ? options : [{ label: TEXTS.fallbacks.defaultOptionLabel }];
 }
 
 /**
- * 规整推演题目的插入位置（兼容 JSON 串包裹、`after` 别名与 `anchor` 字符串）
+ * 规整推演题目的插入位置（兼容 JSON 串包裹、`after` 别名与裸字符串锚点）
  * @param value - `insert` 原始值
- * @returns 预设字符串或 `{ after }` 锚点；无法识别时返回 undefined（由模型层收敛为跟随）
+ * @returns 预设字符串或 `{ after }` 锚点；无法识别时为 undefined（由模型层收敛为跟随）
  */
 function coerceInsertPosition(value: unknown): InsertPosition | undefined {
   if (typeof value === "string") {
@@ -286,7 +281,7 @@ function coerceInsertPosition(value: unknown): InsertPosition | undefined {
 /**
  * 规整实时推演配置（兼容 JSON 串包裹与 `instructions` / `hint` 别名）
  * @param value - `expansion` 原始值
- * @returns 仅含 `maxQuestions` / `guidance` / `insert` 的配置；非对象输入返回 undefined（视为未开启推演）
+ * @returns 仅含 `maxQuestions` / `guidance` / `insert` 的配置；非对象输入为 undefined（视为未开启推演）
  */
 function coerceExpansion(value: unknown): ExpansionConfig | undefined {
   const parsed = parseJson(value);
@@ -307,7 +302,7 @@ function coerceExpansion(value: unknown): ExpansionConfig | undefined {
  * @param rawPrompt - `prompt` 别名原始值
  * @param aliasFormTitle - 由 `title` / `taskTitle` 提取的别名标题
  * @param hasFlatOptions - 平铺模式是否携带候选选项
- * @returns 题干；三个来源均未命中为 undefined（Schema 缺省裁决）
+ * @returns 题干；三个来源均未命中时为 undefined（由 Schema 缺省裁决）
  */
 function resolveFlatQuestion(
   rawQuestion: unknown,
@@ -321,9 +316,9 @@ function resolveFlatQuestion(
 }
 
 /**
- * 入参防御性清洗（`prepareArguments` 钩子）；容错面见文件头，各字段先收敛为本地强类型 `const` 再组装为显式白名单产物
+ * 入参防御性清洗（`prepareArguments` 钩子）
  * @param args - 工具调用原始入参（不可信边界）
- * @returns 仅含 Schema 声明字段的 `RawParams` 白名单对象；输入完全不可辨识时仅返回兜底 `formTitle`
+ * @returns 仅含 Schema 声明字段的白名单对象；输入完全不可辨识时仅含兜底 `formTitle`
  */
 export function sanitizeAskAuthorArgs(args: unknown): RawParams {
   const source = args && typeof args === "object" ? args : parseJson(args);
@@ -364,10 +359,10 @@ export function sanitizeAskAuthorArgs(args: unknown): RawParams {
     p.allowCustom === undefined ? undefined : parseBooleanValue(p.allowCustom, true);
   const customPlaceholder: string | undefined = pickString(p, ["customPlaceholder"]);
 
-  // 7. 实时推演配置（缺省保持 undefined，视为不推演）
+  // 6. 实时推演配置（缺省保持 undefined，视为不推演）
   const expansion: ExpansionConfig | undefined = p.expansion === undefined ? undefined : coerceExpansion(p.expansion);
 
-  // 8. 白名单收敛：仅保留 RawParams 声明的字段（键序与 Schema 一致），丢弃全部不可信残留键
+  // 7. 白名单收敛：仅保留 `RawParams` 声明的字段（键序与 Schema 一致）
   const sanitized: RawParams = {
     formTitle,
     description,
@@ -385,7 +380,7 @@ export function sanitizeAskAuthorArgs(args: unknown): RawParams {
   return sanitized;
 }
 
-/** 推演载荷的归集上下文：表单当前已声明的题目 ID 与各题已有选项标签 */
+/** 推演载荷的归集上下文：表单已声明的题目 ID 与各题已有选项标签 */
 export interface ExpansionContext {
   /** 已声明的题目 ID（按题目顺序） */
   readonly questionIds: readonly string[];
@@ -394,10 +389,10 @@ export interface ExpansionContext {
 }
 
 /**
- * 规整推演模型的回复载荷（不可信边界）：丢弃引用未知题目的选项追加、与既有标签重复的选项以及与既有题目 ID 冲突的新题目
+ * 规整推演模型的回复载荷（不可信边界）：丢弃引用未知题目的选项追加、与既有标签重复的选项、与既有题目 ID 冲突的新题目与无选项的新题目
  * @param value - 已解析的回复对象（非对象时视为无新增）
- * @param context - 表单当前已声明的题目与选项标签
- * @returns 仅含合法追加项的推演载荷；全部条目被过滤时返回空载荷（表单停止增长）
+ * @param context - 表单已声明的题目与选项标签
+ * @returns 仅含合法追加项的推演载荷；全部条目被过滤时为空载荷（表单停止增长）
  */
 export function sanitizeExpansionPayload(value: unknown, context: ExpansionContext): ExpansionPayload {
   if (!isPlainRecord(value)) return { questions: [], optionAdditions: [] };
