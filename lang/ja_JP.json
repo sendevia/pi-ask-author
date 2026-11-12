@@ -19,54 +19,26 @@
         "index"
       ]
     },
+    "typeSingle": "[単一選択]",
+    "typeMulti": "[複数選択]",
+    "conditionalBadge": "[条件付き]",
+    "expansionBadge": "[展開]",
     "expansionPlaceholder": "展開中…",
     "submitTab": {
       "template": "{icon.check} 回答を提出"
     }
   },
+  "titleArea": {
+    "breadcrumbSeparator": " › ",
+    "backButton": {
+      "template": "{icon.back} 戻る"
+    },
+    "questionNote": "質問の補足説明",
+    "optionNote": "選択肢の補足説明",
+    "formNote": "全体の補足"
+  },
   "view": {
-    "modeSingle": "[単一選択]",
-    "conditionalBadge": "[条件付き]",
-    "expansionBadge": "[展開]",
     "expansionPendingHint": "展開中は質問の切り替えと回答を停止します。完了すると新しい質問と選択肢がその場で展開されます",
-    "modeMultiAtLeast": {
-      "template": "[複数選択 {min}項目以上{maxPart}]",
-      "params": [
-        "min",
-        "maxPart"
-      ]
-    },
-    "modeMultiOptional": {
-      "template": "[複数選択 選択任意{maxPart}]",
-      "params": [
-        "maxPart"
-      ]
-    },
-    "modeMultiUnconstrained": {
-      "template": "[複数選択{maxPart}]",
-      "params": [
-        "maxPart"
-      ]
-    },
-    "modeMultiMaxPart": {
-      "template": "、最大{max}項目",
-      "params": [
-        "max"
-      ]
-    },
-    "attachedNoteBanner": {
-      "template": "{icon.note} 質問の補足説明：{text}",
-      "params": [
-        "text"
-      ]
-    },
-    "optionAttachedNoteBanner": {
-      "template": "{icon.note} [{label}] 選択肢の補足説明：{text}",
-      "params": [
-        "label",
-        "text"
-      ]
-    },
     "listTopMore": {
       "template": "  {icon.scrollUp} 上にあと {count} 項目",
       "params": [
@@ -79,9 +51,16 @@
         "count"
       ]
     },
-    "optionNotePanelTitle": "選択肢の補足説明",
-    "storyDescriptionPanelTitle": "ストーリー設定の展開",
-    "storyDraftPanelTitle": "本文下書き／シーン試筆",
+    "notePreviewQuestion": {
+      "template": "{icon.note} 質問の補足説明"
+    },
+    "notePreviewOption": {
+      "template": "{icon.note} 選択肢の補足説明（{label}）",
+      "params": [
+        "label"
+      ]
+    },
+    "notePreviewClipped": "…補足説明が長いため、n / N キーで編集画面に全文を表示します",
     "previewScrollInfo": {
       "template": "({start}-{end}/{total} 行、[ ] でスクロール)",
       "params": [
@@ -91,12 +70,6 @@
       ]
     },
     "previewNoDraft": "(プレビュー内容なし)",
-    "sectionTitle": {
-      "template": "### {title}",
-      "params": [
-        "title"
-      ]
-    },
     "italicLine": {
       "template": "_{text}_",
       "params": [
@@ -105,6 +78,12 @@
     }
   },
   "menu": {
+    "optionNoteLabel": {
+      "template": "{icon.note} 選択肢の補足説明"
+    },
+    "optionNoteLabelFilled": {
+      "template": "{icon.note} 選択肢の補足説明 (入力済み)"
+    },
     "customNoteLabel": {
       "template": "{icon.note} 質問の補足説明"
     },
@@ -135,26 +114,7 @@
     "confirmNoteSuffix": " + 補足説明"
   },
   "editor": {
-    "title": {
-      "template": " {icon.note} 質問の補足説明を入力（{questionTitle}）",
-      "params": [
-        "questionTitle"
-      ]
-    },
-    "optionTitle": {
-      "template": " {icon.note} 選択肢の補足説明を入力（{optionLabel} - {questionTitle}）",
-      "params": [
-        "questionTitle",
-        "optionLabel"
-      ]
-    },
-    "formTitle": {
-      "template": " {icon.note} 全体の補足を入力（{formTitle}）",
-      "params": [
-        "formTitle"
-      ]
-    },
-    "footerHelp": " [Enter] 保存して戻る • [Esc/Ctrl+C] 取り消し"
+    "footerHelp": "[Enter] 保存して戻る • [Esc/Ctrl+C] 取り消し"
   },
   "status": {
     "questionNoteSaved": "質問の補足説明を保存しました",
@@ -204,7 +164,7 @@
       ]
     },
     "pleaseAnswerBeforeSubmit": "この質問は未回答です：「Space/Enter」で選択肢を選択するか、「n/N」で補足説明を入力してください",
-    "editorDiscardConfirm": "もう一度 Esc/Ctrl+C を押すと変更を破棄します（未保存の内容は失われます）。入力を続けると取り消しを中止します",
+    "editorDiscardConfirm": "もう一度 Esc/Ctrl+C または戻るボタンで変更を破棄します（未保存の内容は失われます）。入力を続けると取り消しを中止します",
     "errorNonTui": "対話型ターミナル環境ではないため、インターフェースを起動できません。対話型 TUI セッションで再試行してください",
     "errorNoQuestions": "有効な質問または選択肢が指定されていません。選択肢を含む質問を少なくとも1つ指定してください",
     "errorInvalidCondition": {
@@ -254,7 +214,6 @@
     "toggleCheckMulti": "Space 選択/解除"
   },
   "summary": {
-    "title": "【回答概要と確認】",
     "statusDone": "[完了]",
     "statusPending": "[未完了]",
     "questionPrefix": {
@@ -277,20 +236,14 @@
     "customNoteLabel": {
       "template": "{icon.note} 質問の補足説明："
     },
-    "allDonePrompt": {
-      "template": " {icon.check} すべて完了しました。確定して提出"
-    },
     "pendingWarning": {
-      "template": " {icon.unchecked} 未完了の質問があります。確定すると未完了の質問へ移動します"
+      "template": "{icon.unchecked} 未完了の質問があります。確定すると未完了の質問へ移動します"
     },
-    "formNoteFilled": {
-      "template": "{icon.note} 全体の補足：{text}",
-      "params": [
-        "text"
-      ]
+    "formNoteLabel": {
+      "template": "{icon.note} 全体の補足"
     },
-    "formNoteEmpty": {
-      "template": "{icon.note} 全体の補足（未入力です。n キーまたはクリックで入力）"
+    "formNoteLabelFilled": {
+      "template": "{icon.note} 全体の補足 (入力済み)"
     },
     "submitButton": {
       "template": "{icon.check} 提出を確定"

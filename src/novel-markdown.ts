@@ -594,40 +594,24 @@ function markNovelSyntax(source: string): string {
 }
 
 /**
- * 构建预览框的完整未切片内容行（原生 Markdown 渲染 + 小说语法标注）
- * 只展示聚焦选项的内容：专属补充说明、情节设定推演与正文草稿
+ * 构建题目内容区的完整未切片内容行（原生 Markdown 渲染 + 小说语法标注）
+ * 只展示聚焦选项的正文：情节设定说明与正文草稿，不带区块标题
  * @param item - 当前聚焦的选项菜单项
- * @param optionNote - 当前选项填写的专属补充说明
- * @param targetWidth - 预览区渲染总列宽，含 `Markdown` 组件左右各 1 列 `paddingX`（正文可用宽度为其减 2）
+ * @param targetWidth - 内容区渲染总列宽，含 `Markdown` 组件左右各 1 列 `paddingX`（正文可用宽度为其减 2）
  * @param theme - TUI 主题实例
  * @returns 未切片的完整内容行（每行已补足至 `targetWidth`）；`item` 缺省时为空数组
  */
-export function buildFullPreviewContentLines(
-  item: MenuItem | undefined,
-  optionNote: string | undefined,
-  targetWidth: number,
-  theme: Theme,
-): string[] {
+export function buildFullPreviewContentLines(item: MenuItem | undefined, targetWidth: number, theme: Theme): string[] {
   if (!item) return [];
 
   let mdSource = "";
 
-  // 1. 选项专属作者补充说明（若已填写）
-  if (optionNote) {
-    mdSource += `${TEXTS.view.sectionTitle(TEXTS.view.optionNotePanelTitle)}\n\n${cleanText(optionNote)}\n\n`;
-  }
+  // 1. 情节设定说明
+  if (item.description) mdSource += `${cleanText(item.description)}\n\n`;
 
-  // 2. 情节设定推演说明
-  if (item.description) {
-    mdSource += `${TEXTS.view.sectionTitle(TEXTS.view.storyDescriptionPanelTitle)}\n\n${cleanText(item.description)}\n\n`;
-  }
-
-  // 3. 正文草稿/分镜头预览
-  if (item.preview) {
-    mdSource += `${TEXTS.view.sectionTitle(TEXTS.view.storyDraftPanelTitle)}\n\n${cleanText(item.preview)}\n\n`;
-  } else if (!item.description && !optionNote) {
-    mdSource += `${TEXTS.view.italicLine(TEXTS.view.previewNoDraft.trim())}\n\n`;
-  }
+  // 2. 正文草稿/分镜头预览
+  if (item.preview) mdSource += `${cleanText(item.preview)}\n\n`;
+  else if (!item.description) mdSource += `${TEXTS.view.italicLine(TEXTS.view.previewNoDraft.trim())}\n\n`;
 
   const mdTheme = createNovelMarkdownTheme(theme);
   // paddingX = 1 提供终端边距；transform 在原生解析前完成语义标注，折行与配色由 Pi Markdown 引擎回填

@@ -147,10 +147,7 @@ export interface AskAuthorResult {
 }
 
 /** 批注编辑目标：`form` 整卷补充 / `question` 题目整体 / `option` 指定选项专属（`optionIndex` 为 0-based，越界不写入状态） */
-export type EditTarget =
-  | { type: "form" }
-  | { type: "question" }
-  | { type: "option"; optionIndex: number };
+export type EditTarget = { type: "form" } | { type: "question" } | { type: "option"; optionIndex: number };
 
 /** 题目菜单项（一个可见预设选项） */
 export interface MenuItem {
@@ -164,10 +161,12 @@ export interface MenuItem {
   preview?: string;
 }
 
-/** 题目底部操作按钮的文案（补在选项列表之后，靠右成组） */
+/** 选项下方动作区按钮的文案（补充入口与确认推进靠右成组） */
 export interface QuestionActions {
-  /** 题目补充说明入口按钮文案；题目禁用补充说明时缺省 */
-  readonly note?: string;
+  /** 当前聚焦选项的补充说明入口文案；题目禁用补充说明或没有聚焦选项时缺省 */
+  readonly optionNote?: string;
+  /** 题目补充说明入口文案；题目禁用补充说明时缺省 */
+  readonly questionNote?: string;
   /** 确认推进按钮文案 */
   readonly confirm: string;
 }
@@ -1047,14 +1046,17 @@ export class AskAuthorFormModel {
   }
 
   /**
-   * 派生题目底部操作按钮的文案
-   * 确认按钮的明细随作答状态派生：多选展示已选数/下限，单选展示已选项标签、自定义方案名或未选
+   * 派生选项下方动作区的按钮文案
+   * 确认按钮的明细随作答状态派生：多选展示已选数/下限，单选展示已选项标签、自定义方案名或未选；
+   * 两个补充入口按是否已填写在文案里标注，禁用补充说明时直接缺省
    * @param qIndex - 题目顺序索引（0-based）
-   * @returns 补充说明与确认推进按钮文案；题目不存在时为 undefined
+   * @param optionIndex - 当前聚焦选项的顺序索引（0-based）；未给出时不出选项补充入口
+   * @returns 三个动作按钮的文案；题目不存在时为 undefined
    */
-  getQuestionActions(qIndex: number): QuestionActions | undefined {
+  getQuestionActions(qIndex: number, optionIndex?: number): QuestionActions | undefined {
     const q = this.getQuestion(qIndex);
     if (!q) return undefined;
+    const st = this.getState(qIndex);
     const noted = this.hasSubmittableNote(qIndex);
     const selectedIndex = this.getSelectedIndex(qIndex);
     const confirmDetail = q.multiSelect
@@ -1064,9 +1066,16 @@ export class AskAuthorFormModel {
         : noted
           ? TEXTS.fallbacks.defaultCustomChoiceName
           : TEXTS.fallbacks.unselectedOption;
+    const optionNoted = optionIndex !== undefined && (st.optionNotes.get(optionIndex)?.trim() ?? "") !== "";
     return {
-      note: q.allowCustom
-        ? hasQuestionNote(this.getState(qIndex))
+      optionNote:
+        q.allowCustom && optionIndex !== undefined
+          ? optionNoted
+            ? TEXTS.menu.optionNoteLabelFilled
+            : TEXTS.menu.optionNoteLabel
+          : undefined,
+      questionNote: q.allowCustom
+        ? hasQuestionNote(st)
           ? TEXTS.menu.customNoteLabelFilled
           : TEXTS.menu.customNoteLabel
         : undefined,

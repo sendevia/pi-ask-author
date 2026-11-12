@@ -1,16 +1,17 @@
 /**
  * @file view-editor.ts
- * @description 补充说明编辑器的全屏视图构建器
+ * @description 补充说明编辑页的全屏视图构建：面包屑标题区、编辑内容区与提示区
  *
  * 编辑框实例由组件传入并保持焦点；构造后回传编辑框位置供鼠标点击换算
  */
 
 import type { Editor } from "@earendil-works/pi-tui";
 import { pushWrapped } from "./format.js";
+import { ICONS } from "./layout.js";
 import type { AskAuthorFormModel, EditTarget } from "./model.js";
 import { TEXTS } from "./texts.js";
 import type { Theme } from "./theme.js";
-import { optionLabelOf, pushFrameRule } from "./view-rows.js";
+import { composePage, optionLabelOf, renderLeadingButton, type ButtonRect } from "./view-rows.js";
 
 /** 编辑框左右两侧的缩进列数 */
 const EDITOR_INDENT = 2;
@@ -33,19 +34,33 @@ export interface EditorPage {
   readonly lines: string[];
   /** 编辑框位置；题目缺失时为 undefined */
   readonly editorArea?: EditorArea;
+  /** 返回按钮在整页中的矩形（鼠标点击路由依据） */
+  readonly backButton?: ButtonRect;
 }
 
 /**
- * 渲染补充说明编辑器全屏页（顶部分割线 / Tab 栏 / 标题与上下文 / 编辑框 / 页脚按键提示 / 底部分割线）
+ * 拼装补充说明编辑页的标题区面包屑（问卷 → 题目 → 选项 → 补充说明面板）
+ * @param theme - 当前 TUI 主题
+ * @param segments - 由粗到细的定位片段
+ * @returns 单行着色面包屑
+ */
+function breadcrumb(theme: Theme, segments: readonly string[]): string {
+  const trail = segments.join(TEXTS.titleArea.breadcrumbSeparator);
+  return theme.fg("accent", theme.bold(`${ICONS.note} ${trail}`));
+}
+
+/**
+ * 渲染补充说明编辑页：题目标题区（返回按钮 + 可折行面包屑）→ 上下文与编辑框 → 提示区
  * @param theme - 当前 TUI 主题
  * @param model - 问卷模型（读取问卷标题与题目、选项文案）
  * @param tab - 当前题目索引
  * @param target - 编辑目标（整卷补充、题目整体或指定选项）
  * @param editor - 内置编辑器实例
  * @param tabLines - 题目导航 Tab 栏行（组件缓存）
+ * @param statusMessage - 提示区的临时状态通知（丢弃确认等提醒）
  * @param renderWidth - 终端可视宽度
  * @param terminalRows - 终端可视行数
- * @returns 整页终端行与编辑框位置；题目目标下题目不存在时行数组为空且无编辑框位置
+ * @returns 整页终端行、编辑框位置与返回按钮矩形；题目目标下题目不存在时行数组为空且无编辑框位置
  */
 export function renderEditorPage(
   theme: Theme,
@@ -54,20 +69,18 @@ export function renderEditorPage(
   target: EditTarget | undefined,
   editor: Editor,
   tabLines: readonly string[],
+  statusMessage: string | null,
   renderWidth: number,
   terminalRows: number,
 ): EditorPage {
-  const lines: string[] = [];
-  pushFrameRule(lines, theme, renderWidth);
-  lines.push(...tabLines);
+  // 1. 题目标题区：返回按钮在左、可折行的面包屑在右；内容区开头：编辑目标的上下文与占位提示
+  const context: string[] = [];
+  let title: string;
 
   if (target?.type === "form") {
-    lines.push(theme.fg("accent", theme.bold(TEXTS.editor.formTitle(model.formTitle))));
-    if (model.formDescription) {
-      pushWrapped(lines, theme.fg("muted", model.formDescription), renderWidth, "  ");
-    }
-    lines.push("");
-    lines.push(theme.fg("accent", ` ${TEXTS.fallbacks.defaultFormCustomPlaceholder}`));
+    if (model.formDescription) pushWrapped(context, theme.fg("muted", model.formDescription), renderWidth, "  ");
+    context.push(theme.fg("accent", ` ${TEXTS.fallbacks.defaultFormCustomPlaceholder}`));
+    title = breadcrumb(theme, [model.formTitle, TEXTS.titleArea.formNote]);
   } else {
     const q = model.getQuestion(tab);
     if (!q) return { lines: [] };
@@ -76,36 +89,50 @@ export function renderEditorPage(
       const optIdx = target.optionIndex;
       const opt = q.options[optIdx];
       const optLabel = optionLabelOf(q, optIdx);
-      const placeholder = opt?.customPlaceholder ?? TEXTS.fallbacks.defaultOptionCustomPlaceholder;
-
-      lines.push(theme.fg("accent", theme.bold(TEXTS.editor.optionTitle(q.title, optLabel))));
-      if (opt?.description) {
-        pushWrapped(lines, theme.fg("muted", opt.description), renderWidth, "  ");
-      }
-      lines.push("");
-      lines.push(theme.fg("accent", ` ${placeholder}`));
+      if (opt?.description) pushWrapped(context, theme.fg("muted", opt.description), renderWidth, "  ");
+      context.push(theme.fg("accent", ` ${opt?.customPlaceholder ?? TEXTS.fallbacks.defaultOptionCustomPlaceholder}`));
+      title = breadcrumb(theme, [model.formTitle, q.title, optLabel, TEXTS.titleArea.optionNote]);
     } else {
-      lines.push(theme.fg("accent", theme.bold(TEXTS.editor.title(q.title))));
-      if (q.description) {
-        pushWrapped(lines, theme.fg("muted", q.description), renderWidth, "  ");
-      }
-      lines.push("");
-      lines.push(theme.fg("accent", ` ${q.customPlaceholder}`));
+      if (q.description) pushWrapped(context, theme.fg("muted", q.description), renderWidth, "  ");
+      context.push(theme.fg("accent", ` ${q.customPlaceholder}`));
+      title = breadcrumb(theme, [model.formTitle, q.title, TEXTS.titleArea.questionNote]);
     }
   }
-  lines.push("");
+  context.push("");
 
+  // 2. 内容区：编辑框，占满四个区域之外的全部高度
+  const head = renderLeadingButton(
+    theme,
+    { text: theme.fg("muted", TEXTS.titleArea.backButton), tone: "muted" },
+    title,
+    renderWidth,
+  );
   const editorWidth = Math.max(10, renderWidth - EDITOR_INDENT * 2);
-  const editorTop = lines.length;
   const editorLines = editor.render(editorWidth).map((line) => `${" ".repeat(EDITOR_INDENT)}${line}`);
-  lines.push(...editorLines);
+  const page = composePage(
+    theme,
+    renderWidth,
+    terminalRows,
+    { tabLines, titleLines: head.lines, answerLines: [], statusMessage, helpParts: [TEXTS.editor.footerHelp] },
+    (height) => {
+      const content = [...context, ...editorLines];
+      while (content.length < height) content.push("");
+      return content;
+    },
+  );
 
-  const tail: string[] = [""];
-  pushWrapped(tail, theme.fg("dim", TEXTS.editor.footerHelp), renderWidth, " ");
-  pushFrameRule(tail, theme, renderWidth);
-
-  for (let i = lines.length + tail.length; i < terminalRows; i++) lines.push("");
-  lines.push(...tail);
-
-  return { lines, editorArea: { top: editorTop, height: editorLines.length, left: EDITOR_INDENT, width: editorWidth } };
+  const titleTop = tabLines.length;
+  return {
+    lines: page.lines,
+    editorArea: {
+      top: page.contentBand.start + context.length,
+      height: editorLines.length,
+      left: EDITOR_INDENT,
+      width: editorWidth,
+    },
+    backButton: {
+      rows: { start: titleTop + head.rect.rows.start, end: titleTop + head.rect.rows.end },
+      cols: head.rect.cols,
+    },
+  };
 }

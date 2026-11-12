@@ -13,7 +13,7 @@ parent: ask-author-architecture
 ## 责任
 
 - `novel-syntax.ts`：以声明式模板表定义台词与心理旁白的定界符、语义哨兵、最大跨距与主题绘制函数，并派生「开定界符 → 模板」与「哨兵 → 模板」两个索引。
-- `novel-markdown.ts`：把预览文本里的台词与心理旁白转换为携带语义哨兵的行内代码，配定制 Markdown 主题渲染；`buildFullPreviewContentLines` 产出题目页预览所需的内容行。
+- `novel-markdown.ts`：把预览文本里的台词与心理旁白转换为携带语义哨兵的行内代码，配定制 Markdown 主题渲染；`buildFullPreviewContentLines` 产出题目内容区的行（只含选项设定说明与正文草稿，区块标题由排版层的子区划分代替）。
 
 ## 边界
 

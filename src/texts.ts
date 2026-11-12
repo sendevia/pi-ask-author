@@ -17,21 +17,6 @@ const resolveTemplateConstant = (name: string): string | undefined =>
 const LOCALE_TEXTS = loadTexts(resolveTemplateConstant);
 
 /**
- * 渲染多选模式标签（形如 `[多选 可不选 至多3项]`）
- * @param min - 收敛后的最小勾选数
- * @param max - 收敛后的最大勾选数
- * @param optionCount - 本题候选选项数
- * @param allowEmpty - 是否允许零勾选提交
- * @returns `min > 1` 时标注强制下限；允许零勾选时标注可不选；`max` 小于选项总数时追加上限标注
- */
-const modeMultiLabel = (min: number, max: number, optionCount: number, allowEmpty: boolean): string => {
-  const maxPart = max < optionCount ? LOCALE_TEXTS.view.modeMultiMaxPart(max) : "";
-  if (min > 1) return LOCALE_TEXTS.view.modeMultiAtLeast(min, maxPart);
-  if (min === 0 || allowEmpty) return LOCALE_TEXTS.view.modeMultiOptional(maxPart);
-  return LOCALE_TEXTS.view.modeMultiUnconstrained(maxPart);
-};
-
-/**
  * 渲染多选确认按钮的已选计数明细
  * @param selectedCount - 已选数
  * @param minSelect - 本题下限
@@ -72,13 +57,15 @@ export const TEXTS = {
   command: LOCALE_TEXTS.command,
   /** 跨视图共用的排版片段（枚举分隔符、列表条目前缀与按键帮助分隔符） */
   common: LOCALE_TEXTS.common,
-  /** Tab 导航栏标签文案 */
+  /** Tab 导航栏标签文案（含题目类型短标记） */
   tabs: LOCALE_TEXTS.tabs,
-  /** 作答视图与预览面板文案（`modeMulti` 由多选模式片段组合而成） */
-  view: { ...LOCALE_TEXTS.view, modeMulti: modeMultiLabel },
+  /** 题目标题区的面包屑片段（分隔符与补充说明面板名称） */
+  titleArea: LOCALE_TEXTS.titleArea,
+  /** 作答视图与预览区文案 */
+  view: LOCALE_TEXTS.view,
   /** 题目菜单条目文案（`confirmDetailMulti` / `confirmLabel` 由已选数片段组合而成） */
   menu: { ...LOCALE_TEXTS.menu, confirmDetailMulti, confirmLabel },
-  /** 全屏补充说明编辑器的标题与页脚按键帮助 */
+  /** 全屏补充说明编辑页的提示区按键帮助 */
   editor: LOCALE_TEXTS.editor,
   /** 底部临时状态栏通知（操作结果、阻断原因与纠正路径） */
   status: LOCALE_TEXTS.status,

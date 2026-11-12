@@ -410,15 +410,15 @@ const cases = [
       });
 
       expectRender(renders[0], {
-        shows: [TEXTS.view.modeSingle, "单选页"],
-        hides: [TEXTS.view.expansionBadge, "多选页", "条件页"],
+        shows: [TEXTS.tabs.typeSingle, "单选页"],
+        hides: [TEXTS.tabs.expansionBadge, "多选页", "条件页"],
       });
       expectRender(renders[2], {
-        shows: [TEXTS.view.modeMulti(2, 3, 3, false), TEXTS.view.conditionalBadge, TEXTS.view.expansionBadge, "多选页"],
+        shows: [TEXTS.tabs.typeMulti, TEXTS.tabs.conditionalBadge, TEXTS.tabs.expansionBadge, "多选页"],
       });
-      expectRender(renders[3], { shows: [TEXTS.view.modeMulti(2, 3, 3, false), TEXTS.view.expansionBadge] });
+      expectRender(renders[3], { shows: [TEXTS.tabs.typeMulti, TEXTS.tabs.expansionBadge] });
 
-      expectRender(renders[5], { shows: [TEXTS.summary.title], hides: [TEXTS.view.expansionPendingHint] });
+      expectRender(renders[5], { shows: [TEXTS.summary.submitButton], hides: [TEXTS.view.expansionPendingHint] });
       assert.equal(requests.length, 2, "两次确认各应发起一次推演，关闭推演的第一题不应发起请求");
       assert.deepEqual(requests[0].trigger, { index: 2, id: "q2", title: "双向收敛" });
       assert.equal(requests[0].guidance, "多选专属方向", "题目级方向指示应优先于表单级设置");

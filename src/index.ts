@@ -66,9 +66,7 @@ function addUsage(total: ToolUsage | undefined, usage: ToolUsage): ToolUsage {
 function buildSessionHistory(ctx: ExtensionToolContext) {
   // 压缩感知的分支投影就是主对话送给模型的消息，推演与它共享前缀
   const history = convertToLlm(ctx.sessionManager.buildSessionProjection().messages);
-  const answered = new Set(
-    history.flatMap((message) => (message.role === "toolResult" ? [message.toolCallId] : [])),
-  );
+  const answered = new Set(history.flatMap((message) => (message.role === "toolResult" ? [message.toolCallId] : [])));
   // 推演发生在 ask_author 的执行期内，本次调用（可能还有并行调用）尚无结果；补齐占位以保持调用与结果相邻
   const pending = history.flatMap((message) =>
     message.role === "assistant"

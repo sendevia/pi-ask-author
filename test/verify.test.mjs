@@ -190,7 +190,7 @@ const fakeTui = { terminal: { rows: 40 }, requestRender() {} };
   assert.ok(["en_US", "ja_JP", "ko_KR", "zh_CN"].includes(ACTIVE_LOCALE), "当前界面语言应为已注册语言");
   assert.ok(TEXTS.tabs.questionTab(2).includes("2"), "语言模板应按形参插值");
   assert.throws(() => TEXTS.tabs.questionTab(), /形参数量不匹配/, "语言模板形参不足时应立即抛出");
-  assert.ok(TEXTS.view.storyDraftPanelTitle.length > 0, "面板标题文案应完整装载");
+  assert.ok(TEXTS.view.notePreviewClipped.length > 0, "补充预览区提示文案应完整装载");
 
   const assertStructureEqual = (canonical, target, path = "") => {
     if (typeof canonical === "string") {
@@ -411,7 +411,7 @@ const fakeTui = { terminal: { rows: 40 }, requestRender() {} };
 
 // 8. 视图渲染冒烟验证
 {
-  const widths = [120, 40];
+  const widths = [120, 40, 20];
   const assertWidths = (component, stage) => {
     for (const width of widths) {
       const lines = component.render(width);
@@ -439,7 +439,10 @@ const fakeTui = { terminal: { rows: 40 }, requestRender() {} };
 
         component.handleInput("\t");
         assertWidths(component, "总览页");
-        assert.ok(component.render(120).join("\n").includes(TEXTS.summary.title), "总览页应显示标题");
+        assert.ok(
+          component.render(120).join("\n").includes(TEXTS.summary.submitButton),
+          "总览页应显示确认提交按钮",
+        );
 
         component.handleInput("h");
         component.handleInput("n");
@@ -637,7 +640,7 @@ const fakeTui = { terminal: { rows: 40 }, requestRender() {} };
   assert.equal(model.canExpandOnConfirm(0, true), false, "题数达上限后不再标记");
 }
 
-// 13. 题头推演标记验证
+// 13. Tab 标签上的推演标记验证
 {
   const renderOnce = async (args) => {
     let text = "";
@@ -665,10 +668,15 @@ const fakeTui = { terminal: { rows: 40 }, requestRender() {} };
 
   const body = { formTitle: "标记渲染", question: "选择方向", options: [{ label: "甲" }, { label: "乙" }] };
   const withExpansion = await renderOnce({ ...body, expansion: { maxQuestions: 3 } });
-  assert.ok(withExpansion.includes(TEXTS.view.expansionBadge), "开启推演时题头应显示推演标记");
+  assert.ok(withExpansion.includes(TEXTS.tabs.expansionBadge), "开启推演时 Tab 标签应带推演标记");
 
   const withoutExpansion = await renderOnce(body);
-  assert.ok(!withoutExpansion.includes(TEXTS.view.expansionBadge), "未开启推演时不应显示推演标记");
+  assert.ok(!withoutExpansion.includes(TEXTS.tabs.expansionBadge), "未开启推演时不应显示推演标记");
+
+  // 题目类型短标记随 Tab 出现在同一行
+  const singleTabRow = withExpansion.split("\n").find((line) => line.includes(TEXTS.tabs.typeSingle));
+  assert.ok(singleTabRow !== undefined, "Tab 标签应带单选标记");
+  assert.ok(singleTabRow.includes(TEXTS.tabs.expansionBadge), "类型标记与推演标记应在同一行 Tab 内");
 }
 
 // 14. 推演题目插队与索引平移
@@ -904,7 +912,10 @@ const fakeTui = { terminal: { rows: 40 }, requestRender() {} };
         const component = factory(fakeTui, dummyTheme, {}, settle);
         // 每题「空格选定 + Enter 确认」，确认最后一题后自动落入总览页
         for (const key of [" ", "\r", " ", "\r"]) component.handleInput(key);
-        assert.ok(component.render(120).join("\n").includes(TEXTS.summary.title), "确认最后一题后应自动进入总览页");
+        assert.ok(
+          component.render(120).join("\n").includes(TEXTS.summary.submitButton),
+          "确认最后一题后应自动进入总览页",
+        );
         component.handleInput("\r");
         const result = await done;
         component.dispose();
@@ -1047,34 +1058,37 @@ const fakeTui = { terminal: { rows: 40 }, requestRender() {} };
         frames.page = render();
         const tabRow = frames.page.findIndex((l) => l.includes(TEXTS.tabs.questionTab(1)));
         const cursorRow = frames.page.findIndex((l) => l.includes(ICONS.cursor));
+        const contentRow = frames.page.findIndex((l) => l.includes("第1段"));
+        assert.ok(tabRow >= 0 && contentRow > tabRow, "内容区应在题目标题区之后");
 
         // 非滚轮事件不接管
         assert.equal(component.handleMouse({ ...wheel(0, 3), type: "press" }), undefined, "非滚轮事件不应处理");
 
-        // 预览区滚轮：预览内容滚动，选项光标不动
-        const previewBandRow = 1;
-        assert.ok(previewBandRow < tabRow, "预览区应在 Tab 栏之前");
-        assert.deepEqual(component.handleMouse(wheel(previewBandRow, 5)), { handled: true }, "滚轮应标记为已消费");
+        // 内容区滚轮：预览内容滚动，选项光标不动
+        assert.deepEqual(component.handleMouse(wheel(contentRow, 5)), { handled: true }, "滚轮应标记为已消费");
         frames.scrolled = render();
-        assert.notEqual(frames.scrolled[1], frames.page[1], "预览区滚轮应滚动预览内容");
+        assert.notEqual(frames.scrolled[contentRow], frames.page[contentRow], "内容区滚轮应滚动预览内容");
         assert.equal(
           frames.scrolled.findIndex((l) => l.includes(ICONS.cursor)),
           cursorRow,
-          "预览区滚轮不应移动选项光标",
+          "内容区滚轮不应移动选项光标",
         );
 
-        // 选项区滚轮：光标下移，预览位移重置
-        const optionRow = cursorRow;
-        assert.deepEqual(component.handleMouse(wheel(optionRow, 1)), { handled: true }, "选项区滚轮应被接管");
+        // 作答区滚轮：光标下移，预览位移重置
+        assert.deepEqual(component.handleMouse(wheel(cursorRow, 1)), { handled: true }, "作答区滚轮应被接管");
         frames.moved = render();
-        assert.ok(frames.moved.findIndex((l) => l.includes(ICONS.cursor)) > cursorRow, "选项区滚轮应下移选项光标");
+        assert.ok(frames.moved.findIndex((l) => l.includes(ICONS.cursor)) > cursorRow, "作答区滚轮应下移选项光标");
 
-        // 总览页滚轮：滚动答卷内容
+        // 切到下一题后滚轮仍被接管
         component.handleInput("\t");
-        frames.summary = render();
-        assert.deepEqual(component.handleMouse(wheel(2, 3)), { handled: true }, "总览页滚轮应被接管");
-        frames.summaryScrolled = render();
-        assert.notEqual(frames.summaryScrolled.join("\n"), frames.summary.join("\n"), "总览页滚轮应滚动答卷内容");
+        frames.next = render();
+        const nextCursorRow = frames.next.findIndex((l) => l.includes(ICONS.cursor));
+        assert.deepEqual(component.handleMouse(wheel(nextCursorRow, 1)), { handled: true }, "切题后滚轮应被接管");
+        frames.nextMoved = render();
+        assert.ok(
+          frames.nextMoved.findIndex((l) => l.includes(ICONS.cursor)) > nextCursorRow,
+          "切题后滚轮应下移选项光标",
+        );
 
         component.dispose();
         return { formTitle: "滚轮", questions: [], answers: [], cancelled: true };
@@ -1082,7 +1096,7 @@ const fakeTui = { terminal: { rows: 40 }, requestRender() {} };
     },
   };
 
-  await registeredToolDef.execute(
+  const wheelRun = await registeredToolDef.execute(
     "call-wheel",
     {
       formTitle: "滚轮",
@@ -1107,9 +1121,10 @@ const fakeTui = { terminal: { rows: 40 }, requestRender() {} };
     undefined,
     ctx,
   );
+  assert.ok(!wheelRun.isError, `滚轮流程不应报错：${wheelRun.content[0]?.text ?? ""}`);
 
   assert.equal(frames.page.length, ROWS, "整屏覆盖层下作答页应恰好占满终端行数");
-  assert.ok(frames.summary.length > 0 && frames.summaryScrolled.length > 0, "总览页应可渲染");
+  assert.ok(frames.next.length > 0 && frames.nextMoved.length > 0, "切题后应可渲染");
 }
 
 // 20. 鼠标点击：Tab 标签切题、选项行移动并激活、总览页全高与带序
@@ -1147,8 +1162,20 @@ const fakeTui = { terminal: { rows: 40 }, requestRender() {} };
 
         frames.question = render();
         const tabRow = frames.question.findIndex((l) => plain(l).includes(TEXTS.tabs.submitTab));
-        assert.ok(tabRow > 0, "Tab 栏应可见");
-        assert.ok(tabRow > frames.question.findIndex((l) => plain(l).includes("第一题")), "Tab 栏应在内容之后");
+        assert.equal(tabRow, 0, "Tab 栏应位于整页首行的题目标题区");
+        const titleRow = frames.question.findIndex((l) => plain(l).includes("第一章采用哪种叙事视角？"));
+        assert.ok(titleRow > tabRow, "题名应在 Tab 栏之下");
+        const firstOptionRow = frames.question.findIndex((l) => plain(l).includes("第一人称"));
+        assert.ok(firstOptionRow > titleRow, "选项应在题目标题区之下的作答区");
+        assert.ok(plain(frames.question[tabRow]).startsWith(ICONS.unchecked), "Tab 栏应贴整页左缘");
+        assert.ok(
+          plain(frames.question[tabRow]).includes(TEXTS.tabs.typeSingle),
+          "Tab 标签应带题目类型短标记",
+        );
+        assert.ok(
+          plain(frames.question[titleRow]).startsWith("第一章采用哪种叙事视角？"),
+          "题名行应贴整页左缘",
+        );
         const tabCol = plain(frames.question[tabRow]).indexOf("节奏");
         assert.ok(tabCol > 0, "自定义短标签应落在 Tab 栏内");
 
@@ -1165,7 +1192,7 @@ const fakeTui = { terminal: { rows: 40 }, requestRender() {} };
         assert.deepEqual(optionClick.press, { handled: true }, "选项按下应被接管");
         assert.deepEqual(optionClick.click, { handled: true }, "选项松开应被接管");
         frames.afterOptionClick = render();
-        assert.ok(text(frames.afterOptionClick).includes("第一题"), "点击选项不应跳题");
+        assert.ok(text(frames.afterOptionClick).includes("第一章采用哪种叙事视角？"), "点击选项不应跳题");
         assert.notEqual(text(frames.afterOptionClick), text(frames.back), "点击选项应改变勾选与光标");
 
         // 非条目区域的按下不被接管，留给 pi 做文本选择
@@ -1175,16 +1202,20 @@ const fakeTui = { terminal: { rows: 40 }, requestRender() {} };
           "空白处按下不接管",
         );
 
-        // 总览页：全高且答卷内容在 Tab 栏之上
+        // 总览页：全高，Tab 栏在上、答卷正文在其下的内容区，未完成时补一行提示
         component.handleInput("\t");
         component.handleInput("\t");
         frames.summary = render();
         assert.equal(frames.summary.length, ROWS, `总览页应占满终端 ${ROWS} 行`);
         const summaryTabRow = frames.summary.findIndex((l) => plain(l).includes(TEXTS.tabs.submitTab));
-        const answerRow = frames.summary.findIndex((l) => plain(l).includes("第一题"));
-        const titleRow = frames.summary.findIndex((l) => plain(l).includes(TEXTS.summary.title));
-        assert.ok(answerRow >= 0 && answerRow < summaryTabRow, "答卷总览内容应在 Tab 栏之上");
-        assert.ok(titleRow > summaryTabRow, "总览标题应在 Tab 栏之下");
+        const warningRow = frames.summary.findIndex((l) => plain(l).includes(TEXTS.summary.pendingWarning));
+        const answerRow = frames.summary.findIndex((l) =>
+          plain(l).includes(TEXTS.summary.questionPrefix(1, "第一章采用哪种叙事视角？")),
+        );
+        assert.equal(summaryTabRow, 0, "总览页 Tab 栏应位于整页首行的题目标题区");
+        assert.ok(warningRow > summaryTabRow, "未完成提示应在 Tab 栏之下");
+        assert.ok(plain(frames.summary[warningRow]).startsWith(TEXTS.summary.pendingWarning), "未完成提示应贴整页左缘");
+        assert.ok(answerRow > warningRow, "答卷总览正文应在标题区之下的内容区");
 
         // 总览页点击题目标签切回题目
         const backCol = plain(frames.summary[summaryTabRow]).indexOf("视角");
@@ -1198,7 +1229,7 @@ const fakeTui = { terminal: { rows: 40 }, requestRender() {} };
     },
   };
 
-  await registeredToolDef.execute(
+  const clickRun = await registeredToolDef.execute(
     "call-click",
     {
       formTitle: "点击",
@@ -1219,6 +1250,7 @@ const fakeTui = { terminal: { rows: 40 }, requestRender() {} };
     undefined,
     ctx,
   );
+  assert.ok(!clickRun.isError, `点击流程不应报错：${clickRun.content[0]?.text ?? ""}`);
 }
 
 // 21. 编辑页整页占满且编辑框内点击可定位光标
@@ -1254,7 +1286,10 @@ const fakeTui = { terminal: { rows: 40 }, requestRender() {} };
         for (const ch of "abcdef") component.handleInput(ch);
         frames.editor = render();
         assert.equal(frames.editor.length, ROWS, `编辑页应占满 ${ROWS} 行`);
-        assert.ok(plain(frames.editor[ROWS - 1]).includes("═"), "编辑页末行应为框架线");
+        assert.ok(
+          plain(frames.editor[ROWS - 1]).includes(TEXTS.editor.footerHelp),
+          "编辑页末行应为提示区的按键帮助（无外层双横线）",
+        );
 
         const textRow = frames.editor.findIndex((l) => plain(l).includes("abcdef"));
         assert.ok(textRow > 0, "编辑框文字应可见");
@@ -1266,7 +1301,9 @@ const fakeTui = { terminal: { rows: 40 }, requestRender() {} };
         );
         component.handleInput("X");
         frames.afterClick = render();
-        assert.ok(plain(frames.afterClick.join("\n")).includes("abXcdef"), "点击处应成为插入位置");
+        // 编辑器的焦点光标以 `ESC _pi:fc BEL` / `ESC _pi:/fc BEL` 夹住一个字符，比对正文前先剔除这对标记
+        const caretFree = frames.afterClick.join("\n").replace(/\x1b_pi:\/?fc\x07/g, "");
+        assert.ok(plain(caretFree).includes("abXcdef"), "点击处应成为插入位置");
         assert.equal(clickAt(component, 2, 0), undefined, "编辑框外点击不接管");
 
         component.dispose();
@@ -1275,13 +1312,14 @@ const fakeTui = { terminal: { rows: 40 }, requestRender() {} };
     },
   };
 
-  await registeredToolDef.execute(
+  const editorClickRun = await registeredToolDef.execute(
     "call-editor-click",
     { formTitle: "编辑页", questions: [{ id: "q1", title: "第一题", options: [{ label: "甲" }, { label: "乙" }] }] },
     undefined,
     undefined,
     ctx,
   );
+  assert.ok(!editorClickRun.isError, `编辑页流程不应报错：${editorClickRun.content[0]?.text ?? ""}`);
 }
 
 // 22. 提交页整卷补充：模型封套、总览块、键位与点击
@@ -1356,44 +1394,59 @@ const fakeTui = { terminal: { rows: 40 }, requestRender() {} };
         // 「空格选定 + Enter 确认」唯一一题后自动进入总览页
         for (const key of [" ", "\r"]) component.handleInput(key);
         frames.summary = render();
-        const emptyNoteRow = rowOf(frames.summary, TEXTS.summary.formNoteEmpty);
+        const emptyNoteRow = rowOf(frames.summary, TEXTS.summary.formNoteLabel);
         assert.ok(emptyNoteRow > 0, "总览页应显示整卷补充按钮");
         assert.ok(
           plain(frames.summary[emptyNoteRow - 1]).includes("┌") && plain(frames.summary[emptyNoteRow + 1]).includes("┕"),
           "整卷补充按钮应带字符框线",
         );
 
-        // n 打开编辑器，输入后 Enter 保存
+        // n 打开编辑器，输入后 Enter 保存：正文进入补充区，按钮换成已填写标记
         component.handleInput("n");
         frames.editor = render();
-        assert.ok(text(frames.editor).includes(TEXTS.editor.formTitle("整卷补充").trim()), "整卷补充编辑器应显示问卷标题");
+        assert.ok(
+          text(frames.editor).includes(TEXTS.titleArea.formNote) &&
+            text(frames.editor).includes("整卷补充"),
+          "整卷补充编辑器应在面包屑里显示问卷标题与面板名",
+        );
         for (const ch of "全程第一人称") component.handleInput(ch);
         component.handleInput("\r");
         frames.saved = render();
-        const savedNoteRow = rowOf(frames.saved, TEXTS.summary.formNoteFilled("全程第一人称"));
-        assert.ok(savedNoteRow > 0, "保存后整卷补充按钮应显示正文");
-        assert.ok(!text(frames.saved).includes(TEXTS.summary.formNoteEmpty), "保存后不再显示未填写提示");
+        const savedNoteRow = rowOf(frames.saved, TEXTS.summary.formNoteLabelFilled);
+        assert.ok(savedNoteRow > 0, "保存后整卷补充按钮应标记已填写");
+        const savedPreviewRow = rowOf(frames.saved, "全程第一人称");
+        assert.ok(savedPreviewRow > 0, "保存后补充区应显示整卷补充正文");
+        assert.ok(savedPreviewRow < savedNoteRow, "补充区在按钮组之上");
+        assert.ok(plain(frames.saved[savedPreviewRow - 1]).includes("─"), "正文与补充区之间有分隔线");
 
-        // 点击补充按钮也能打开编辑器
+        // 点击补充按钮也能打开编辑器（按钮组靠右，点击列按当前帧现算）
+        const savedNoteX = visibleWidth(plain(frames.saved[savedNoteRow]).slice(0, plain(frames.saved[savedNoteRow]).indexOf("整卷补充"))) + 2;
         assert.deepEqual(
-          click(component, 3, savedNoteRow),
+          click(component, savedNoteX, savedNoteRow),
           { press: { handled: true }, click: { handled: true } },
           "补充按钮点击应被接管",
         );
         frames.clicked = render();
-        assert.ok(text(frames.clicked).includes(TEXTS.editor.formTitle("整卷补充").trim()), "点击补充按钮应打开编辑器");
+        assert.ok(
+          text(frames.clicked).includes(TEXTS.titleArea.formNote),
+          "点击补充按钮应打开整卷补充编辑器",
+        );
         for (const key of ["\x1b", "\x1b"]) component.handleInput(key);
         frames.back = render();
-        assert.ok(text(frames.back).includes(TEXTS.summary.title), "放弃修改后回到总览页");
+        assert.ok(text(frames.back).includes(TEXTS.summary.submitButton), "放弃修改后回到总览页");
 
         // x 清空后再写一条，Enter 提交后封套与结果详情都应携带补充
         component.handleInput("x");
-        assert.ok(text(render()).includes(TEXTS.summary.formNoteEmpty), "x 应清空整卷补充");
+        const cleared = render();
+        assert.ok(!text(cleared).includes("全程第一人称"), "x 应清空补充区正文");
+        assert.ok(rowOf(cleared, TEXTS.summary.formNoteLabel) > 0, "清空后按钮回到入口文案");
         component.handleInput("n");
         for (const ch of "保持伏笔") component.handleInput(ch);
         component.handleInput("\r");
         frames.final = render();
-        assert.ok(rowOf(frames.final, TEXTS.summary.formNoteFilled("保持伏笔")) > 0, "第二条整卷补充应已保存");
+        assert.ok(rowOf(frames.final, TEXTS.summary.formNoteLabelFilled) > 0, "第二条整卷补充应已保存");
+        const finalPreviewRow = rowOf(frames.final, "保持伏笔");
+        assert.ok(finalPreviewRow > 0, "补充区应显示第二条正文");
 
         component.handleInput("\r");
         const result = await done;
@@ -1416,29 +1469,30 @@ const fakeTui = { terminal: { rows: 40 }, requestRender() {} };
   assert.equal(result.details.supplement, "保持伏笔", "结果详情应携带整卷补充原文");
 }
 
-// 23. 补充说明按钮组：字符框架、按钮相邻与点击打开对应编辑器
+// 23. 选项下方动作按钮组：选项补充 / 题目补充 / 确认靠右成组，换行后仍靠右，点击打开对应编辑器
 {
   const ROWS = 28;
-  const WIDTH = 70;
+  const WIDTH = 100;
   const ansi = /\x1b\[[0-9;]*m/g;
   const plain = (line) => line.replace(ansi, "");
-  const pointer = (type, x, y) => ({
+  const pointer = (type, x, y, width = WIDTH) => ({
     type,
     button: "left",
     x,
     y,
     screenX: x,
     screenY: y,
-    width: WIDTH,
+    width,
     height: ROWS,
     shift: false,
     alt: false,
     ctrl: false,
   });
-  const click = (component, x, y) => ({
-    press: component.handleMouse(pointer("press", x, y)),
-    click: component.handleMouse(pointer("click", x, y)),
+  const click = (component, x, y, width = WIDTH) => ({
+    press: component.handleMouse(pointer("press", x, y, width)),
+    click: component.handleMouse(pointer("click", x, y, width)),
   });
+  const columnOf = (line, needle) => visibleWidth(line.slice(0, line.indexOf(needle)));
 
   const ctx = {
     mode: "tui",
@@ -1448,7 +1502,8 @@ const fakeTui = { terminal: { rows: 40 }, requestRender() {} };
         const render = () => component.render(WIDTH).join("\n").split("\n");
         const text = (lines) => plain(lines.join("\n"));
         const back = () => {
-          for (const key of ["\x1b", "\x1b"]) component.handleInput(key);
+          component.handleInput("\x1b");
+          component.handleInput("\x1b");
         };
 
         // 聚焦首个选项按 n 写选项专属补充，按 N 写题目整体补充
@@ -1459,46 +1514,70 @@ const fakeTui = { terminal: { rows: 40 }, requestRender() {} };
         for (const ch of "全篇统一视角") component.handleInput(ch);
         component.handleInput("\r");
         const frame = render();
-        assert.equal(frame.length, ROWS, `含按钮的作答页应占满终端 ${ROWS} 行`);
+        assert.equal(frame.length, ROWS, `含招式区的作答页应占满终端 ${ROWS} 行`);
 
-        const questionRow = frame.findIndex((l) => plain(l).includes("题目补充说明"));
-        const optionRow = frame.findIndex((l) => plain(l).includes("选项补充说明"));
-        assert.ok(questionRow > 0 && optionRow > questionRow, "题目批注按钮应排在选项批注按钮之上");
+        const optionRow = frame.findIndex((l) => plain(l).includes(TEXTS.menu.optionNoteLabelFilled));
+        const questionRow = frame.findIndex((l) => plain(l).includes(TEXTS.menu.customNoteLabelFilled));
+        const confirmRow = frame.findIndex((l) => plain(l).includes(TEXTS.menu.confirmLabel("甲", true)));
+        assert.ok(optionRow > 0 && questionRow === optionRow && confirmRow === optionRow, "三个按钮应成组同一行");
 
-        const questionTop = plain(frame[questionRow - 1]);
-        const questionBottom = plain(frame[questionRow + 1]);
-        assert.ok(questionTop.includes("┌") && questionTop.includes("─") && questionTop.includes("┐"), "上缘应为 ┌ ─ ┐");
-        assert.ok(plain(frame[questionRow]).startsWith("  │"), "两侧应为 │ 且带 2 列缩进");
-        assert.ok(questionBottom.includes("┕") && questionBottom.includes("━") && questionBottom.includes("┙"), "下缘应为 ┕ ━ ┙");
-        assert.equal(visibleWidth(frame[questionRow]), visibleWidth(frame[questionTop]), "内容行与上缘等宽");
-        assert.ok(visibleWidth(questionTop) <= WIDTH, "按钮不超过终端列宽");
-        assert.ok(plain(frame[optionRow - 2]).includes("┕") && plain(frame[optionRow - 1]).includes("┌"), "两个按钮应紧邻成组");
+        const listRow = frame.findIndex((l) => plain(l).includes("乙"));
+        assert.ok(optionRow > listRow, "按钮组应在选项列表下方");
 
-        // 点击题目批注按钮打开题目补充说明编辑器
-        assert.deepEqual(
-          click(component, 4, questionRow),
-          { press: { handled: true }, click: { handled: true } },
-          "题目批注按钮点击应被接管",
-        );
-        const questionEditor = render();
+        const groupTop = plain(frame[optionRow - 1]);
+        const groupBottom = plain(frame[optionRow + 1]);
+        assert.ok(groupTop.includes("┌") && groupTop.includes("┐"), "上缘应为 ┌ ─ ┐");
+        assert.ok(groupBottom.includes("┕") && groupBottom.includes("━") && groupBottom.includes("┙"), "下缘应为 ┕ ━ ┙");
+        assert.equal(visibleWidth(frame[optionRow + 1]), WIDTH, "按钮组应贴右缘");
         assert.ok(
-          text(questionEditor).includes(TEXTS.editor.title("第一题").trim()),
-          "点击题目批注按钮应打开题目补充说明编辑器",
+          columnOf(plain(frame[optionRow]), TEXTS.menu.optionNoteLabelFilled) <
+            columnOf(plain(frame[optionRow]), TEXTS.menu.confirmLabel("甲", true)),
+          "选项补充与题目补充在左、确认在右",
         );
-        back();
 
-        // 点击选项批注按钮打开选项补充说明编辑器
+        // 点击选项补充按钮打开选项专属编辑器
+        const optionX = columnOf(plain(frame[optionRow]), TEXTS.menu.optionNoteLabelFilled) + 2;
         assert.deepEqual(
-          click(component, 4, optionRow),
+          click(component, optionX, optionRow),
           { press: { handled: true }, click: { handled: true } },
-          "选项批注按钮点击应被接管",
+          "选项补充按钮点击应被接管",
         );
         const optionEditor = render();
         assert.ok(
-          text(optionEditor).includes(TEXTS.editor.optionTitle("第一题", "甲").trim()),
-          "点击选项批注按钮应打开选项补充说明编辑器",
+          text(optionEditor).includes(TEXTS.titleArea.optionNote) && text(optionEditor).includes("甲"),
+          "点击选项补充应打开选项补充说明编辑器",
         );
-        assert.ok(text(optionEditor).includes("第一人称更好"), "选项补充说明编辑器应带出既有正文");
+        assert.ok(text(optionEditor).includes("第一人称更好"), "选项补充编辑器应带出既有正文");
+        back();
+        render();
+
+        // 点击题目补充按钮打开题目编辑器
+        const questionX = columnOf(plain(frame[optionRow]), TEXTS.menu.customNoteLabelFilled) + 2;
+        assert.deepEqual(
+          click(component, questionX, optionRow),
+          { press: { handled: true }, click: { handled: true } },
+          "题目补充按钮点击应被接管",
+        );
+        const questionEditor = render();
+        assert.ok(
+          text(questionEditor).includes(TEXTS.titleArea.questionNote) && text(questionEditor).includes("第一题"),
+          "点击题目补充应打开题目补充说明编辑器",
+        );
+        assert.ok(text(questionEditor).includes("全篇统一视角"), "题目补充编辑器应带出既有正文");
+        back();
+        render();
+
+        // 窄终端：按钮组自动换行，每一行都贴右缘
+        const narrowWidth = 46;
+        const narrow = component.render(narrowWidth).join("\n").split("\n");
+        for (const line of narrow) assert.ok(visibleWidth(line) <= narrowWidth, `窄终端存在超宽行：${JSON.stringify(line)}`);
+        const narrowConfirmRow = narrow.findIndex((l) => plain(l).includes(TEXTS.menu.confirmLabel("甲", true)));
+        const narrowNoteRow = narrow.findIndex((l) => plain(l).includes(TEXTS.menu.optionNoteLabelFilled));
+        assert.ok(narrowConfirmRow > narrowNoteRow, "窄终端下确认按钮应换到下一行");
+        for (const row of [narrowNoteRow, narrowConfirmRow]) {
+          const bottom = narrow.findIndex((l, index) => index > row && plain(l).includes("┕"));
+          assert.equal(visibleWidth(narrow[bottom]), narrowWidth, "换行后的每一行按钮都贴右缘");
+        }
 
         component.dispose();
         return { formTitle: "批注按钮", questions: [], answers: [], cancelled: true };
@@ -1506,16 +1585,17 @@ const fakeTui = { terminal: { rows: 40 }, requestRender() {} };
     },
   };
 
-  await registeredToolDef.execute(
+  const noteButtonsRun = await registeredToolDef.execute(
     "call-note-buttons",
     { formTitle: "批注按钮", questions: [{ id: "q1", title: "第一题", options: [{ label: "甲" }, { label: "乙" }] }] },
     undefined,
     undefined,
     ctx,
   );
+  assert.ok(!noteButtonsRun.isError, `批注按钮流程不应报错：${noteButtonsRun.content[0]?.text ?? ""}`);
 }
 
-// 24. 题目底部操作按钮组：右对齐、点击补充说明与点击确认推进
+// 24. 题目底部操作按钮组：两端分开、点击补充说明与点击确认推进
 {
   const ROWS = 24;
   const WIDTH = 72;
@@ -1584,25 +1664,28 @@ const fakeTui = { terminal: { rows: 40 }, requestRender() {} };
         );
         const editorFrame = render();
         assert.ok(
-          text(editorFrame).includes(TEXTS.editor.title("第一题").trim()),
+          text(editorFrame).includes(TEXTS.titleArea.questionNote),
           "点击补充说明按钮应打开题目补充说明编辑器",
         );
-        for (const key of ["\x1b", "\x1b"]) component.handleInput(key);
+        // 编辑框为空，单个 Esc 即退出输入模式（不会连带取消整张表单）
+        component.handleInput("\x1b");
 
         // 选定选项后点确认：单题直接进入总览页
         component.handleInput(" ");
         const answered = render();
-        const answeredConfirmX = columnOf(
-          plain(answered[actionRow]),
-          TEXTS.menu.confirmLabel("第一人称", false),
-        ) + 2;
+        const answeredLabel = TEXTS.menu.confirmLabel("第一人称", false);
+        // 状态提示行让内容区变矮，作答区随之整体上移，按钮行以当前帧重算
+        const answeredRow = answered.findIndex((l) => plain(l).includes(answeredLabel));
+        assert.ok(answeredRow > 0, "作答后应有确认按钮行");
+        const answeredConfirmX = columnOf(plain(answered[answeredRow]), answeredLabel) + 2;
         assert.deepEqual(
-          click(component, answeredConfirmX, actionRow),
+          click(component, answeredConfirmX, answeredRow),
           { press: { handled: true }, click: { handled: true } },
           "已作答时确认按钮点击应被接管",
         );
-        assert.ok(text(render()).includes(TEXTS.summary.title), "确认后应进入总览页");
+        assert.ok(text(render()).includes(TEXTS.summary.submitButton), "确认后应进入总览页");
 
+        component.handleInput("\r");
         const result = await done;
         assert.equal(result.answers.length, 1, "确认后应携带本题作答");
         component.dispose();
@@ -1611,16 +1694,17 @@ const fakeTui = { terminal: { rows: 40 }, requestRender() {} };
     },
   };
 
-  await registeredToolDef.execute(
+  const actionButtonsRun = await registeredToolDef.execute(
     "call-action-buttons",
     { formTitle: "操作按钮", questions: [{ id: "q1", title: "第一题", options: [{ label: "第一人称" }] }] },
     undefined,
     undefined,
     ctx,
   );
+  assert.ok(!actionButtonsRun.isError, `操作按钮流程不应报错：${actionButtonsRun.content[0]?.text ?? ""}`);
 }
 
-// 25. 总览页确认提交按钮：右对齐、未完成时跳题、点下即提交
+// 25. 总览页确认提交按钮：与整卷补充同属作答区、未完成时跳题、点下即提交
 {
   const ROWS = 24;
   const WIDTH = 72;
@@ -1679,7 +1763,7 @@ const fakeTui = { terminal: { rows: 40 }, requestRender() {} };
         component.handleInput(" ");
         component.handleInput("\r");
         const ready = render();
-        assert.ok(text(ready).includes(TEXTS.summary.title), "确认一题后回到总览页");
+        assert.ok(text(ready).includes(TEXTS.summary.submitButton), "确认一题后回到总览页");
         const readyRow = submitRowOf(ready);
         const readyX = columnOf(plain(ready[readyRow]), TEXTS.summary.submitButton) + 2;
         assert.deepEqual(
@@ -1697,13 +1781,279 @@ const fakeTui = { terminal: { rows: 40 }, requestRender() {} };
     },
   };
 
-  await registeredToolDef.execute(
+  const submitButtonRun = await registeredToolDef.execute(
     "call-submit-button",
     { formTitle: "提交按钮", questions: [{ id: "q1", title: "第一题", options: [{ label: "甲" }] }] },
     undefined,
     undefined,
     ctx,
   );
+  assert.ok(!submitButtonRun.isError, `提交按钮流程不应报错：${submitButtonRun.content[0]?.text ?? ""}`);
+}
+
+// 26. 编辑页返回按钮：面包屑在按钮右侧折行，点击返回退出编辑，有未保存内容时需二次确认
+{
+  const ROWS = 20;
+  const WIDTH = 46;
+  const ansi = /\x1b\[[0-9;]*m/g;
+  const plain = (line) => line.replace(ansi, "");
+  const pointer = (type, x, y) => ({
+    type,
+    button: "left",
+    x,
+    y,
+    screenX: x,
+    screenY: y,
+    width: WIDTH,
+    height: ROWS,
+    shift: false,
+    alt: false,
+    ctrl: false,
+  });
+  const click = (component, x, y) => ({
+    press: component.handleMouse(pointer("press", x, y)),
+    click: component.handleMouse(pointer("click", x, y)),
+  });
+
+  const frames = {};
+  const ctx = {
+    mode: "tui",
+    ui: {
+      async custom(factory) {
+        const component = factory({ terminal: { rows: ROWS }, requestRender() {} }, dummyTheme, {}, () => {});
+        const render = () => component.render(WIDTH).join("\n").split("\n");
+        const text = (lines) => plain(lines.join("\n"));
+        const rowOf = (lines, needle) => lines.findIndex((l) => plain(l).includes(needle));
+        const backColumn = (lines, row) => plain(lines[row]).indexOf(TEXTS.titleArea.backButton) + 2;
+
+        component.handleInput("N");
+        frames.editor = render();
+        const backRow = rowOf(frames.editor, TEXTS.titleArea.backButton);
+        assert.ok(backRow > 0, "编辑页题目标题区应有返回按钮");
+        assert.ok(
+          plain(frames.editor[backRow]).indexOf(TEXTS.titleArea.backButton) < plain(frames.editor[backRow]).indexOf("雨夜追车"),
+          "返回按钮应在面包屑左侧",
+        );
+        const tabRow = rowOf(frames.editor, TEXTS.tabs.submitTab);
+        const titleRows = frames.editor.slice(tabRow + 1, rowOf(frames.editor, "─".repeat(10)));
+        assert.ok(titleRows.length >= 3, "返回按钮与面包屑应占满三行以上标题区");
+        assert.ok(
+          plain(titleRows[1] ?? "").indexOf(TEXTS.titleArea.backButton) < plain(titleRows[1] ?? "").indexOf("雨夜追车"),
+          "返回按钮应在面包屑左侧",
+        );
+        // 标题区不留左右边距：按钮框的首列就是整页首列
+        assert.ok(plain(titleRows[0] ?? "").startsWith("┌"), "返回按钮应贴整页左缘");
+        // 折行把同一段文字拆到多行，抹掉空白后仍应连成完整面包屑末段
+        assert.ok(
+          titleRows.map(plain).join("").replace(/\s+/g, "").includes("补充说明"),
+          "面包屑末段应随折行显示",
+        );
+        const textColumn = plain(titleRows[0] ?? "").indexOf("┐") + 2;
+        assert.ok(
+          plain(titleRows[titleRows.length - 1] ?? "").startsWith(" ".repeat(textColumn)),
+          "折行悬挂在文字起始列",
+        );
+
+        // 空编辑器：单击返回按钮直接回到作答页
+        assert.deepEqual(
+          click(component, backColumn(frames.editor, backRow), backRow),
+          { press: { handled: true }, click: { handled: true } },
+          "返回按钮点击应被接管",
+        );
+        frames.back = render();
+        assert.ok(text(frames.back).includes(TEXTS.tabs.typeSingle), "点击返回应回到作答页");
+
+        // 有未保存内容：首次点击只提醒，再次点击才丢弃并返回
+        component.handleInput("N");
+        for (const ch of "草稿") component.handleInput(ch);
+        frames.dirty = render();
+        const dirtyBackRow = rowOf(frames.dirty, TEXTS.titleArea.backButton);
+        const dirtyBackX = backColumn(frames.dirty, dirtyBackRow);
+        click(component, dirtyBackX, dirtyBackRow);
+        frames.armed = render();
+        assert.ok(text(frames.armed).includes("放弃修改"), "有未保存内容时返回应二次确认");
+        assert.ok(text(frames.armed).includes(TEXTS.editor.footerHelp), "首次点击返回不应关闭编辑器");
+        assert.deepEqual(
+          click(component, dirtyBackX, dirtyBackRow),
+          { press: { handled: true }, click: { handled: true } },
+          "二次点击返回应被接管",
+        );
+        frames.discarded = render();
+        assert.ok(text(frames.discarded).includes(TEXTS.tabs.typeSingle), "二次点击返回应回到作答页");
+        assert.ok(!text(frames.discarded).includes("草稿"), "未保存的内容应被丢弃");
+
+        component.dispose();
+        return { formTitle: "返回按钮", questions: [], answers: [], cancelled: true };
+      },
+    },
+  };
+
+  const backButtonRun = await registeredToolDef.execute(
+    "call-back-button",
+    {
+      formTitle: "雨夜追车",
+      questions: [
+        {
+          id: "q1",
+          title: "第一章采用哪种叙事视角，并且决定林澈与沈砚的第一次正面交锋发生在雨夜还是破晓？",
+          options: [{ label: "第一人称" }, { label: "第三人称" }],
+        },
+      ],
+    },
+    undefined,
+    undefined,
+    ctx,
+  );
+  assert.ok(!backButtonRun.isError, `返回按钮流程不应报错：${backButtonRun.content[0]?.text ?? ""}`);
+}
+
+// 27. 按钮组列宽分配：宽度够时两个按钮同行并铺满右缘，窄到无法审读才上下分行
+{
+  const ROWS = 24;
+  const ansi = /\x1b\[[0-9;]*m/g;
+  const plain = (line) => line.replace(ansi, "");
+  const longNote = "全程第一人称，保持短句，克制心理描写，结尾留白";
+
+  const ctx = {
+    mode: "tui",
+    ui: {
+      async custom(factory) {
+        const component = factory({ terminal: { rows: ROWS }, requestRender() {} }, dummyTheme, {}, () => {});
+        const renderAt = (width) => component.render(width);
+        const boxRowOf = (lines, needle) =>
+          lines.findIndex((l) => plain(l).includes("│") && plain(l).includes(needle));
+
+        // 一题作答完成后进入总览页，写入长整卷补充（正文进补充区，按钮只留入口）
+        for (const key of [" ", "\r"]) component.handleInput(key);
+        component.handleInput("n");
+        for (const ch of longNote) component.handleInput(ch);
+        component.handleInput("\r");
+
+        // 宽终端：两个按钮同行、铺满右缘，正文完整留在补充区
+        const wide = renderAt(56);
+        for (const line of wide) assert.ok(visibleWidth(line) <= 56, `56 列存在超宽行：${JSON.stringify(line)}`);
+        const wideNoteRow = boxRowOf(wide, TEXTS.summary.formNoteLabelFilled);
+        const wideSubmitRow = boxRowOf(wide, TEXTS.summary.submitButton);
+        assert.ok(wideNoteRow > 0, "宽终端应显示整卷补充按钮");
+        assert.equal(wideNoteRow, wideSubmitRow, "宽度够时整卷补充与确认提交应同行");
+        const wideBottom = wide.findIndex((l, index) => index > wideNoteRow && plain(l).includes("┕"));
+        assert.equal(visibleWidth(wide[wideBottom]), 56, "同行两按钮应铺满整行");
+        assert.ok(
+          plain(wide[wideSubmitRow]).indexOf(TEXTS.summary.submitButton) >
+            plain(wide[wideSubmitRow]).indexOf(TEXTS.summary.formNoteLabelFilled),
+          "整卷补充在左、确认提交靠右",
+        );
+        assert.ok(plain(wide.join("\n")).includes("全程第一人称"), "正文应留在补充区");
+
+        // 窄终端：装不下两个按钮就上下分行，每行仍贴右缘
+        const narrow = renderAt(20);
+        for (const line of narrow) assert.ok(visibleWidth(line) <= 20, `20 列存在超宽行：${JSON.stringify(line)}`);
+        const narrowNoteRow = boxRowOf(narrow, TEXTS.summary.formNoteLabel);
+        const narrowSubmitRow = boxRowOf(narrow, TEXTS.summary.submitButton);
+        assert.ok(narrowNoteRow > 0 && narrowSubmitRow > narrowNoteRow, "窄终端两按钮应上下分行");
+        for (const row of [narrowNoteRow, narrowSubmitRow]) {
+          const bottom = narrow.findIndex((l, index) => index > row && plain(l).includes("┕"));
+          assert.equal(visibleWidth(narrow[bottom]), 20, "换行后的每一行按钮都贴右缘");
+        }
+
+        component.dispose();
+        return { formTitle: "按钮列宽", questions: [], answers: [], cancelled: true };
+      },
+    },
+  };
+
+  const buttonWidthRun = await registeredToolDef.execute(
+    "call-button-width",
+    { formTitle: "按钮列宽", questions: [{ id: "q1", title: "第一题", options: [{ label: "甲" }] }] },
+    undefined,
+    undefined,
+    ctx,
+  );
+  assert.ok(!buttonWidthRun.isError, `按钮列宽流程不应报错：${buttonWidthRun.content[0]?.text ?? ""}`);
+}
+
+// 28. 内容区细分：无 ### 区块标题、内容区与作答区之间无分隔线、有补充时出现补充预览区
+{
+  const ROWS = 26;
+  const WIDTH = 80;
+  const ansi = /\x1b\[[0-9;]*m/g;
+  const plain = (line) => line.replace(ansi, "");
+
+  const ctx = {
+    mode: "tui",
+    ui: {
+      async custom(factory) {
+        const component = factory({ terminal: { rows: ROWS }, requestRender() {} }, dummyTheme, {}, () => {});
+        const render = () => component.render(WIDTH).join("\n").split("\n");
+
+        const before = render();
+        assert.equal(before.length, ROWS, `作答页应占满终端 ${ROWS} 行`);
+        assert.ok(!plain(before.join("\n")).includes("###"), "内容区不应出现 ### 区块标题");
+        const firstOptionRow = before.findIndex((l) => plain(l).includes("第二人称"));
+        assert.ok(firstOptionRow > 0, "作答区应有选项行");
+        assert.ok(
+          !plain(before[firstOptionRow - 1] ?? "").includes("─"),
+          "内容区与作答区之间不应有分隔线",
+        );
+        assert.ok(
+          !plain(before.join("\n")).includes(TEXTS.view.notePreviewOption("第一人称")),
+          "无补充时不显示补充预览区",
+        );
+
+        // 分别写选项补充与题目补充
+        component.handleInput("n");
+        for (const ch of "更冷一些") component.handleInput(ch);
+        component.handleInput("\r");
+        component.handleInput("N");
+        for (const ch of "全篇统一第一人称") component.handleInput(ch);
+        component.handleInput("\r");
+
+        const after = render();
+        const questionNoteRow = after.findIndex((l) => plain(l).includes(TEXTS.view.notePreviewQuestion));
+        const optionNoteRow = after.findIndex((l) => plain(l).includes(TEXTS.view.notePreviewOption("第一人称")));
+        const secondOptionRow = after.findIndex((l) => plain(l).includes("第二人称"));
+        assert.ok(questionNoteRow > 0 && optionNoteRow === questionNoteRow + 1, "补充预览区先题目后选项");
+        assert.ok(questionNoteRow < secondOptionRow, "补充预览区应在选项之上");
+        assert.ok(plain(after[questionNoteRow - 1] ?? "").includes("─"), "题目内容区与补充预览区之间有分隔线");
+        assert.ok(plain(after[questionNoteRow]).includes("全篇统一第一人称"), "题目补充正文应可见");
+        assert.ok(plain(after[optionNoteRow]).includes("更冷一些"), "选项补充正文应可见");
+        assert.ok(
+          !plain(after[secondOptionRow - 1] ?? "").includes("─"),
+          "补充分区之后到选项之间同样没有分隔线",
+        );
+
+        // 窄终端下两块子区仍不超宽，且补充预览区被压到行数上限以内
+        for (const line of component.render(40)) {
+          assert.ok(visibleWidth(line) <= 40, `窄终端存在超宽行：${JSON.stringify(line)}`);
+        }
+
+        component.dispose();
+        return { formTitle: "内容区细分", questions: [], answers: [], cancelled: true };
+      },
+    },
+  };
+
+  const contentSplitRun = await registeredToolDef.execute(
+    "call-content-split",
+    {
+      formTitle: "内容区细分",
+      questions: [
+        {
+          id: "q1",
+          title: "第一题",
+          description: "设定说明",
+          options: [
+            { label: "第一人称", description: "贴近内心", preview: "我在雨里站了很久。" },
+            { label: "第二人称" },
+          ],
+        },
+      ],
+    },
+    undefined,
+    undefined,
+    ctx,
+  );
+  assert.ok(!contentSplitRun.isError, `内容区分流程不应报错：${contentSplitRun.content[0]?.text ?? ""}`);
 }
 
 console.log("全部功能自检顺利通过。");

@@ -140,7 +140,8 @@ Rules:
     /** 推演用户消息前缀（后接 JSON 载荷） */
     userPreamble: "Extend this author decision form. Input JSON:",
     /** 在途工具调用的占位结果正文（结果待表单提交后返回） */
-    pendingToolResult: "The author is answering this form in the terminal; this call's result arrives once the form is submitted.",
+    pendingToolResult:
+      "The author is answering this form in the terminal; this call's result arrives once the form is submitted.",
     /** 推演失败诊断（作者界面经 `status.expansionFailed` 呈现，不直接展示原文） */
     errors: {
       /** 当前会话没有可用模型 */

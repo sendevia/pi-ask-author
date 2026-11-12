@@ -1,6 +1,6 @@
 /**
  * @file view-question.ts
- * @description 题目作答页的视图构建：内容预览区、Tab 栏、题目标题块、选项菜单与底部按键提示
+ * @description 题目作答页的视图构建：题目标题区、内容预览区、作答区（选项、补充与切换）与提示区
  *
  * 只读取组件传入的视口状态并返回终端行，滚动位移与光标写入由组件在输入路径完成
  */
@@ -11,7 +11,6 @@ import { LAYOUT_CONFIG } from "./layout.js";
 import {
   hasQuestionNote,
   type AskAuthorFormModel,
-  type EditTarget,
   type MenuItem,
   type NormalizedQuestion,
   type QuestionAnswerState,
@@ -20,13 +19,10 @@ import { buildFullPreviewContentLines } from "./novel-markdown.js";
 import { TEXTS } from "./texts.js";
 import type { Theme } from "./theme.js";
 import {
-  buildScrollBand,
+  composePage,
   formatMenuItemRow,
-  optionLabelOf,
-  pushFrameRule,
-  pushHelpFooter,
-  pushStatusMessage,
   renderButtonGroup,
+  renderContentSections,
   type ButtonRect,
   type ButtonSpec,
   type RowRange,
@@ -45,13 +41,11 @@ export interface QuestionViewState {
   readonly listScrollOffset: number;
   /** 预览区滚动位移（行） */
   readonly previewScrollOffset: number;
-  /** 底部临时状态通知 */
+  /** 底部临时状态通知（提示区首行） */
   readonly statusMessage: string | null;
   /** 当前题目的菜单项（由模型派生并记忆化） */
   readonly menuItems: readonly MenuItem[];
-  /** 本题确认后是否会发起实时推演（题头展示推演标记） */
-  readonly expandable: boolean;
-  /** 题目导航 Tab 栏行（组件缓存，作答页插在预览区之后） */
+  /** 题目导航 Tab 栏行（组件缓存，位于题目标题区首行） */
   readonly tabLines: readonly string[];
 }
 
@@ -71,18 +65,10 @@ export interface MenuItemHit {
   readonly range: RowRange;
 }
 
-/** 补充说明按钮在整页中的可点击矩形范围 */
-export interface NoteButtonHit {
-  /** 点击后打开的批注编辑器目标 */
-  readonly target: EditTarget;
-  /** 按钮矩形 */
-  readonly rect: ButtonRect;
-}
+/** 选项下方动作区的按钮种类：选项补充 / 题目补充 / 确认推进 */
+export type QuestionActionKind = "optionNote" | "questionNote" | "confirm";
 
-/** 题目底部操作按钮的种类：补充说明入口 / 确认推进 */
-export type QuestionActionKind = "note" | "confirm";
-
-/** 题目底部操作按钮在整页中的可点击矩形范围 */
+/** 动作区按钮在整页中的可点击矩形范围 */
 export interface QuestionActionHit {
   /** 按钮种类 */
   readonly action: QuestionActionKind;
@@ -102,7 +88,7 @@ function offsetRect(rect: ButtonRect, rowOffset: number): ButtonRect {
 
 /** 题目作答页渲染结果 */
 export interface QuestionViewResult {
-  /** 整页终端行（含底部状态、帮助与框架线） */
+  /** 整页终端行（四个区域与顶底框架线） */
   readonly lines: string[];
   /** 本帧预览视口；未渲染预览时为 undefined（沿用上一帧观察值） */
   readonly previewViewport?: PreviewViewport;
@@ -112,9 +98,7 @@ export interface QuestionViewResult {
   readonly tabRange?: RowRange;
   /** 各菜单项的整页行范围（鼠标点击路由依据） */
   readonly menuItemHits?: readonly MenuItemHit[];
-  /** 补充说明按钮的整页矩形范围（鼠标点击路由依据） */
-  readonly noteButtonHits?: readonly NoteButtonHit[];
-  /** 题目底部操作按钮的整页矩形范围（鼠标点击路由依据） */
+  /** 作答区动作按钮的整页矩形范围（鼠标点击路由依据） */
   readonly actionButtonHits?: readonly QuestionActionHit[];
 }
 
@@ -167,11 +151,11 @@ export class QuestionView {
   }
 
   /**
-   * 渲染题目作答页：顶部分割线 → 内容预览区 → Tab 栏 → 标题块 → 选项区 → 状态与快捷键 → 底部分割线
+   * 渲染题目作答页：题目标题区（Tab 栏 + 模式徽标与题名）→ 内容预览区 → 作答区（选项菜单与动作按钮组）→ 提示区
    * @param state - 只读视口状态（当前题、光标、滚动位移、状态通知、菜单项与 Tab 栏）
    * @param renderWidth - 终端布局列宽
-   * @param terminalRows - 终端可视行数（除预览区外的各带占完后，剩余行全部给预览区）
-   * @returns 整页终端行与本帧预览视口
+   * @param terminalRows - 终端可视行数（内容区吸收剩余高度）
+   * @returns 整页终端行、本帧预览视口与各可点击区域
    */
   render(state: QuestionViewState, renderWidth: number, terminalRows: number): QuestionViewResult {
     const q = this.model.getQuestion(state.tab);
@@ -181,37 +165,20 @@ export class QuestionView {
     const currentItem = state.menuItems[state.optionIndex];
     const rich = hasRichContent(this.model, state.tab, q, st);
 
-    // 1. 预览区以下的各带：题目标题块、选项区、状态通知、快捷键与底部分割线
-    const body: string[] = [];
-    const visibleOptionCount = q.options.filter((_, idx) => this.model.isOptionVisible(state.tab, idx)).length;
-    const modeTag = q.multiSelect
-      ? this.theme.fg("warning", TEXTS.view.modeMulti(q.minSelect, q.maxSelect, visibleOptionCount, q.allowEmpty))
-      : this.theme.fg("accent", TEXTS.view.modeSingle);
-    const conditionalTag = q.showIf.length > 0 ? ` ${this.theme.fg("muted", TEXTS.view.conditionalBadge)}` : "";
-    const expansionTag = state.expandable ? ` ${this.theme.fg("warning", TEXTS.view.expansionBadge)}` : "";
-    pushWrapped(body, ` ${modeTag}${conditionalTag}${expansionTag} ${this.theme.bold(q.title)}`, renderWidth);
+    // 1. 题目标题区：题名与题干说明（题目类型标记已在 Tab 标签上）
+    const titleLines: string[] = [];
+    pushWrapped(titleLines, this.theme.bold(q.title), renderWidth);
+    if (q.description) pushWrapped(titleLines, this.theme.fg("muted", q.description), renderWidth);
 
-    if (q.description) {
-      pushWrapped(body, this.theme.fg("muted", q.description), renderWidth, "  ");
-    }
+    // 2. 作答区：选项菜单与下方的动作按钮组（选项补充 / 题目补充 / 确认）
+    const answer: string[] = [];
+    const menuItemHits = this.pushListItems(answer, q, st, state, renderWidth - 2);
+    answer.push("");
+    const actionButtonHits = this.pushActionButtons(answer, state, renderWidth);
 
-    // 补充说明按钮组（题目整体补充 + 当前聚焦选项专属补充），整框可点击
-    const noteButtonHits = this.pushNoteButtons(body, q, st, currentItem, renderWidth);
-    body.push("");
-
-    const menuItemHits = this.pushListItems(body, q, st, state, renderWidth - 2);
-
-    // 选项列表之后的操作按钮组（补充说明入口 + 确认推进），贴右缘
-    body.push("");
-    const actionButtonHits = this.pushActionButtons(body, state.tab, renderWidth);
-
-    pushStatusMessage(body, this.theme, state.statusMessage);
-
-    body.push("");
+    // 3. 提示区：快捷键提示
     const helpParts: string[] = [TEXTS.help.switchQuestion];
-    if (this.model.getVisibleQuestionIndices().length > 1) {
-      helpParts.push(TEXTS.help.jumpQuestion);
-    }
+    if (this.model.getVisibleQuestionIndices().length > 1) helpParts.push(TEXTS.help.jumpQuestion);
     helpParts.push(TEXTS.help.moveCursor);
     if (currentItem) {
       helpParts.push(TEXTS.help.editOptionNote);
@@ -220,9 +187,7 @@ export class QuestionView {
       helpParts.push(TEXTS.help.editNote);
     }
     const optHasNote = currentItem ? st.optionNotes.has(currentItem.optionIndex) : false;
-    if (optHasNote || hasQuestionNote(st)) {
-      helpParts.push(TEXTS.help.clearNote);
-    }
+    if (optHasNote || hasQuestionNote(st)) helpParts.push(TEXTS.help.clearNote);
     helpParts.push(q.multiSelect ? TEXTS.help.toggleCheckMulti : TEXTS.help.selectOptionSingle);
     if (q.multiSelect) {
       helpParts.push(TEXTS.help.toggleAll);
@@ -231,66 +196,63 @@ export class QuestionView {
     if (rich) helpParts.push(TEXTS.help.scrollDraft);
     helpParts.push(TEXTS.help.cancel);
 
-    pushHelpFooter(body, helpParts, this.theme, renderWidth);
-    pushFrameRule(body, this.theme, renderWidth);
-
-    // 2. 预览区占满终端剩余高度（不设上限）
-    const previewHeight = Math.max(
-      LAYOUT_CONFIG.previewMinHeight,
-      terminalRows - 1 - state.tabLines.length - body.length,
-    );
-    const currentOptNote = currentItem ? st.optionNotes.get(currentItem.optionIndex) : undefined;
-    const preview = this.renderPreviewBand(
-      state.tab,
-      currentItem,
-      currentOptNote,
+    // 4. 内容区：题目内容区与补充预览区，共占四个区域之外的全部高度
+    let viewport: PreviewViewport | undefined;
+    const page = composePage(
+      this.theme,
       renderWidth,
-      previewHeight,
-      state.previewScrollOffset,
+      terminalRows,
+      { tabLines: state.tabLines, titleLines, answerLines: answer, statusMessage: state.statusMessage, helpParts },
+      (height) => {
+        const content = this.renderContentBand(q, st, state, currentItem, renderWidth, height);
+        viewport = content.viewport;
+        return content.lines;
+      },
     );
 
-    // 3. 按带序输出整页（顶部分割线占首行，预览区紧接其后）
-    const lines: string[] = [];
-    pushFrameRule(lines, this.theme, renderWidth);
-    lines.push(...preview.lines, ...state.tabLines, ...body);
-    const bodyStart = 1 + previewHeight + state.tabLines.length;
+    const shift = (range: RowRange): RowRange => ({
+      start: range.start + page.answerStart,
+      end: range.end + page.answerStart,
+    });
+    const shiftRect = (rect: ButtonRect): ButtonRect => ({ rows: shift(rect.rows), cols: rect.cols });
     return {
-      lines,
-      previewViewport: preview.viewport,
-      previewBand: { start: 1, end: 1 + previewHeight },
-      tabRange: { start: 1 + previewHeight, end: 1 + previewHeight + state.tabLines.length },
-      menuItemHits: menuItemHits.map((hit) => ({
-        index: hit.index,
-        range: { start: bodyStart + hit.range.start, end: bodyStart + hit.range.end },
-      })),
-      noteButtonHits: noteButtonHits.map((hit) => ({ target: hit.target, rect: offsetRect(hit.rect, bodyStart) })),
-      actionButtonHits: actionButtonHits.map((hit) => ({ action: hit.action, rect: offsetRect(hit.rect, bodyStart) })),
+      lines: page.lines,
+      previewViewport: viewport,
+      previewBand: page.contentBand,
+      tabRange: { start: 0, end: state.tabLines.length },
+      menuItemHits: menuItemHits.map((hit) => ({ index: hit.index, range: shift(hit.range) })),
+      actionButtonHits: actionButtonHits.map((hit) => ({ action: hit.action, rect: shiftRect(hit.rect) })),
     };
   }
 
   /**
-   * 追加题目底部的操作按钮组（补充说明入口 + 确认推进）
-   * 整组贴右缘，确认按钮框线随作答达标与否换色
+   * 追加作答区的动作按钮组（选项补充、题目补充与确认推进成组靠右）
+   * 一行放不下时按全局按钮规则自动换行；确认按钮框线随作答达标与否换色
    * @param lines - 输出行数组（原地追加）
-   * @param tab - 题目索引
+   * @param state - 只读视口状态（题号与聚焦菜单项）
    * @param renderWidth - 终端布局列宽
    * @returns 各按钮在 `lines` 中的相对矩形
    */
-  private pushActionButtons(lines: string[], tab: number, renderWidth: number): QuestionActionHit[] {
-    const actions = this.model.getQuestionActions(tab);
+  private pushActionButtons(lines: string[], state: QuestionViewState, renderWidth: number): QuestionActionHit[] {
+    const focused = state.menuItems[state.optionIndex];
+    const actions = this.model.getQuestionActions(state.tab, focused?.optionIndex);
     if (!actions) return [];
 
+    const st = this.model.getState(state.tab);
     const buttons: { action: QuestionActionKind; spec: ButtonSpec }[] = [];
-    if (actions.note) {
-      const filled = hasQuestionNote(this.model.getState(tab));
-      buttons.push({ action: "note", spec: { text: actions.note, tone: filled ? "success" : "muted" } });
+    if (actions.optionNote && focused) {
+      const filled = (st.optionNotes.get(focused.optionIndex)?.trim() ?? "") !== "";
+      buttons.push({ action: "optionNote", spec: { text: actions.optionNote, tone: filled ? "success" : "muted" } });
+    }
+    if (actions.questionNote) {
+      buttons.push({
+        action: "questionNote",
+        spec: { text: actions.questionNote, tone: hasQuestionNote(st) ? "success" : "muted" },
+      });
     }
     buttons.push({
       action: "confirm",
-      spec: {
-        text: actions.confirm,
-        tone: this.model.isQuestionAnswered(tab) ? "success" : "accent",
-      },
+      spec: { text: actions.confirm, tone: this.model.isQuestionAnswered(state.tab) ? "success" : "accent" },
     });
 
     const group = renderButtonGroup(
@@ -312,73 +274,20 @@ export class QuestionView {
   }
 
   /**
-   * 追加补充说明按钮组（题目整体补充 + 当前聚焦选项的专属补充）
-   * 按钮框整体可点击，点击后打开对应批注的编辑器
-   * @param lines - 输出行数组（原地追加）
-   * @param q - 当前题目
-   * @param st - 作答状态
-   * @param currentItem - 聚焦菜单项（选项专属补充按钮的索引来源）
-   * @param renderWidth - 终端布局列宽
-   * @returns 各按钮在 `lines` 中的相对矩形
-   */
-  private pushNoteButtons(
-    lines: string[],
-    q: NormalizedQuestion,
-    st: QuestionAnswerState,
-    currentItem: MenuItem | undefined,
-    renderWidth: number,
-  ): NoteButtonHit[] {
-    const hits: NoteButtonHit[] = [];
-    const pushButton = (target: EditTarget, text: string): void => {
-      const group = renderButtonGroup(
-        this.theme,
-        [{ text: this.theme.fg("success", text), tone: "success" }],
-        renderWidth,
-        "left",
-        LAYOUT_CONFIG.noteButtonIndent,
-      );
-      const rect = group.rects[0];
-      if (!rect) return;
-      hits.push({ target, rect: offsetRect(rect, lines.length) });
-      lines.push(...group.lines);
-    };
-
-    const questionNote = st.customText?.trim();
-    if (questionNote) pushButton({ type: "question" }, TEXTS.view.attachedNoteBanner(questionNote));
-
-    if (currentItem) {
-      const optionNote = st.optionNotes.get(currentItem.optionIndex)?.trim();
-      if (optionNote) {
-        pushButton(
-          { type: "option", optionIndex: currentItem.optionIndex },
-          TEXTS.view.optionAttachedNoteBanner(optionLabelOf(q, currentItem.optionIndex), optionNote),
-        );
-      }
-    }
-    return hits;
-  }
-
-  /**
-   * 获取聚焦选项的完整内容行（经 `previewCache` 缓存，跨选项切换零重复解析）
+   * 获取聚焦选项的题目内容行（经 `previewCache` 缓存，跨选项切换零重复解析）
    * @param tab - 题目索引
    * @param item - 目标菜单项
-   * @param optionNote - 选项专属补充说明
    * @param targetWidth - 预览可用列宽
    * @returns 未切片的完整内容行数组
    */
-  private previewContentLines(
-    tab: number,
-    item: MenuItem,
-    optionNote: string | undefined,
-    targetWidth: number,
-  ): string[] {
+  private previewContentLines(tab: number, item: MenuItem, targetWidth: number): string[] {
     // 定界拼接杜绝变长字段歧义（字段值均已剥离控制字符）
-    const cacheKey = [tab, item.optionIndex, targetWidth, optionNote ?? ""].join("\x1f");
+    const cacheKey = [tab, item.optionIndex, targetWidth].join("\x1f");
 
     const cached = this.previewCache.get(cacheKey);
     if (cached) return cached;
 
-    const fullLines = buildFullPreviewContentLines(item, optionNote, targetWidth, this.theme);
+    const fullLines = buildFullPreviewContentLines(item, targetWidth, this.theme);
     // 超容量按插入序淘汰最旧条目（`keys().next()` 在 Map 非空时必然产出条目）
     if (this.previewCache.size >= PREVIEW_CACHE_CAPACITY) {
       const oldest = this.previewCache.keys().next();
@@ -389,26 +298,75 @@ export class QuestionView {
   }
 
   /**
-   * 计算并切片本帧内容预览区（纯计算，不写回滚动位移）
-   * @param tab - 题目索引
-   * @param item - 聚焦菜单项（缺省时预览区留空）
-   * @param optionNote - 选项专属补充说明
-   * @param targetWidth - 预览可用列宽
-   * @param height - 预览区占用的终端行数（不足时补空行）
-   * @param scrollOffset - 当前预览滚动位移
-   * @returns 恰好 `height` 行的预览区与本帧视口观察值
+   * 构建补充预览区的未切片内容行（题目补充在前、聚焦选项的补充在后）
+   * 两项都未填写时为空数组，整个补充预览区连分隔线一起省略
+   * @param q - 当前题目
+   * @param st - 作答状态
+   * @param currentItem - 聚焦菜单项
+   * @param renderWidth - 终端布局列宽
+   * @returns 补充预览区行；无补充时为空数组
    */
-  private renderPreviewBand(
-    tab: number,
-    item: MenuItem | undefined,
-    optionNote: string | undefined,
+  private notePreviewLines(
+    q: NormalizedQuestion,
+    st: QuestionAnswerState,
+    currentItem: MenuItem | undefined,
+    renderWidth: number,
+  ): string[] {
+    const lines: string[] = [];
+    const label = (text: string): string => this.theme.fg("muted", text);
+
+    const questionNote = st.customText?.trim();
+    if (questionNote) {
+      pushWrapped(
+        lines,
+        `${label(TEXTS.view.notePreviewQuestion)} ${this.theme.fg("accent", questionNote)}`,
+        renderWidth,
+      );
+    }
+
+    const optionNote = currentItem ? st.optionNotes.get(currentItem.optionIndex)?.trim() : undefined;
+    if (currentItem && optionNote) {
+      const optionLabel = this.theme.fg(
+        "muted",
+        TEXTS.view.notePreviewOption(
+          q.options[currentItem.optionIndex]?.label ?? TEXTS.fallbacks.autoOptionLabel(currentItem.optionIndex + 1),
+        ),
+      );
+      pushWrapped(lines, `${optionLabel} ${this.theme.fg("accent", optionNote)}`, renderWidth);
+    }
+    return lines;
+  }
+
+  /**
+   * 计算并切片本帧内容区（纯计算，不写回滚动位移）
+   * 内容区由题目内容区与补充预览区组成，后者只在有补充时占用行数
+   * @param q - 当前题目
+   * @param st - 作答状态
+   * @param state - 只读视口状态
+   * @param currentItem - 聚焦菜单项（缺省时题目内容区留空）
+   * @param targetWidth - 内容区可用列宽
+   * @param height - 内容区占用的终端行数
+   * @returns 恰好 `height` 行的内容区与本帧视口观察值
+   */
+  private renderContentBand(
+    q: NormalizedQuestion,
+    st: QuestionAnswerState,
+    state: QuestionViewState,
+    currentItem: MenuItem | undefined,
     targetWidth: number,
     height: number,
-    scrollOffset: number,
   ): RenderedPreviewBand {
-    const fullLines = item ? this.previewContentLines(tab, item, optionNote, targetWidth) : [];
-    const band = buildScrollBand(fullLines, height, scrollOffset, this.theme, targetWidth);
-    return { lines: band.lines, viewport: { total: fullLines.length, viewHeight: band.viewHeight } };
+    const mainLines = currentItem ? this.previewContentLines(state.tab, currentItem, targetWidth) : [];
+    const notes = this.notePreviewLines(q, st, currentItem, targetWidth);
+    const sections = renderContentSections(
+      this.theme,
+      targetWidth,
+      height,
+      mainLines,
+      notes,
+      state.previewScrollOffset,
+    );
+    return { lines: sections.lines, viewport: { total: mainLines.length, viewHeight: sections.viewHeight } };
   }
 
   /**

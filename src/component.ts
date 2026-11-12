@@ -38,7 +38,6 @@ import { renderEditorPage, type EditorArea } from "./view-editor.js";
 import {
   QuestionView,
   type MenuItemHit,
-  type NoteButtonHit,
   type PreviewViewport,
   type QuestionActionHit,
   type QuestionActionKind,
@@ -152,10 +151,7 @@ export class AskAuthorComponent implements Component, Focusable {
   /** 上一帧菜单项的整页行范围（渲染写入；鼠标点击据此移动光标与激活条目） */
   private menuHitAreas?: readonly MenuItemHit[];
 
-  /** 上一帧补充说明按钮的整页矩形范围（渲染写入；鼠标点击据此打开对应批注的编辑器） */
-  private noteHitAreas?: readonly NoteButtonHit[];
-
-  /** 上一帧题目底部操作按钮的整页矩形范围（渲染写入；鼠标点击据此打开补充说明或推进确认） */
+  /** 上一帧作答区动作按钮的整页矩形范围（渲染写入；鼠标点击据此打开补充说明或推进确认） */
   private actionHitAreas?: readonly QuestionActionHit[];
 
   /** 上一帧总览页内容视口（渲染写入；滚动位移据此归一化） */
@@ -170,13 +166,16 @@ export class AskAuthorComponent implements Component, Focusable {
   /** 上一帧编辑框位置（渲染写入；输入模式下把鼠标点击换算为编辑框内坐标） */
   private editorAreaObservation?: EditorArea;
 
+  /** 上一帧编辑页返回按钮的整页矩形（渲染写入；鼠标点击据此退出编辑） */
+  private editorBackHit?: ButtonRect;
+
   /** 鼠标按下时的目标（按下与松开同在该目标上才算一次点击） */
   private mousePressedTab?: number;
   private mousePressedItem?: number;
   private mousePressedFormNote?: boolean;
   private mousePressedSubmit?: boolean;
-  private mousePressedNote?: EditTarget;
   private mousePressedAction?: QuestionActionKind;
+  private mousePressedBack?: boolean;
 
   /** 当前编辑器针对的目标（题目整体或指定选项） */
   private editTarget?: EditTarget;
@@ -301,18 +300,18 @@ export class AskAuthorComponent implements Component, Focusable {
     this.previewBandObservation = undefined;
     this.tabHitAreas = undefined;
     this.menuHitAreas = undefined;
-    this.noteHitAreas = undefined;
     this.actionHitAreas = undefined;
     this.summaryViewportObservation = undefined;
     this.summaryFormNoteHit = undefined;
     this.summarySubmitHit = undefined;
     this.editorAreaObservation = undefined;
+    this.editorBackHit = undefined;
     this.mousePressedTab = undefined;
     this.mousePressedItem = undefined;
     this.mousePressedFormNote = undefined;
     this.mousePressedSubmit = undefined;
-    this.mousePressedNote = undefined;
     this.mousePressedAction = undefined;
+    this.mousePressedBack = undefined;
     this.clearFrameCaches();
   }
 
@@ -549,6 +548,19 @@ export class AskAuthorComponent implements Component, Focusable {
     this.touch();
   }
 
+  /**
+   * 退出补充说明编辑器：编辑器非空时首次仅武装丢弃确认（再次退出才丢弃）
+   * `Esc` / `Ctrl+C` 与编辑页的返回按钮共用本路径
+   */
+  private requestEditorExit(): void {
+    if (this.editor.getText() !== "" && !this.editorEscArmed) {
+      this.editorEscArmed = true;
+      this.setStatus(TEXTS.status.editorDiscardConfirm);
+      return;
+    }
+    this.closeEditor();
+  }
+
   /** 关闭编辑器并还原非输入模式状态（清空缓冲与焦点；幂等） */
   private closeEditor(): void {
     this.inputMode = false;
@@ -740,12 +752,7 @@ export class AskAuthorComponent implements Component, Focusable {
     // 1. 输入模式委托内置 Editor；Esc/Ctrl+C 二次确认防止误触
     if (this.inputMode) {
       if (isCancelKey) {
-        if (this.editor.getText() !== "" && !this.editorEscArmed) {
-          this.editorEscArmed = true;
-          this.setStatus(TEXTS.status.editorDiscardConfirm);
-          return;
-        }
-        this.closeEditor();
+        this.requestEditorExit();
         return;
       }
       if (this.editorEscArmed) {
@@ -800,7 +807,7 @@ export class AskAuthorComponent implements Component, Focusable {
 
   /**
    * Component 接口约定：接收鼠标事件
-   * 作答界面是整屏覆盖层：滚轮一律标记为已消费，预览区内滚预览内容，其余位置移动选项光标
+   * 作答界面是整屏覆盖层：滚轮一律标记为已消费，内容区内滚预览内容，其余位置移动选项光标
    * 左键单击：按下先把光标移到指针下的条目，同一条目上松开才激活它；Tab 标签按松开动作切页；未命中的不接管，交回 pi 做文本选择
    * 鼠标事件属于输入路径，本方法写回滚动位移与光标
    * @param event - 归一化鼠标事件（坐标已换算为组件内坐标）
@@ -827,9 +834,22 @@ export class AskAuthorComponent implements Component, Focusable {
 
     if (this.isFinished || this.disposed || this.expansionPending) return undefined;
 
-    // 输入模式下只转发左键点击：按下与拖动留给 pi 的文本选择，松开时宿主合成的 click 才是定位光标的动作
+    // 输入模式下左键只做两件事：按下与松开都命中返回按钮时退出编辑，其余点击交给编辑器定位光标（按下与拖动留给 pi 的文本选择）
     if (this.inputMode) {
+      const back = this.editorBackHit;
+      const onBack = back !== undefined && AskAuthorComponent.withinRect(back, event.y, event.x);
+      if (event.button === "left" && event.type === "press") {
+        this.mousePressedBack = onBack;
+        return onBack ? { handled: true } : undefined;
+      }
       if (event.type !== "click" || event.button !== "left") return undefined;
+      const pressedBack = this.mousePressedBack;
+      this.mousePressedBack = undefined;
+      if (pressedBack && onBack) {
+        this.requestEditorExit();
+        return { handled: true };
+      }
+
       const area = this.editorAreaObservation;
       if (!area) return undefined;
       const y = event.y - area.top;
@@ -858,11 +878,6 @@ export class AskAuthorComponent implements Component, Focusable {
         this.mousePressedTab = tab;
         return { handled: true };
       }
-      const noteTarget = this.noteButtonAt(event.y, event.x);
-      if (noteTarget) {
-        this.mousePressedNote = noteTarget;
-        return { handled: true };
-      }
       const action = this.actionButtonAt(event.y, event.x);
       if (action) {
         this.mousePressedAction = action;
@@ -887,21 +902,15 @@ export class AskAuthorComponent implements Component, Focusable {
     const pressedItem = this.mousePressedItem;
     const pressedFormNote = this.mousePressedFormNote;
     const pressedSubmit = this.mousePressedSubmit;
-    const pressedNote = this.mousePressedNote;
     const pressedAction = this.mousePressedAction;
     this.mousePressedTab = undefined;
     this.mousePressedItem = undefined;
     this.mousePressedFormNote = undefined;
     this.mousePressedSubmit = undefined;
-    this.mousePressedNote = undefined;
     this.mousePressedAction = undefined;
 
     if (pressedTab !== undefined && this.tabAt(event.y, event.x) === pressedTab) {
       this.switchTab(pressedTab);
-      return { handled: true };
-    }
-    if (pressedNote && AskAuthorComponent.sameNoteTarget(pressedNote, this.noteButtonAt(event.y, event.x))) {
-      this.openCustomEditor(pressedNote);
       return { handled: true };
     }
     if (pressedAction && this.actionButtonAt(event.y, event.x) === pressedAction) {
@@ -954,20 +963,7 @@ export class AskAuthorComponent implements Component, Focusable {
   }
 
   /**
-   * 命中补充说明按钮
-   * @param y - 组件内行号
-   * @param x - 组件内列号
-   * @returns 命中的按钮对应的批注编辑目标；未落在任何按钮框内时为 undefined
-   */
-  private noteButtonAt(y: number, x: number): EditTarget | undefined {
-    for (const hit of this.noteHitAreas ?? []) {
-      if (AskAuthorComponent.withinRect(hit.rect, y, x)) return hit.target;
-    }
-    return undefined;
-  }
-
-  /**
-   * 命中题目底部的操作按钮
+   * 命中作答区的动作按钮
    * @param y - 组件内行号
    * @param x - 组件内列号
    * @returns 命中的按钮种类；未落在任何按钮框内时为 undefined
@@ -980,28 +976,22 @@ export class AskAuthorComponent implements Component, Focusable {
   }
 
   /**
-   * 执行题目底部的操作按钮（补充说明入口 / 确认推进）
+   * 执行作答区的动作按钮：两个补充入口打开对应编辑器，确认按钮读了现有作答推进
    * @param action - 按钮种类
    */
   private runQuestionAction(action: QuestionActionKind): void {
     const q = this.model.getQuestion(this.currentTab);
     if (!q) return;
-    if (action === "note") {
+    if (action === "confirm") {
+      this.advanceIfAnswered(q);
+      return;
+    }
+    if (action === "questionNote") {
       this.openCustomEditor({ type: "question" });
       return;
     }
-    this.advanceIfAnswered(q);
-  }
-
-  /**
-   * 判定按下与松开是否落在同一个批注按钮上
-   * @param pressed - 按下时命中的目标
-   * @param released - 松开时命中的目标
-   * @returns 两者为同一题目批注或同一选项的批注时为 true
-   */
-  private static sameNoteTarget(pressed: EditTarget, released: EditTarget | undefined): boolean {
-    if (!released || released.type !== pressed.type) return false;
-    return pressed.type !== "option" || (released.type === "option" && released.optionIndex === pressed.optionIndex);
+    const currentItem = this.currentMenuItem();
+    if (currentItem) this.openCustomEditor({ type: "option", optionIndex: currentItem.optionIndex });
   }
 
   /**
@@ -1126,12 +1116,12 @@ export class AskAuthorComponent implements Component, Focusable {
 
   /**
    * 按行数滚动预览区内容
-   * 滚动位移在输入路径归一化：以渲染帧写入的 {@link previewViewportObservation} 为界收敛，缺观察元数据时按预览区最小高度退化
+   * 滚动位移在输入路径归一化：以渲染帧写入的 {@link previewViewportObservation} 为界收敛，缺观察元数据时按内容区最小高度退化
    * @param lines - 行位移（正下负上）
    */
   private scrollPreviewBy(lines: number): void {
     const observation = this.previewViewportObservation;
-    const viewHeight = observation?.viewHeight ?? LAYOUT_CONFIG.previewMinHeight;
+    const viewHeight = observation?.viewHeight ?? LAYOUT_CONFIG.contentMinHeight;
     const total = observation?.total ?? 0;
     this.previewScrollOffset = clampWindowOffset(this.previewScrollOffset + lines, total, viewHeight);
     this.touch();
@@ -1143,7 +1133,7 @@ export class AskAuthorComponent implements Component, Focusable {
    */
   private scrollSummaryBy(lines: number): void {
     const observation = this.summaryViewportObservation;
-    const pageSize = observation?.viewHeight ?? LAYOUT_CONFIG.previewMinHeight;
+    const pageSize = observation?.viewHeight ?? LAYOUT_CONFIG.contentMinHeight;
     const total = observation?.total ?? 0;
     // 先归一化过期位移（End 的超大值 / 题目变更后总行数变短）再叠加步进，保证 End 后按 ↑ 能回退
     const base = clampWindowOffset(this.summaryScrollOffset, total, pageSize);
@@ -1291,7 +1281,14 @@ export class AskAuthorComponent implements Component, Focusable {
     if (!this.tabCache || this.tabCache.key !== key) {
       this.tabCache = {
         key,
-        bar: buildTabLines(this.theme, this.model, this.currentTab, layoutWidth, this.expansionPending),
+        bar: buildTabLines(
+          this.theme,
+          this.model,
+          this.currentTab,
+          layoutWidth,
+          this.expansionPending,
+          this.expansion !== undefined,
+        ),
       };
     }
     return this.tabCache.bar;
@@ -1323,14 +1320,14 @@ export class AskAuthorComponent implements Component, Focusable {
       lines.push(...renderExpansionPlaceholderPage(this.theme, tabBar.lines, layoutWidth, renderHeight));
       this.tabHitAreas = undefined;
       this.menuHitAreas = undefined;
-      this.noteHitAreas = undefined;
       this.actionHitAreas = undefined;
       this.summaryViewportObservation = undefined;
       this.summaryFormNoteHit = undefined;
       this.summarySubmitHit = undefined;
       this.editorAreaObservation = undefined;
+      this.editorBackHit = undefined;
     } else if (this.inputMode) {
-      // 编辑页同样整页占满：编辑框之后补空行，帮助栏与框架线贴在底部（总览页的整卷补充也走本分支）
+      // 编辑页同样整页占满：内容区放编辑框，作答区为空，提示区贴底（总览页的整卷补充也走本分支）
       const page = renderEditorPage(
         this.theme,
         this.model,
@@ -1338,20 +1335,21 @@ export class AskAuthorComponent implements Component, Focusable {
         this.editTarget,
         this.editor,
         tabBar.lines,
+        this.statusLine,
         layoutWidth,
         renderHeight,
       );
       lines.push(...page.lines);
       this.tabHitAreas = undefined;
       this.menuHitAreas = undefined;
-      this.noteHitAreas = undefined;
       this.actionHitAreas = undefined;
       this.summaryViewportObservation = undefined;
       this.summaryFormNoteHit = undefined;
       this.summarySubmitHit = undefined;
       this.editorAreaObservation = page.editorArea;
+      this.editorBackHit = page.backButton;
     } else if (this.isSubmitTab) {
-      // 总览页自带框架线与 Tab 栏，答卷内容占满顶部分内容区
+      // 总览页自带四个区域，答卷正文占内容区
       const view = this.summaryView.render(
         tabBar.lines,
         this.summaryScrollOffset,
@@ -1362,14 +1360,14 @@ export class AskAuthorComponent implements Component, Focusable {
       lines.push(...view.lines);
       this.tabHitAreas = { band: view.tabRange, segments: tabBar.segments };
       this.menuHitAreas = undefined;
-      this.noteHitAreas = undefined;
       this.actionHitAreas = undefined;
       this.summaryViewportObservation = view.viewport;
       this.summaryFormNoteHit = view.formNoteButton;
       this.summarySubmitHit = view.submitButton;
       this.editorAreaObservation = undefined;
+      this.editorBackHit = undefined;
     } else {
-      // 作答页自上而下自带框架线、预览区、Tab 栏与选项区
+      // 作答页自带四个区域：标题区、内容预览区、作答区与提示区
       const view = this.questionView.render(
         {
           tab: this.currentTab,
@@ -1378,7 +1376,6 @@ export class AskAuthorComponent implements Component, Focusable {
           previewScrollOffset: this.previewScrollOffset,
           statusMessage: this.statusLine,
           menuItems: this.getMenuItems(),
-          expandable: this.model.canExpandOnConfirm(this.currentTab, this.expansion !== undefined),
           tabLines: tabBar.lines,
         },
         layoutWidth,
@@ -1389,12 +1386,12 @@ export class AskAuthorComponent implements Component, Focusable {
       if (view.previewBand) this.previewBandObservation = view.previewBand;
       if (view.tabRange) this.tabHitAreas = { band: view.tabRange, segments: tabBar.segments };
       this.menuHitAreas = view.menuItemHits;
-      this.noteHitAreas = view.noteButtonHits;
       this.actionHitAreas = view.actionButtonHits;
       this.summaryViewportObservation = undefined;
       this.summaryFormNoteHit = undefined;
       this.summarySubmitHit = undefined;
       this.editorAreaObservation = undefined;
+      this.editorBackHit = undefined;
     }
 
     // 3. 最终行宽保护（按调用方真实列宽截断）与缓存写入

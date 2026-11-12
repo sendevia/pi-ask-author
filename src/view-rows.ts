@@ -7,18 +7,19 @@
 
 import { truncateToWidth, visibleWidth, wrapTextWithAnsi } from "@earendil-works/pi-tui";
 import { divider, padToVisibleWidth, pushWrapped, safeLine, windowSlice, clampWindowOffset } from "./format.js";
-import {
-  type AskAuthorFormModel,
-  type MenuItem,
-  type NormalizedQuestion,
-  type QuestionAnswerState,
-} from "./model.js";
+import { type AskAuthorFormModel, type MenuItem, type NormalizedQuestion, type QuestionAnswerState } from "./model.js";
 import { ICONS, LAYOUT_CONFIG } from "./layout.js";
 import { TEXTS } from "./texts.js";
 import type { Theme, ThemeColor } from "./theme.js";
 
 /** 按钮每行除内容之外的固定列数（左右边框各 1 列、内容左右各 1 列空格） */
 const BUTTON_CHROME_WIDTH = 4;
+
+/** 同行按钮之间的基础间隙列数（行内有剩余宽度时再按对齐方式加宽） */
+const BUTTON_GAP = 1;
+
+/** Tab 标签之间的间隙列数（标签自身不留边距，整行从首列起排） */
+const TAB_GAP = 2;
 
 /** 屏幕行范围（0-based 半开区间）：鼠标命中测试与滚轮分区共用 */
 export interface RowRange {
@@ -44,7 +45,7 @@ export interface TabSegment {
  * Tab 导航栏的渲染产物
  */
 export interface TabBar {
-  /** Tab 栏行（末尾带单横分隔线） */
+  /** Tab 栏行（只有标签，不带分隔线） */
   readonly lines: string[];
   /** 各标签的可点击位置（供组件做鼠标命中） */
   readonly segments: readonly TabSegment[];
@@ -150,12 +151,29 @@ function tabLabelText(model: AskAuthorFormModel, questionIndex: number, displayI
 }
 
 /**
- * 渲染完整 Tab 导航栏区块（各题标签 + 提交页标签 + 末尾单横分隔线）
+ * 拼接题目的类型短标记（单选/多选、条件、参与推演）
+ * @param model - 问卷模型
+ * @param questionIndex - 题目索引
+ * @param expansionAvailable - 本次会话是否提供推演服务
+ * @returns 紧贴题号前的徽标串（如 `[多选][条件]`）；题目缺失时为空串
+ */
+function tabTypeTags(model: AskAuthorFormModel, questionIndex: number, expansionAvailable: boolean): string {
+  const q = model.getQuestion(questionIndex);
+  if (!q) return "";
+  const tags = [q.multiSelect ? TEXTS.tabs.typeMulti : TEXTS.tabs.typeSingle];
+  if (q.showIf.length > 0) tags.push(TEXTS.tabs.conditionalBadge);
+  if (expansionAvailable && model.expansionConfigFor(questionIndex)) tags.push(TEXTS.tabs.expansionBadge);
+  return tags.join("");
+}
+
+/**
+ * 渲染完整 Tab 导航栏（各题标签 + 提交页标签）
  *
- * - 只为可见题目产出标签，序号为可见题目的展示序号；标签优先取 `tabLabel`，未声明时用题号文案
+ * - 只为可见题目产出标签，标签由完成度图标、类型短标记与题号/短标签组成（形如 `[单选] 第1题`）
+ * - 标签优先取 `tabLabel`，未声明时用题号文案；参与推演的题目带 `[推演]`，带显示条件的带 `[条件]`
  * - 完成度由 `ICONS.checked` / `ICONS.unchecked` 与 `success` / `muted` 表达；激活页为 `selectedBg` + `accent` 的 `bold` 反白
  * - 提交页标签在全部作答完成时用 `success`，否则 `dim`；激活判定为 `currentTab === model.questionCount`
- * - 按 `renderWidth` 贪心折行（段间单空格），超宽分段独占一行；末尾恒追加一条 `dim` 单横分隔线
+ * - 按 `renderWidth` 贪心折行（段间固定两列），超宽分段独占一行
  * - 推演在途时把激活页标题换成占位文案
  *
  * @param theme - 主题样式提供者
@@ -163,7 +181,8 @@ function tabLabelText(model: AskAuthorFormModel, questionIndex: number, displayI
  * @param currentTab - 激活页索引（题目索引；`questionCount` 为总览页）
  * @param renderWidth - 终端可视宽度
  * @param expansionPending - 是否有推演请求在途（为 true 时激活页标签改为占位文案）
- * @returns Tab 栏行与各标签的可点击位置（至少含末尾分隔线一行）
+ * @param expansionAvailable - 本次会话是否提供推演服务（决定是否显示 `[推演]` 标记）
+ * @returns Tab 栏行与各标签的可点击位置（至少一行）
  */
 export function buildTabLines(
   theme: Theme,
@@ -171,20 +190,22 @@ export function buildTabLines(
   currentTab: number,
   renderWidth: number,
   expansionPending = false,
+  expansionAvailable = false,
 ): TabBar {
   const isSubmitTab = currentTab === model.questionCount;
   const tabLines: string[] = [];
   const segments: TabSegment[] = [];
   const tabSegments: { tab: number; text: string }[] = [];
-  const placeholderText = ` ${TEXTS.tabs.expansionPlaceholder} `;
+  const placeholderText = TEXTS.tabs.expansionPlaceholder;
   for (const [displayIndex, questionIndex] of model.getVisibleQuestionIndices().entries()) {
     const isActive = questionIndex === currentTab;
     const answered = model.isQuestionAnswered(questionIndex);
     const icon = answered ? ICONS.checked : ICONS.unchecked;
+    const typeTags = tabTypeTags(model, questionIndex, expansionAvailable);
     const activeLabel =
       isActive && expansionPending
         ? placeholderText
-        : ` ${icon} ${tabLabelText(model, questionIndex, displayIndex + 1)} `;
+        : `${icon} ${typeTags} ${tabLabelText(model, questionIndex, displayIndex + 1)}`;
     const color = isActive ? (expansionPending ? "warning" : "accent") : answered ? "success" : "muted";
     tabSegments.push({
       tab: questionIndex,
@@ -192,7 +213,7 @@ export function buildTabLines(
     });
   }
 
-  const submitText = isSubmitTab && expansionPending ? placeholderText : ` ${TEXTS.tabs.submitTab} `;
+  const submitText = isSubmitTab && expansionPending ? placeholderText : TEXTS.tabs.submitTab;
   const submitColor = isSubmitTab
     ? expansionPending
       ? "warning"
@@ -211,26 +232,25 @@ export function buildTabLines(
   let rowWidth = 0;
   for (const seg of tabSegments) {
     const segWidth = visibleWidth(seg.text);
-    if (rowWidth > 0 && rowWidth + 1 + segWidth > renderWidth) {
+    if (rowWidth > 0 && rowWidth + TAB_GAP + segWidth > renderWidth) {
       tabLines.push(safeLine(row, renderWidth));
       row = "";
       rowWidth = 0;
     } else if (rowWidth > 0) {
-      row += " ";
-      rowWidth += 1;
+      row += " ".repeat(TAB_GAP);
+      rowWidth += TAB_GAP;
     }
     segments.push({ tab: seg.tab, row: tabLines.length, start: rowWidth, end: rowWidth + segWidth });
     row += seg.text;
     rowWidth += segWidth;
   }
   tabLines.push(safeLine(row, renderWidth));
-  tabLines.push(theme.fg("dim", divider(renderWidth)));
 
   return { lines: tabLines, segments };
 }
 
 /**
- * 构建推演在途占位页（整页：顶部分割线 / Tab 栏 / 运行提示 / 取消提示 / 底部分割线）
+ * 构建推演在途占位页（四个区域：Tab 栏 / 运行提示 / 无作答区 / 取消提示）
  * 推演在途期间只接受取消键
  * @param theme - 主题样式提供者
  * @param tabLines - 题目导航 Tab 栏行（组件缓存）
@@ -244,23 +264,18 @@ export function renderExpansionPlaceholderPage(
   renderWidth: number,
   terminalRows: number,
 ): string[] {
-  const lines: string[] = [];
-  pushFrameRule(lines, theme, renderWidth);
-  lines.push(...tabLines);
-
-  const tail: string[] = [];
-  pushHelpFooter(tail, [TEXTS.help.cancel], theme, renderWidth);
-  pushFrameRule(tail, theme, renderWidth);
-
-  lines.push("");
-  lines.push(` ${theme.fg("warning", theme.bold(TEXTS.status.expansionRunning))}`);
-  lines.push("");
-  pushWrapped(lines, theme.fg("dim", ` ${TEXTS.view.expansionPendingHint}`), renderWidth, " ");
-
-  const used = lines.length;
-  for (let i = used + tail.length; i < terminalRows; i++) lines.push("");
-  lines.push(...tail);
-  return lines;
+  return composePage(
+    theme,
+    renderWidth,
+    terminalRows,
+    { tabLines, titleLines: [], answerLines: [], statusMessage: null, helpParts: [TEXTS.help.cancel] },
+    (height) => {
+      const content: string[] = [` ${theme.fg("warning", theme.bold(TEXTS.status.expansionRunning))}`, ""];
+      pushWrapped(content, theme.fg("dim", ` ${TEXTS.view.expansionPendingHint}`), renderWidth, " ");
+      while (content.length < height) content.push("");
+      return content;
+    },
+  ).lines;
 }
 
 /** 固定高度内容区的渲染产物 */
@@ -303,16 +318,66 @@ export function buildScrollBand(
   return { lines, viewHeight, offset };
 }
 
+/** 内容区的渲染产物 */
+export interface ContentSections {
+  /** 恰好 `height` 行的内容区行 */
+  readonly lines: string[];
+  /** 正文子区本帧可视行数（不含滚动信息行） */
+  readonly viewHeight: number;
+}
+
 /**
- * 原地追加底部状态通知行（无文案时不追加）
+ * 渲染内容区：正文子区 + 补充子区（无补充时整个子区连分隔线一起省略）
+ *
+ * - 补充子区在正文子区下方，两者之间一条单横分隔线
+ * - 补充子区至多占内容区一半高度，超出时末行换成指向编辑器查看全文的提示行
+ * - 正文子区吃剩下的行数，超出时末行让给滚动信息行
+ *
+ * @param theme - 主题样式提供者
+ * @param renderWidth - 终端布局列宽
+ * @param height - 内容区占用的终端行数
+ * @param mainLines - 正文子区的未切片完整内容行
+ * @param noteLines - 补充子区的未切片完整内容行（空数组表示无补充）
+ * @param scrollOffset - 正文子区当前滚动位移（在本地收敛，不写回）
+ * @returns 恰好 `height` 行的内容区与正文子区可视行数
+ */
+export function renderContentSections(
+  theme: Theme,
+  renderWidth: number,
+  height: number,
+  mainLines: readonly string[],
+  noteLines: readonly string[],
+  scrollOffset: number,
+): ContentSections {
+  if (noteLines.length === 0) {
+    const band = buildScrollBand(mainLines, height, scrollOffset, theme, renderWidth);
+    return { lines: band.lines, viewHeight: band.viewHeight };
+  }
+
+  const noteHeight = Math.min(noteLines.length, Math.max(1, Math.floor(height / 2)));
+  const clippedNotes =
+    noteLines.length > noteHeight
+      ? [...noteLines.slice(0, noteHeight - 1), theme.fg("dim", TEXTS.view.notePreviewClipped)]
+      : noteLines;
+
+  const band = buildScrollBand(mainLines, Math.max(1, height - noteHeight - 1), scrollOffset, theme, renderWidth);
+  const lines = [...band.lines];
+  lines.push(theme.fg("dim", divider(renderWidth)));
+  lines.push(...clippedNotes);
+  while (lines.length < height) lines.push("");
+  return { lines, viewHeight: band.viewHeight };
+}
+
+/**
+ * 原地追加提示区的临时状态通知行（无文案时不追加，超宽时悬挂缩进折行）
  * @param lines - 输出行数组（原地追加）
  * @param theme - 主题样式提供者
  * @param statusMessage - 当前状态通知
+ * @param renderWidth - 终端可视宽度
  */
-export function pushStatusMessage(lines: string[], theme: Theme, statusMessage: string | null): void {
+function pushStatusMessage(lines: string[], theme: Theme, statusMessage: string | null, renderWidth: number): void {
   if (!statusMessage) return;
-  lines.push("");
-  lines.push(` ${theme.fg("warning", statusMessage)}`);
+  pushWrapped(lines, theme.fg("warning", statusMessage), renderWidth, " ");
 }
 
 /**
@@ -331,8 +396,95 @@ function joinHelpParts(parts: readonly string[]): string {
  * @param theme - 主题样式提供者
  * @param renderWidth - 终端可视宽度
  */
-export function pushHelpFooter(lines: string[], parts: readonly string[], theme: Theme, renderWidth: number): void {
+function pushHelpFooter(lines: string[], parts: readonly string[], theme: Theme, renderWidth: number): void {
   pushWrapped(lines, theme.fg("dim", joinHelpParts(parts)), renderWidth, " ");
+}
+
+/**
+ * 原地追加一条区域之间的单横分隔线（`dim` 配色）
+ * @param lines - 输出行数组（原地追加）
+ * @param theme - 主题样式提供者
+ * @param width - 分隔线可视宽度
+ */
+function pushBandRule(lines: string[], theme: Theme, width: number): void {
+  lines.push(theme.fg("dim", divider(width, LAYOUT_CONFIG.dividerThin)));
+}
+
+/** 四个区域自上而下的内容（内容区由回调按剩余高度现算） */
+export interface PageBands {
+  /** 题目标题区：Tab 栏行（组件缓存） */
+  readonly tabLines: readonly string[];
+  /** 题目标题区：标题行（作答页为模式徽标与题名，总览页为总览标题与作答进度，编辑页为面包屑） */
+  readonly titleLines: readonly string[];
+  /** 作答区行（选项、补充与切换）；为空时不占行也不画分隔线 */
+  readonly answerLines: readonly string[];
+  /** 提示区：临时状态通知 */
+  readonly statusMessage: string | null;
+  /** 提示区：快捷键提示片段 */
+  readonly helpParts: readonly string[];
+}
+
+/** 整页组装结果 */
+export interface PageFrame {
+  /** 整页终端行 */
+  readonly lines: string[];
+  /** 内容区占用的整页行范围（滚轮路由依据） */
+  readonly contentBand: RowRange;
+  /** 作答区首行；作答区为空时为 -1 */
+  readonly answerStart: number;
+}
+
+/**
+ * 按四个区域自上而下组装整页：题目标题区（Tab 栏 + 标题行）、内容区、作答区、提示区
+ *
+ * - 内容区吸收剩余高度，下限 `contentMinHeight`（标题、选项、状态与提示的折行均计入固定部分）
+ * - 作答区为空时不输出其行，内容区直接衔接提示区
+ * - 整页不画外框双横线：标题区与内容区之间、作答区（无作答时为内容区）与提示区之间各一条单横分隔线，内容区与作答区之间不画
+ *
+ * @param theme - 主题样式提供者
+ * @param renderWidth - 终端布局列宽
+ * @param terminalRows - 终端可视行数
+ * @param bands - 四个区域中除内容区以外的行
+ * @param buildContent - 按给定的内容区高度产出内容行
+ * @returns 整页行、内容区行范围与作答区首行
+ */
+export function composePage(
+  theme: Theme,
+  renderWidth: number,
+  terminalRows: number,
+  bands: PageBands,
+  buildContent: (height: number) => string[],
+): PageFrame {
+  const hintLines: string[] = [];
+  pushStatusMessage(hintLines, theme, bands.statusMessage, renderWidth);
+  pushHelpFooter(hintLines, bands.helpParts, theme, renderWidth);
+
+  const hasAnswer = bands.answerLines.length > 0;
+  const fixed =
+    bands.tabLines.length +
+    bands.titleLines.length +
+    1 + // 标题区与内容区之间
+    bands.answerLines.length +
+    1 + // 作答区（无作答时为内容区）与提示区之间
+    hintLines.length;
+  const contentHeight = Math.max(LAYOUT_CONFIG.contentMinHeight, terminalRows - fixed);
+
+  const lines: string[] = [];
+  lines.push(...bands.tabLines, ...bands.titleLines);
+  pushBandRule(lines, theme, renderWidth);
+  const contentBand = { start: lines.length, end: lines.length + contentHeight };
+  lines.push(...buildContent(contentHeight));
+
+  // 内容区与作答区之间不画分隔线，作答区直接接在内容之后
+  let answerStart = -1;
+  if (hasAnswer) {
+    answerStart = lines.length;
+    lines.push(...bands.answerLines);
+  }
+
+  pushBandRule(lines, theme, renderWidth);
+  lines.push(...hintLines);
+  return { lines, contentBand, answerStart };
 }
 
 /** 按钮文字与框线配色 */
@@ -359,27 +511,91 @@ export interface ButtonGroup {
   readonly rects: readonly ButtonRect[];
 }
 
-/** 按钮组的单个按钮测量结果（内容行已按行宽折行） */
+/** 按钮组的单个按钮测量结果 */
 interface ButtonCell {
   /** 框线前景色令牌 */
   readonly tone: ThemeColor;
+  /** 按钮文字（可含换行与着色） */
+  readonly text: string;
+  /** 不折行时的自然可见列宽（按最宽一行计） */
+  readonly natural: number;
+}
+
+/** 按钮的内容行已按分配到的列宽折行 */
+interface ButtonBox extends ButtonCell {
   /** 折行后的内容行 */
   readonly contentLines: string[];
-  /** 内容区可见列宽（取最长内容行） */
+  /** 内容区可见列宽（取最长内容行，即框体宽度依据） */
   readonly inner: number;
+}
+
+/** 按钮组在可用宽度内的对齐方式：靠左、靠右或两端分开 */
+export type ButtonAlign = "left" | "right" | "spread";
+
+/**
+ * 测量按钮文字的自然可见列宽（含宽字符与 ANSI 着色，多行取最宽一行）
+ * @param text - 按钮文字
+ * @returns 不折行所需的可见列宽；空文字为 0
+ */
+function naturalWidth(text: string): number {
+  return text.split("\n").reduce((max, line) => Math.max(max, visibleWidth(line)), 0);
+}
+
+/**
+ * 在一行内分配各按钮的内容列宽
+ *
+ * 按自然宽度从小到大分配：窄按钮只拿自己需要的列数，剩下的一直向上浮到宽按钮，
+ * 后者再按分配到的列宽折行。逐级均分而不一次性平分，是为了让短标签不被白白拉宽。
+ *
+ * @param naturals - 各按钮的自然列宽（与行内按钮同序）
+ * @param available - 该行可用总宽度（已扣除缩进）
+ * @returns 与 `naturals` 同序的内容列宽数组（每项至少 1 列）
+ */
+function innerWidths(naturals: readonly number[], available: number): number[] {
+  const count = naturals.length;
+  const budget = Math.max(count, available - (count - 1) * BUTTON_GAP - count * BUTTON_CHROME_WIDTH);
+  const order = naturals.map((natural, index) => ({ natural, index })).sort((a, b) => a.natural - b.natural);
+  const widths = new Array<number>(count).fill(1);
+
+  let remaining = budget;
+  for (const [position, entry] of order.entries()) {
+    const share = Math.max(1, Math.floor(remaining / (count - position)));
+    const width = Math.min(entry.natural, share);
+    widths[entry.index] = width;
+    remaining = Math.max(0, remaining - width);
+  }
+  return widths;
+}
+
+/**
+ * 该行压到最小可接受宽度时占用的总列数
+ *
+ * 每个按钮最多压缩到自然宽度的 `buttonShareShrinkRatio`（文字换行但不会被切成碎条），
+ * 总和装得下才允许共享同一行。
+ *
+ * @param cells - 待同行的按钮
+ * @returns 含框线与间隙的总列数
+ */
+function rowNeed(cells: readonly ButtonCell[]): number {
+  const inner = cells.reduce(
+    (sum, cell) => sum + Math.max(1, Math.ceil(cell.natural * LAYOUT_CONFIG.buttonShareShrinkRatio)),
+    0,
+  );
+  return inner + (cells.length - 1) * BUTTON_GAP + cells.length * BUTTON_CHROME_WIDTH;
 }
 
 /**
  * 渲染横排字符框架按钮组：上缘 `┌ ─ ┐`、两侧 `│`、下缘 `┕ ━ ┙`
  *
- * - 按钮宽度贴着文字，超过行宽时按列折行；一行放不下时后续按钮另起一行
+ * - 分行按“压缩后仍能审读”判定：一行里的每个按钮最多占自然宽度的 `buttonShareShrinkRatio` 就能装下时才同行，否则另起一行
+ * - 行内列宽递进均分：窄按钮先拿足自然宽度，剩下的全部给宽按钮，超过分配宽度的文字按列折行
  * - 同一行内按钮高度取该行最大值，短按钮的内容区补空行保持上下缘对齐
- * - `align` 决定整组靠向：左对齐首列留 `inset` 列，右对齐末列距右缘 `inset` 列
+ * - `align` 决定整组靠向：靠左首列留 `inset` 列，靠右末列距右缘 `inset` 列，两端分开时首按钮靠左、末按钮靠右、余下列宽均分给列间隙
  *
  * @param theme - 主题样式提供者
  * @param buttons - 按钮序列（空数组时无输出行）
  * @param maxWidth - 可用总宽度（含缩进）
- * @param align - 各行靠左或靠右
+ * @param align - 对齐方式
  * @param inset - 靠向一侧的空白列数
  * @returns 整组行与各按钮矩形范围
  */
@@ -387,75 +603,146 @@ export function renderButtonGroup(
   theme: Theme,
   buttons: readonly ButtonSpec[],
   maxWidth: number,
-  align: "left" | "right" = "left",
+  align: ButtonAlign = "left",
   inset = 0,
 ): ButtonGroup {
   const frame = LAYOUT_CONFIG.buttonFrame;
   const available = Math.max(BUTTON_CHROME_WIDTH + 1, maxWidth - inset);
 
-  const cells: ButtonCell[] = buttons.map((button) => {
-    const contentLines = wrapTextWithAnsi(button.text, Math.max(1, available - BUTTON_CHROME_WIDTH));
-    const inner = contentLines.reduce((max, line) => Math.max(max, visibleWidth(line)), 0);
-    return { tone: button.tone, contentLines, inner };
-  });
+  const cells: ButtonCell[] = buttons.map((button) => ({
+    tone: button.tone,
+    text: button.text,
+    natural: Math.max(1, naturalWidth(button.text)),
+  }));
 
-  // 贪心折行：与上一个按钮之间留 1 列间隙，超出可用宽度就另起一行
-  const rows: { cells: ButtonCell[]; width: number }[] = [];
+  // 分行：与同行的下一个按钮一起压缩到最小可接受宽度仍装得下时同行，否则另起一行
+  const rows: ButtonCell[][] = [];
   for (const cell of cells) {
-    const width = cell.inner + BUTTON_CHROME_WIDTH;
     const current = rows[rows.length - 1];
-    if (current && current.width + 1 + width <= available) {
-      current.width += 1 + width;
-      current.cells.push(cell);
+    if (current && rowNeed([...current, cell]) <= available) {
+      current.push(cell);
     } else {
-      rows.push({ cells: [cell], width });
+      rows.push([cell]);
     }
   }
 
   const lines: string[] = [];
   const rects: ButtonRect[] = [];
   for (const row of rows) {
-    const leftPad = " ".repeat(Math.max(0, align === "right" ? maxWidth - inset - row.width : inset));
-    const height = Math.max(...row.cells.map((cell) => cell.contentLines.length));
+    const widths = innerWidths(
+      row.map((cell) => cell.natural),
+      available,
+    );
+    const boxes: ButtonBox[] = row.map((cell, index) => {
+      const contentLines = wrapTextWithAnsi(cell.text, widths[index] ?? 1);
+      const inner = contentLines.reduce((max, line) => Math.max(max, visibleWidth(line)), 0);
+      return { ...cell, contentLines, inner };
+    });
+
+    const rowWidth =
+      boxes.reduce((sum, box) => sum + box.inner + BUTTON_CHROME_WIDTH, 0) + (boxes.length - 1) * BUTTON_GAP;
+    const leftPad = align === "right" ? Math.max(0, maxWidth - inset - rowWidth) : inset;
+    const gaps = rowGaps(align, boxes.length, rowWidth, available);
+    const padStr = " ".repeat(leftPad);
+    const join = (parts: readonly string[]): string =>
+      parts.map((part, index) => (index === 0 ? part : " ".repeat(gaps[index - 1] ?? BUTTON_GAP) + part)).join("");
+
+    const height = Math.max(...boxes.map((box) => box.contentLines.length));
     const tops: string[] = [];
     const bottoms: string[] = [];
     const columns: string[][] = [];
     const spans: RowRange[] = [];
-    let column = leftPad.length;
+    let column = leftPad;
 
-    for (const cell of row.cells) {
-      const width = cell.inner + BUTTON_CHROME_WIDTH;
-      const side = theme.fg(cell.tone, frame.side);
-      tops.push(theme.fg(cell.tone, frame.topLeft + frame.top.repeat(cell.inner + 2) + frame.topRight));
-      bottoms.push(theme.fg(cell.tone, frame.bottomLeft + frame.bottom.repeat(cell.inner + 2) + frame.bottomRight));
+    for (const [index, box] of boxes.entries()) {
+      const width = box.inner + BUTTON_CHROME_WIDTH;
+      const side = theme.fg(box.tone, frame.side);
+      tops.push(theme.fg(box.tone, frame.topLeft + frame.top.repeat(box.inner + 2) + frame.topRight));
+      bottoms.push(theme.fg(box.tone, frame.bottomLeft + frame.bottom.repeat(box.inner + 2) + frame.bottomRight));
       columns.push(
         Array.from(
           { length: height },
-          (_, lineIndex) => `${side} ${padToVisibleWidth(cell.contentLines[lineIndex] ?? "", cell.inner)} ${side}`,
+          (_, lineIndex) => `${side} ${padToVisibleWidth(box.contentLines[lineIndex] ?? "", box.inner)} ${side}`,
         ),
       );
       spans.push({ start: column, end: column + width });
-      column += width + 1;
+      column += width + (gaps[index] ?? BUTTON_GAP);
     }
 
     const top = lines.length;
-    lines.push(leftPad + tops.join(" "));
+    lines.push(padStr + join(tops));
     for (let lineIndex = 0; lineIndex < height; lineIndex++) {
-      lines.push(leftPad + columns.map((columnLines) => columnLines[lineIndex]).join(" "));
+      lines.push(padStr + join(columns.map((columnLines) => columnLines[lineIndex] ?? "")));
     }
-    lines.push(leftPad + bottoms.join(" "));
+    lines.push(padStr + join(bottoms));
     for (const span of spans) rects.push({ rows: { start: top, end: lines.length }, cols: span });
   }
 
   return { lines, rects };
 }
 
+/** 左侧按钮与右侧可折行文字的排版产物 */
+export interface LeadingButtonBlock {
+  /** 整块行（行号为块内相对行） */
+  readonly lines: string[];
+  /** 按钮矩形（行号为块内相对行） */
+  readonly rect: ButtonRect;
+}
+
 /**
- * 原地追加一条外层框架分隔线（`accent` 配色）
- * @param lines - 输出行数组（原地追加）
+ * 排版「按钮在左、文字在右」的一整块：文字首行与按钮内容行同行，超宽部分向下折行并对齐文字起始列
+ *
+ * - 文字可用列宽取总宽减去按钮与间隙，低于 `leadingTextMinWidth` 时改为按钮在上、文字在下堆叠
+ * - 按钮下缘以下的折行直接排在文字起始列，不额外缩进
+ *
  * @param theme - 主题样式提供者
- * @param width - 分隔线可视宽度（`<= 0` 时追加空串）
+ * @param button - 左侧按钮
+ * @param text - 右侧文字（可含着色，按列折行）
+ * @param maxWidth - 可用总宽度（含缩进）
+ * @param inset - 按钮左侧空白列数
+ * @returns 整块行与按钮矩形
  */
-export function pushFrameRule(lines: string[], theme: Theme, width: number): void {
-  lines.push(theme.fg("accent", divider(width, LAYOUT_CONFIG.dividerThick)));
+export function renderLeadingButton(
+  theme: Theme,
+  button: ButtonSpec,
+  text: string,
+  maxWidth: number,
+  inset = 0,
+): LeadingButtonBlock {
+  const group = renderButtonGroup(theme, [button], maxWidth, "left", inset);
+  const rect = group.rects[0] ?? { rows: { start: 0, end: 0 }, cols: { start: inset, end: inset } };
+  const textLeft = rect.cols.end + 1;
+
+  if (maxWidth - textLeft < LAYOUT_CONFIG.leadingTextMinWidth) {
+    const wrapped = wrapTextWithAnsi(text, Math.max(1, maxWidth - inset));
+    return { lines: [...group.lines, ...wrapped.map((line) => " ".repeat(inset) + line)], rect };
+  }
+
+  const wrapped = wrapTextWithAnsi(text, maxWidth - textLeft);
+  const height = Math.max(group.lines.length, 1 + wrapped.length);
+  const lines = Array.from({ length: height }, (_, row) => {
+    const frameLine = group.lines[row];
+    const textLine = wrapped[row - 1];
+    if (textLine === undefined) return frameLine ?? "";
+    return `${padToVisibleWidth(frameLine ?? "", textLeft)}${textLine}`;
+  });
+  return { lines, rect };
+}
+
+/**
+ * 计算一行内相邻按钮之间的列间隙数
+ * @param align - 对齐方式
+ * @param count - 该行按钮数
+ * @param rowWidth - 该行按钮与基础列间隙的总宽
+ * @param available - 可用总宽度（已扣除缩进）
+ * @returns 长度恒为 `count - 1` 的间隙数组
+ */
+function rowGaps(align: ButtonAlign, count: number, rowWidth: number, available: number): number[] {
+  const gaps = count - 1;
+  if (gaps <= 0) return [];
+  if (align !== "spread") return new Array(gaps).fill(1);
+  const free = Math.max(0, available - rowWidth);
+  const share = Math.floor(free / gaps);
+  let remainder = free % gaps;
+  return Array.from({ length: gaps }, () => 1 + share + (remainder-- > 0 ? 1 : 0));
 }

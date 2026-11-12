@@ -19,54 +19,26 @@
         "index"
       ]
     },
+    "typeSingle": "[单选]",
+    "typeMulti": "[多选]",
+    "conditionalBadge": "[条件]",
+    "expansionBadge": "[推演]",
     "expansionPlaceholder": "推演中…",
     "submitTab": {
       "template": "{icon.check} 提交答卷"
     }
   },
+  "titleArea": {
+    "breadcrumbSeparator": " › ",
+    "backButton": {
+      "template": "{icon.back} 返回"
+    },
+    "questionNote": "题目补充说明",
+    "optionNote": "选项补充说明",
+    "formNote": "整卷补充"
+  },
   "view": {
-    "modeSingle": "[单选]",
-    "conditionalBadge": "[条件]",
-    "expansionBadge": "[推演]",
     "expansionPendingHint": "推演期间题目切换与作答暂停，完成后新题目与选项在原位展开",
-    "modeMultiAtLeast": {
-      "template": "[多选 至少{min}项{maxPart}]",
-      "params": [
-        "min",
-        "maxPart"
-      ]
-    },
-    "modeMultiOptional": {
-      "template": "[多选 可不选{maxPart}]",
-      "params": [
-        "maxPart"
-      ]
-    },
-    "modeMultiUnconstrained": {
-      "template": "[多选{maxPart}]",
-      "params": [
-        "maxPart"
-      ]
-    },
-    "modeMultiMaxPart": {
-      "template": " 至多{max}项",
-      "params": [
-        "max"
-      ]
-    },
-    "attachedNoteBanner": {
-      "template": "{icon.note} 题目补充说明：{text}",
-      "params": [
-        "text"
-      ]
-    },
-    "optionAttachedNoteBanner": {
-      "template": "{icon.note} [{label}] 选项补充说明：{text}",
-      "params": [
-        "label",
-        "text"
-      ]
-    },
     "listTopMore": {
       "template": "  {icon.scrollUp} 向上还有 {count} 项",
       "params": [
@@ -79,9 +51,16 @@
         "count"
       ]
     },
-    "optionNotePanelTitle": "选项补充说明",
-    "storyDescriptionPanelTitle": "情节设定推演",
-    "storyDraftPanelTitle": "正文草稿/分镜头试撰写",
+    "notePreviewQuestion": {
+      "template": "{icon.note} 题目补充说明"
+    },
+    "notePreviewOption": {
+      "template": "{icon.note} 选项补充说明（{label}）",
+      "params": [
+        "label"
+      ]
+    },
+    "notePreviewClipped": "…补充说明较长，按 n / N 打开编辑器查看全文",
     "previewScrollInfo": {
       "template": "(行 {start}-{end}/{total}，用 [ ] 滚动)",
       "params": [
@@ -91,12 +70,6 @@
       ]
     },
     "previewNoDraft": "(无内容预览)",
-    "sectionTitle": {
-      "template": "### {title}",
-      "params": [
-        "title"
-      ]
-    },
     "italicLine": {
       "template": "_{text}_",
       "params": [
@@ -105,6 +78,12 @@
     }
   },
   "menu": {
+    "optionNoteLabel": {
+      "template": "{icon.note} 选项补充说明"
+    },
+    "optionNoteLabelFilled": {
+      "template": "{icon.note} 选项补充说明 (已填写)"
+    },
     "customNoteLabel": {
       "template": "{icon.note} 题目补充说明"
     },
@@ -135,26 +114,7 @@
     "confirmNoteSuffix": " + 补充说明"
   },
   "editor": {
-    "title": {
-      "template": " {icon.note} 填写题目补充说明（{questionTitle}）",
-      "params": [
-        "questionTitle"
-      ]
-    },
-    "optionTitle": {
-      "template": " {icon.note} 填写选项补充说明（{optionLabel} - {questionTitle}）",
-      "params": [
-        "questionTitle",
-        "optionLabel"
-      ]
-    },
-    "formTitle": {
-      "template": " {icon.note} 填写整卷补充（{formTitle}）",
-      "params": [
-        "formTitle"
-      ]
-    },
-    "footerHelp": " [Enter] 保存并返回 • [Esc/Ctrl+C] 取消"
+    "footerHelp": "[Enter] 保存并返回 • [Esc/Ctrl+C] 取消"
   },
   "status": {
     "questionNoteSaved": "已保存本题补充说明",
@@ -204,7 +164,7 @@
       ]
     },
     "pleaseAnswerBeforeSubmit": "本题未完成：请按「空格/Enter」选定选项，或按「n/N」填写补充说明",
-    "editorDiscardConfirm": "再次按 Esc/Ctrl+C 放弃修改（未保存内容将丢失），继续输入可撤销",
+    "editorDiscardConfirm": "再次按 Esc/Ctrl+C 或点返回按钮放弃修改（未保存内容将丢失），继续输入可撤销",
     "errorNonTui": "当前为非交互式终端环境，无法启动交互界面，请在交互式 TUI 会话中重试",
     "errorNoQuestions": "未提供有效的问题或选项，请提供至少一个带选项的问题",
     "errorInvalidCondition": {
@@ -254,7 +214,6 @@
     "toggleCheckMulti": "空格 勾选"
   },
   "summary": {
-    "title": "【答卷总览与确认】",
     "statusDone": "[已完成]",
     "statusPending": "[未完成]",
     "questionPrefix": {
@@ -277,20 +236,14 @@
     "customNoteLabel": {
       "template": "{icon.note} 题目补充说明："
     },
-    "allDonePrompt": {
-      "template": " {icon.check} 全部完成，确认后提交答卷"
-    },
     "pendingWarning": {
-      "template": " {icon.unchecked} 尚有题目未完成，确认将前往未完成的题目"
+      "template": "{icon.unchecked} 尚有题目未完成，确认将前往未完成的题目"
     },
-    "formNoteFilled": {
-      "template": "{icon.note} 整卷补充：{text}",
-      "params": [
-        "text"
-      ]
+    "formNoteLabel": {
+      "template": "{icon.note} 整卷补充"
     },
-    "formNoteEmpty": {
-      "template": "{icon.note} 整卷补充（未填写，按 n 或点击填写）"
+    "formNoteLabelFilled": {
+      "template": "{icon.note} 整卷补充 (已填写)"
     },
     "submitButton": {
       "template": "{icon.check} 确认提交"

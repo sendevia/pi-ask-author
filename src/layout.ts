@@ -8,22 +8,12 @@
 /** 视图几何与滚动行为配置（数值项标注单位） */
 export const LAYOUT_CONFIG = {
   // ===== 分隔线字符 =====
-  /** 外层框架分割线字符（双横线） */
-  dividerThick: "═",
   /** 内部内容分割线字符（单横线） */
   dividerThin: "─",
 
   // ===== 按钮框架字符 =====
   /** 按钮框架字符（上缘单横线、下缘粗横线、两侧竖线） */
-  buttonFrame: {
-    topLeft: "┌",
-    top: "─",
-    topRight: "┐",
-    side: "│",
-    bottomLeft: "┕",
-    bottom: "━",
-    bottomRight: "┙",
-  },
+  buttonFrame: { topLeft: "┌", top: "─", topRight: "┐", side: "│", bottomLeft: "┕", bottom: "━", bottomRight: "┙" },
 
   // ===== 视口几何 =====
   /** Tab 自定义短标签的最大可见宽度 (cols)，超出由 `truncateToWidth` 截断 */
@@ -32,14 +22,18 @@ export const LAYOUT_CONFIG = {
   // ===== 滚动与翻页 =====
   /** 预览区单次滚动行数 (lines) */
   previewScrollStep: 3,
-  /** 预览区最小可见行数 (lines)；预览区占满剩余高度，不足此值时整页溢出终端 */
-  previewMinHeight: 3,
+  /** 内容区最小可见行数 (lines)；内容区吸收剩余高度，不足此值时整页溢出终端 */
+  contentMinHeight: 3,
   /** 总览页单次滚动行数 (lines) */
   summaryScrollStep: 3,
   /** 菜单每页最多可见的选项数 */
   visibleOptionCount: 7,
   /** 补充说明按钮的左侧缩进 (cols) */
   noteButtonIndent: 2,
+  /** 左侧按钮旁边留给文字的最小列数 (cols)；不足时按钮与文字上下堆叠 */
+  leadingTextMinWidth: 8,
+  /** 按钮共享同一行时允许被压缩到自然宽度的比例；低于此比例就另起一行 */
+  buttonShareShrinkRatio: 0.5,
 
   // ===== 状态提示时长 =====
   /** 底部状态通知停留时长 (ms) */
@@ -63,6 +57,8 @@ export const ICONS = {
   note: "󰷬",
 
   // ===== 光标与滚动 =====
+  /** 返回上一页 */
+  back: "󰁍",
   /** 菜单行首聚焦指示 */
   cursor: "󰁔",
   /** 向上滚动提示 */
