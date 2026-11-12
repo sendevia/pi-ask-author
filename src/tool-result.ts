@@ -118,6 +118,7 @@ export function createSuccessResult(formModel: AskAuthorFormModel, answers: Auth
       formDescription: formModel.formDescription,
       questions: formModel.questions,
       answers,
+      supplement: formModel.formNote,
       cancelled: false,
     },
   };

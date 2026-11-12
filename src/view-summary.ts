@@ -15,13 +15,14 @@ import { buildScrollBand, pushFrameRule, pushHelpFooter, pushStatusMessage, type
 /**
  * 构建总览页底部按键提示片段（可见题目数大于 1 时插入跳转题目提示）
  * @param model - 问卷模型
- * @returns 切换题目 / 滚动 / 提交 / 取消，可见题目数大于 1 时额外插入跳转题目
+ * @returns 切换题目 / 滚动 / 整卷补充 / 提交 / 取消，可见题目数大于 1 时额外插入跳转题目
  */
 export function buildSummaryHelpParts(model: AskAuthorFormModel): string[] {
   return [
     TEXTS.help.switchQuestion,
     ...(model.getVisibleQuestionIndices().length > 1 ? [TEXTS.help.jumpQuestion] : []),
     TEXTS.help.scrollSummary,
+    TEXTS.help.editFormNote,
     TEXTS.help.confirmSubmit,
     TEXTS.help.cancel,
   ];
@@ -43,12 +44,22 @@ export interface SummaryViewResult {
   readonly viewport: SummaryViewport;
   /** Tab 栏占用的整页行范围（鼠标点击路由依据） */
   readonly tabRange: RowRange;
+  /** 本帧可见的整卷补充块行范围（鼠标点击路由依据）；未滚动到时为 undefined */
+  readonly formNoteRange?: RowRange;
+}
+
+/** 总览页未切片的完整内容行与其中整卷补充块的行范围 */
+export interface SummaryContent {
+  /** 完整未切片的内容行 */
+  readonly lines: string[];
+  /** 整卷补充块在内容行中的范围 */
+  readonly formNoteRange: RowRange;
 }
 
 /** 答卷总览与提交页构建器（持有内容行缓存，主题与模型在构造期固定） */
 export class SummaryView {
   /** 未切片内容行缓存（键：列宽 + `revision`） */
-  private cache?: { width: number; revision: number; lines: string[] };
+  private cache?: { width: number; revision: number; content: SummaryContent };
 
   /**
    * @param theme - 当前 TUI 主题
@@ -87,7 +98,7 @@ export class SummaryView {
       this.cache = {
         width: contentWidth,
         revision: this.model.revision,
-        lines: buildSubmitSummaryContentLines(this.model, this.theme, contentWidth),
+        content: buildSubmitSummaryContentLines(this.model, this.theme, contentWidth),
       };
     }
 
@@ -104,8 +115,12 @@ export class SummaryView {
 
     // 2. 内容区占满终端剩余高度（不设上限）
     const bandHeight = Math.max(LAYOUT_CONFIG.previewMinHeight, terminalRows - 1 - tabLines.length - body.length);
-    const contentLines = this.cache.lines;
-    const band = buildScrollBand(contentLines, bandHeight, scrollOffset, this.theme, renderWidth);
+    const content = this.cache.content;
+    const band = buildScrollBand(content.lines, bandHeight, scrollOffset, this.theme, renderWidth);
+
+    // 整卷补充块只在滚入可视窗口时回传，鼠标换行到带宽之外的点不接管
+    const formNoteStart = Math.max(content.formNoteRange.start, band.offset);
+    const formNoteEnd = Math.min(content.formNoteRange.end, band.offset + band.viewHeight);
 
     // 3. 按带序输出整页（顶部分割线占首行，内容区紧接其后）
     const lines: string[] = [];
@@ -113,8 +128,12 @@ export class SummaryView {
     lines.push(...band.lines, ...tabLines, ...body);
     return {
       lines,
-      viewport: { total: contentLines.length, viewHeight: band.viewHeight },
+      viewport: { total: content.lines.length, viewHeight: band.viewHeight },
       tabRange: { start: 1 + bandHeight, end: 1 + bandHeight + tabLines.length },
+      formNoteRange:
+        formNoteEnd > formNoteStart
+          ? { start: 1 + formNoteStart - band.offset, end: 1 + formNoteEnd - band.offset }
+          : undefined,
     };
   }
 }
@@ -122,16 +141,17 @@ export class SummaryView {
 /**
  * 构建未切片的完整答卷总览内容行
  * 逐题输出四段（状态徽章 + 标题 / 已选项 / 选项专属批注 / 题目整体批注），题间以空行分隔；隐藏题目不入列，显式跳过与仅批注提交的题目同样入列
+ * 全部题目条目之后追加整卷补充块（标题行 + 正文或未填写占位）
  * @param model - 问卷模型（作答状态的唯一来源）
  * @param theme - 主题样式提供者
  * @param contentWidth - 总览主体可用列宽，超宽行沿悬挂前缀折行
- * @returns 完整未切片的内容行数组；无可见题目时为空数组
+ * @returns 完整未切片内容行与其中整卷补充块的行范围；无可见题目时内容行仅含补充块
  */
 export function buildSubmitSummaryContentLines(
   model: AskAuthorFormModel,
   theme: Theme,
   contentWidth: number,
-): string[] {
+): SummaryContent {
   const summaryContentLines: string[] = [];
 
   for (const [displayIndex, i] of model.getVisibleQuestionIndices().entries()) {
@@ -197,5 +217,16 @@ export function buildSubmitSummaryContentLines(
     summaryContentLines.push("");
   }
 
-  return summaryContentLines;
+  // 整卷补充排在全部题目条目之后：作者在提交前最后填写，位置与封套中的输出顺序一致
+  const formNoteStart = summaryContentLines.length;
+  summaryContentLines.push(theme.fg("accent", theme.bold(TEXTS.summary.formNoteTitle)));
+  const formNote = model.formNote?.trim();
+  pushWrapped(
+    summaryContentLines,
+    formNote ? theme.fg("accent", formNote) : theme.fg("dim", TEXTS.summary.formNoteEmpty),
+    contentWidth,
+    "  ",
+  );
+
+  return { lines: summaryContentLines, formNoteRange: { start: formNoteStart, end: summaryContentLines.length } };
 }

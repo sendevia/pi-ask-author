@@ -137,6 +137,9 @@ export function renderResultCard(
     ...details.answers.map((ans) =>
       TEXTS.card.optionBullet(theme.bold(ans.questionTitle), theme.fg("accent", formatAnswerLine(ans))),
     ),
+    ...(details.supplement
+      ? [TEXTS.card.optionBullet(theme.bold(TEXTS.card.supplementLabel), theme.fg("accent", details.supplement))]
+      : []),
   ];
   return containerText(lines.join("\n"), context.lastComponent);
 }

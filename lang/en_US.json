@@ -160,11 +160,19 @@
         "optionLabel"
       ]
     },
+    "formTitle": {
+      "template": " {icon.note} Form supplement ({formTitle})",
+      "params": [
+        "formTitle"
+      ]
+    },
     "footerHelp": " [Enter] save and return • [Esc/Ctrl+C] cancel"
   },
   "status": {
     "questionNoteSaved": "Question note saved",
     "noteCleared": "Question note cleared",
+    "formNoteSaved": "Form supplement saved",
+    "formNoteCleared": "Form supplement cleared",
     "optionNoteSaved": {
       "template": "Saved note for {label}",
       "params": [
@@ -245,6 +253,7 @@
     "clearNote": "x clear note",
     "confirmQuestion": "Enter confirm",
     "confirmSubmit": "Enter submit",
+    "editFormNote": "n form supplement",
     "editNote": "n question note",
     "editOptionNote": "n option note",
     "editQuestionNote": "N question note",
@@ -286,7 +295,11 @@
     },
     "pendingWarning": {
       "template": " {icon.unchecked} Some questions are unanswered; press Enter to answer, Tab/hl/1-9 to switch"
-    }
+    },
+    "formNoteTitle": {
+      "template": "{icon.note} Form supplement"
+    },
+    "formNoteEmpty": "(empty; press n to add requirements beyond the questions)"
   },
   "card": {
     "callQuestionAndOptionCount": {
@@ -337,6 +350,7 @@
         "text"
       ]
     },
+    "supplementLabel": "Form supplement",
     "errorBullet": {
       "template": "• Error: {err}",
       "params": [
@@ -349,6 +363,7 @@
     "defaultQuestionTitle": "Choose the next creative option",
     "defaultCustomPlaceholder": "Enter overall requirements, foreshadowing details, or revision notes for this question...",
     "defaultOptionCustomPlaceholder": "Enter specific requirements or revision details for this option...",
+    "defaultFormCustomPlaceholder": "Enter requirements beyond the questions (style, person, taboos, next direction)...",
     "defaultCustomChoiceName": "Custom option",
     "defaultOptionLabel": "Default option",
     "unnamedOptionLabel": "Unnamed option",

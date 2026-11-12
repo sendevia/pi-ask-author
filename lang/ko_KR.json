@@ -160,11 +160,19 @@
         "optionLabel"
       ]
     },
+    "formTitle": {
+      "template": " {icon.note} 전체 보충 작성（{formTitle}）",
+      "params": [
+        "formTitle"
+      ]
+    },
     "footerHelp": " [Enter] 저장 후 돌아가기 • [Esc/Ctrl+C] 취소"
   },
   "status": {
     "questionNoteSaved": "질문 추가 설명을 저장했습니다",
     "noteCleared": "질문 추가 설명을 지웠습니다",
+    "formNoteSaved": "전체 보충을 저장했습니다",
+    "formNoteCleared": "전체 보충을 지웠습니다",
     "optionNoteSaved": {
       "template": "'{label}' 추가 설명을 저장했습니다",
       "params": [
@@ -245,6 +253,7 @@
     "clearNote": "x 추가 설명 삭제",
     "confirmQuestion": "Enter 확정",
     "confirmSubmit": "Enter 제출",
+    "editFormNote": "n 전체 보충",
     "editNote": "n 추가 설명",
     "editOptionNote": "n 선택지 추가 설명",
     "editQuestionNote": "N 질문 추가 설명",
@@ -286,7 +295,11 @@
     },
     "pendingWarning": {
       "template": " {icon.unchecked} 미완료된 질문이 있습니다. Enter로 답변, Tab/hl/1~9로 전환하여 수정"
-    }
+    },
+    "formNoteTitle": {
+      "template": "{icon.note} 전체 보충"
+    },
+    "formNoteEmpty": "(아직 작성하지 않았습니다. n으로 질문 외 전체 보충을 입력)"
   },
   "card": {
     "callQuestionAndOptionCount": {
@@ -337,6 +350,7 @@
         "text"
       ]
     },
+    "supplementLabel": "전체 보충",
     "errorBullet": {
       "template": "• 오류 원인: {err}",
       "params": [
@@ -349,6 +363,7 @@
     "defaultQuestionTitle": "향후 창작 방향을 선택해 주세요",
     "defaultCustomPlaceholder": "이 질문에 대한 전반적인 추가 요구사항, 복선 디테일 또는 수정 의견을 입력하세요...",
     "defaultOptionCustomPlaceholder": "해당 선택지에 대한 구체적인 추가 요구사항 또는 수정 세부 내용을 입력하세요...",
+    "defaultFormCustomPlaceholder": "질문 외 전체 요구사항을 입력하세요 (문체, 인칭, 금기, 이후 방향)...",
     "defaultCustomChoiceName": "사용자 지정 방안",
     "defaultOptionLabel": "기본 방안",
     "unnamedOptionLabel": "이름 없는 방안",

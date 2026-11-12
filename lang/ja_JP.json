@@ -160,11 +160,19 @@
         "optionLabel"
       ]
     },
+    "formTitle": {
+      "template": " {icon.note} 全体の補足を入力（{formTitle}）",
+      "params": [
+        "formTitle"
+      ]
+    },
     "footerHelp": " [Enter] 保存して戻る • [Esc/Ctrl+C] 取り消し"
   },
   "status": {
     "questionNoteSaved": "質問の補足説明を保存しました",
     "noteCleared": "質問の補足説明を消去しました",
+    "formNoteSaved": "全体の補足を保存しました",
+    "formNoteCleared": "全体の補足を消去しました",
     "optionNoteSaved": {
       "template": "「{label}」の補足説明を保存しました",
       "params": [
@@ -245,6 +253,7 @@
     "clearNote": "x 補足説明を消去",
     "confirmQuestion": "Enter 確定",
     "confirmSubmit": "Enter 提出",
+    "editFormNote": "n 全体の補足",
     "editNote": "n 補足説明",
     "editOptionNote": "n 選択肢の補足説明",
     "editQuestionNote": "N 質問の補足説明",
@@ -286,7 +295,11 @@
     },
     "pendingWarning": {
       "template": " {icon.unchecked} 未完了の質問があります。Enter で回答、Tab/hl/1〜9 で切り替えて修正"
-    }
+    },
+    "formNoteTitle": {
+      "template": "{icon.note} 全体の補足"
+    },
+    "formNoteEmpty": "（未入力です。n で質問全体以外の補足を入力）"
   },
   "card": {
     "callQuestionAndOptionCount": {
@@ -337,6 +350,7 @@
         "text"
       ]
     },
+    "supplementLabel": "全体の補足",
     "errorBullet": {
       "template": "• エラー原因：{err}",
       "params": [
@@ -349,6 +363,7 @@
     "defaultQuestionTitle": "今後の創作方針を選択してください",
     "defaultCustomPlaceholder": "この質問に対する全体的な要望、伏線などの詳細、または修正意見を入力...",
     "defaultOptionCustomPlaceholder": "この選択肢に対する具体的な追加要望や修正の詳細を入力...",
+    "defaultFormCustomPlaceholder": "質問全体以外の要望を入力（文体、人称、禁止事項、今後の方向）...",
     "defaultCustomChoiceName": "カスタム案",
     "defaultOptionLabel": "デフォルト案",
     "unnamedOptionLabel": "名称未設定の案",

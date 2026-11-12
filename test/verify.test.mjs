@@ -1284,4 +1284,129 @@ const fakeTui = { terminal: { rows: 40 }, requestRender() {} };
   );
 }
 
+// 22. 提交页整卷补充：模型封套、总览块、键位与点击
+{
+  const model = new AskAuthorFormModel(
+    sanitizeAskAuthorArgs({
+      formTitle: "整卷补充",
+      questions: [{ id: "q1", title: "第一题", options: [{ label: "甲" }] }],
+    }),
+  );
+  model.toggleOption(0, 0);
+  assert.equal(model.formNote, undefined, "未填写时整卷补充缺省为空");
+  assert.equal(model.setFormNote("  全程第一人称  "), "saved", "整卷补充应可保存");
+  assert.equal(model.formNote, "全程第一人称", "整卷补充应去首尾空白保存");
+
+  const envelope = model.formatAnswers(model.compileAnswers());
+  const supplementLine = "[Author supplement: 全程第一人称]";
+  const supplementIndex = envelope.indexOf(supplementLine);
+  assert.ok(supplementIndex > 0, "封套应包含整卷补充行");
+  assert.ok(envelope.indexOf("1. [第一题]") < supplementIndex, "整卷补充应排在作答行之后");
+  assert.ok(supplementIndex < envelope.indexOf(TEXTS.markdown.envelopeSuffix), "整卷补充应排在收尾指令之前");
+
+  // 未勾选任何选项时补充同样输出，空答卷提示让位给补充行
+  const blank = new AskAuthorFormModel(
+    sanitizeAskAuthorArgs({ formTitle: "空卷", questions: [{ id: "q1", title: "第一题", options: [{ label: "甲" }] }] }),
+  );
+  assert.ok(blank.formatAnswers(blank.compileAnswers()).includes(TEXTS.markdown.envelopeEmpty), "无补充的空答卷保持空卷提示");
+  blank.setFormNote("按你的默认方案写作");
+  const blankEnvelope = blank.formatAnswers(blank.compileAnswers());
+  assert.ok(blankEnvelope.includes("[Author supplement: 按你的默认方案写作]"), "空答卷也应携带整卷补充");
+  assert.ok(!blankEnvelope.includes(TEXTS.markdown.envelopeEmpty), "有补充时不再输出空卷提示");
+  assert.equal(blank.clearFormNote(), true, "整卷补充应可清空");
+  assert.equal(blank.clearFormNote(), false, "空补充再次清空不应报告变更");
+}
+{
+  const ROWS = 24;
+  const WIDTH = 84;
+  const ansi = /\x1b\[[0-9;]*m/g;
+  const plain = (line) => line.replace(ansi, "");
+  const pointer = (type, x, y) => ({
+    type,
+    button: "left",
+    x,
+    y,
+    screenX: x,
+    screenY: y,
+    width: WIDTH,
+    height: ROWS,
+    shift: false,
+    alt: false,
+    ctrl: false,
+  });
+  const click = (component, x, y) => ({
+    press: component.handleMouse(pointer("press", x, y)),
+    click: component.handleMouse(pointer("click", x, y)),
+  });
+
+  const frames = {};
+  const ctx = {
+    mode: "tui",
+    ui: {
+      async custom(factory) {
+        let settle;
+        const done = new Promise((resolve) => {
+          settle = resolve;
+        });
+        const component = factory({ terminal: { rows: ROWS }, requestRender() {} }, dummyTheme, {}, settle);
+        const render = () => component.render(WIDTH).join("\n").split("\n");
+        const text = (lines) => plain(lines.join("\n"));
+        const noteRow = (lines) => lines.findIndex((l) => plain(l).includes(TEXTS.summary.formNoteTitle));
+
+        // 「空格选定 + Enter 确认」唯一一题后自动进入总览页
+        for (const key of [" ", "\r"]) component.handleInput(key);
+        frames.summary = render();
+        const emptyNoteRow = noteRow(frames.summary);
+        assert.ok(emptyNoteRow > 0, "总览页应显示整卷补充块");
+        assert.ok(plain(frames.summary[emptyNoteRow + 1]).includes(TEXTS.summary.formNoteEmpty), "未填写时显示占位提示");
+
+        // n 打开编辑器，输入后 Enter 保存
+        component.handleInput("n");
+        frames.editor = render();
+        assert.ok(text(frames.editor).includes(TEXTS.editor.formTitle("整卷补充").trim()), "整卷补充编辑器应显示问卷标题");
+        for (const ch of "全程第一人称") component.handleInput(ch);
+        component.handleInput("\r");
+        frames.saved = render();
+        const savedNoteRow = noteRow(frames.saved);
+        assert.ok(plain(frames.saved[savedNoteRow + 1]).includes("全程第一人称"), "保存后总览页应显示整卷补充正文");
+        assert.ok(!text(frames.saved).includes(TEXTS.summary.formNoteEmpty), "保存后不再显示占位提示");
+
+        // 点击补充块也能打开编辑器
+        assert.deepEqual(click(component, 2, savedNoteRow), { press: { handled: true }, click: { handled: true } }, "补充块点击应被接管");
+        frames.clicked = render();
+        assert.ok(text(frames.clicked).includes(TEXTS.editor.formTitle("整卷补充").trim()), "点击补充块应打开编辑器");
+        for (const key of ["\x1b", "\x1b"]) component.handleInput(key);
+        frames.back = render();
+        assert.ok(text(frames.back).includes(TEXTS.summary.title), "放弃修改后回到总览页");
+
+        // x 清空后再写一条，Enter 提交后封套与结果详情都应携带补充
+        component.handleInput("x");
+        assert.ok(text(render()).includes(TEXTS.summary.formNoteEmpty), "x 应清空整卷补充");
+        component.handleInput("n");
+        for (const ch of "保持伏笔") component.handleInput(ch);
+        component.handleInput("\r");
+        frames.final = render();
+        assert.ok(plain(frames.final[noteRow(frames.final) + 1]).includes("保持伏笔"), "第二条整卷补充应已保存");
+
+        component.handleInput("\r");
+        const result = await done;
+        component.dispose();
+        frames.result = result;
+        return result;
+      },
+    },
+  };
+
+  const result = await registeredToolDef.execute(
+    "call-form-note",
+    { formTitle: "整卷补充", questions: [{ id: "q1", title: "第一题", options: [{ label: "甲" }] }] },
+    undefined,
+    undefined,
+    ctx,
+  );
+
+  assert.ok(result.content[0].text.includes("[Author supplement: 保持伏笔]"), "提交封套应携带整卷补充行");
+  assert.equal(result.details.supplement, "保持伏笔", "结果详情应携带整卷补充原文");
+}
+
 console.log("全部功能自检顺利通过。");

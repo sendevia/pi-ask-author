@@ -147,12 +147,16 @@ export class AskAuthorComponent implements Component, Focusable {
   /** 上一帧总览页内容视口（渲染写入；滚动位移据此归一化） */
   private summaryViewportObservation?: SummaryViewport;
 
+  /** 上一帧总览页整卷补充块的整页行范围（渲染写入；鼠标点击据此打开编辑器） */
+  private summaryFormNoteHit?: RowRange;
+
   /** 上一帧编辑框位置（渲染写入；输入模式下把鼠标点击换算为编辑框内坐标） */
   private editorAreaObservation?: EditorArea;
 
   /** 鼠标按下时的目标（按下与松开同在该目标上才算一次点击） */
   private mousePressedTab?: number;
   private mousePressedItem?: number;
+  private mousePressedFormNote?: boolean;
 
   /** 当前编辑器针对的目标（题目整体或指定选项） */
   private editTarget?: EditTarget;
@@ -207,8 +211,8 @@ export class AskAuthorComponent implements Component, Focusable {
     this.editor.focused = false;
     // 批注突变委托模型 mutation，并按返回语义提示状态栏
     /**
-     * 编辑器提交：写入当前目标（选项专属或题目整体）并按模型返回语义提示状态栏
-     * @param text - 编辑器全文（空串即清空批注）
+     * 编辑器提交：写入当前目标（整卷补充、选项专属或题目整体）并按模型返回语义提示状态栏
+     * @param text - 编辑器全文（空串即清空对应批注）
      */
     this.editor.onSubmit = (text) => {
       const target = this.editTarget;
@@ -217,7 +221,10 @@ export class AskAuthorComponent implements Component, Focusable {
         return;
       }
 
-      if (target.type === "option") {
+      if (target.type === "form") {
+        const result = this.model.setFormNote(text);
+        this.setStatus(result === "saved" ? TEXTS.status.formNoteSaved : TEXTS.status.formNoteCleared);
+      } else if (target.type === "option") {
         const q = this.model.getQuestion(this.currentTab);
         const optIdx = target.optionIndex;
         // 输入模式下题目与选项集合不可变更，q 缺失仅可能来自异常状态，此时保持自动标签使提示内容易于阅读
@@ -275,9 +282,11 @@ export class AskAuthorComponent implements Component, Focusable {
     this.tabHitAreas = undefined;
     this.menuHitAreas = undefined;
     this.summaryViewportObservation = undefined;
+    this.summaryFormNoteHit = undefined;
     this.editorAreaObservation = undefined;
     this.mousePressedTab = undefined;
     this.mousePressedItem = undefined;
+    this.mousePressedFormNote = undefined;
     this.clearFrameCaches();
   }
 
@@ -503,6 +512,16 @@ export class AskAuthorComponent implements Component, Focusable {
       resolvedTarget.type === "option" ? (st.optionNotes.get(resolvedTarget.optionIndex) ?? "") : (st.customText ?? "");
 
     this.editor.setText(initialText);
+    this.editor.focused = this._focused;
+    this.touch();
+  }
+
+  /** 打开整卷补充编辑器（提交页；与题目批注共用键位，提交后回到总览页） */
+  private openFormNoteEditor(): void {
+    this.editTarget = { type: "form" };
+    this.inputMode = true;
+    this.editorEscArmed = false;
+    this.editor.setText(this.model.formNote ?? "");
     this.editor.focused = this._focused;
     this.touch();
   }
@@ -811,6 +830,10 @@ export class AskAuthorComponent implements Component, Focusable {
         this.mousePressedTab = tab;
         return { handled: true };
       }
+      if (this.formNoteAt(event.y)) {
+        this.mousePressedFormNote = true;
+        return { handled: true };
+      }
       const itemIndex = this.menuItemAt(event.y);
       if (itemIndex === undefined) return undefined;
       this.mousePressedItem = itemIndex;
@@ -820,11 +843,17 @@ export class AskAuthorComponent implements Component, Focusable {
 
     const pressedTab = this.mousePressedTab;
     const pressedItem = this.mousePressedItem;
+    const pressedFormNote = this.mousePressedFormNote;
     this.mousePressedTab = undefined;
     this.mousePressedItem = undefined;
+    this.mousePressedFormNote = undefined;
 
     if (pressedTab !== undefined && this.tabAt(event.y, event.x) === pressedTab) {
       this.switchTab(pressedTab);
+      return { handled: true };
+    }
+    if (pressedFormNote && this.formNoteAt(event.y)) {
+      this.openFormNoteEditor();
       return { handled: true };
     }
     if (pressedItem !== undefined && this.menuItemAt(event.y) === pressedItem) {
@@ -862,6 +891,16 @@ export class AskAuthorComponent implements Component, Focusable {
       if (y >= hit.range.start && y < hit.range.end) return hit.index;
     }
     return undefined;
+  }
+
+  /**
+   * 命中总览页的整卷补充块（未滚动到时该块无可见行，命中恒不成立）
+   * @param y - 组件内行号
+   * @returns 指针落在补充块可见行上时为 true
+   */
+  private formNoteAt(y: number): boolean {
+    const hit = this.summaryFormNoteHit;
+    return hit !== undefined && y >= hit.start && y < hit.end;
   }
 
   /**
@@ -1050,11 +1089,21 @@ export class AskAuthorComponent implements Component, Focusable {
   }
 
   /**
-   * 总览页键路由（滚动与回车提交；`Ctrl+S` 同义提交）
+   * 总览页键路由（整卷补充、滚动与回车提交；`Ctrl+S` 同义提交）
    * 空格更改为向下滚动（防止习惯性翻页误提交）；位移归一化归属本路径，上界获取自总览视图缓存的内容行数，`End` 仅设置超大值，由后续输入收敛
    * @param data - 按键序列
    */
   private handleSummaryInput(data: string): void {
+    // 整卷补充与题目批注同族键位：`n` / `e` / `N` 打开编辑器，`x` / Delete 清空
+    if (matchesKey(data, "n") || matchesKey(data, "e") || matchesKey(data, Key.shift("n"))) {
+      this.openFormNoteEditor();
+      return;
+    }
+    if (matchesKey(data, "x") || matchesKey(data, Key.delete)) {
+      if (this.model.clearFormNote()) this.setStatus(TEXTS.status.formNoteCleared);
+      return;
+    }
+
     if (matchesKey(data, Key.enter) || matchesKey(data, Key.ctrl("s"))) {
       if (this.model.areAllQuestionsAnswered()) {
         this.finish(false);
@@ -1149,23 +1198,10 @@ export class AskAuthorComponent implements Component, Focusable {
       this.tabHitAreas = undefined;
       this.menuHitAreas = undefined;
       this.summaryViewportObservation = undefined;
-      this.editorAreaObservation = undefined;
-    } else if (this.isSubmitTab) {
-      // 总览页自带框架线与 Tab 栏，答卷内容占满顶部分内容区
-      const view = this.summaryView.render(
-        tabBar.lines,
-        this.summaryScrollOffset,
-        this.statusLine,
-        layoutWidth,
-        renderHeight,
-      );
-      lines.push(...view.lines);
-      this.tabHitAreas = { band: view.tabRange, segments: tabBar.segments };
-      this.menuHitAreas = undefined;
-      this.summaryViewportObservation = view.viewport;
+      this.summaryFormNoteHit = undefined;
       this.editorAreaObservation = undefined;
     } else if (this.inputMode) {
-      // 编辑页同样整页占满：编辑框之后补空行，帮助栏与框架线贴在底部
+      // 编辑页同样整页占满：编辑框之后补空行，帮助栏与框架线贴在底部（总览页的整卷补充也走本分支）
       const page = renderEditorPage(
         this.theme,
         this.model,
@@ -1180,7 +1216,23 @@ export class AskAuthorComponent implements Component, Focusable {
       this.tabHitAreas = undefined;
       this.menuHitAreas = undefined;
       this.summaryViewportObservation = undefined;
+      this.summaryFormNoteHit = undefined;
       this.editorAreaObservation = page.editorArea;
+    } else if (this.isSubmitTab) {
+      // 总览页自带框架线与 Tab 栏，答卷内容占满顶部分内容区
+      const view = this.summaryView.render(
+        tabBar.lines,
+        this.summaryScrollOffset,
+        this.statusLine,
+        layoutWidth,
+        renderHeight,
+      );
+      lines.push(...view.lines);
+      this.tabHitAreas = { band: view.tabRange, segments: tabBar.segments };
+      this.menuHitAreas = undefined;
+      this.summaryViewportObservation = view.viewport;
+      this.summaryFormNoteHit = view.formNoteRange;
+      this.editorAreaObservation = undefined;
     } else {
       // 作答页自上而下自带框架线、预览区、Tab 栏与选项区
       const view = this.questionView.render(
@@ -1203,6 +1255,7 @@ export class AskAuthorComponent implements Component, Focusable {
       if (view.tabRange) this.tabHitAreas = { band: view.tabRange, segments: tabBar.segments };
       this.menuHitAreas = view.menuItemHits;
       this.summaryViewportObservation = undefined;
+      this.summaryFormNoteHit = undefined;
       this.editorAreaObservation = undefined;
     }
 

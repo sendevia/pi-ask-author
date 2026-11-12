@@ -38,14 +38,14 @@ export interface EditorPage {
 /**
  * 渲染补充说明编辑器全屏页（顶部分割线 / Tab 栏 / 标题与上下文 / 编辑框 / 页脚按键提示 / 底部分割线）
  * @param theme - 当前 TUI 主题
- * @param model - 问卷模型（读取题目与选项文案）
+ * @param model - 问卷模型（读取问卷标题与题目、选项文案）
  * @param tab - 当前题目索引
- * @param target - 编辑目标（题目整体或指定选项）
+ * @param target - 编辑目标（整卷补充、题目整体或指定选项）
  * @param editor - 内置编辑器实例
  * @param tabLines - 题目导航 Tab 栏行（组件缓存）
  * @param renderWidth - 终端可视宽度
  * @param terminalRows - 终端可视行数
- * @returns 整页终端行与编辑框位置；题目不存在时行数组为空且无编辑框位置
+ * @returns 整页终端行与编辑框位置；题目目标下题目不存在时行数组为空且无编辑框位置
  */
 export function renderEditorPage(
   theme: Theme,
@@ -57,32 +57,41 @@ export function renderEditorPage(
   renderWidth: number,
   terminalRows: number,
 ): EditorPage {
-  const q = model.getQuestion(tab);
-  if (!q) return { lines: [] };
-
   const lines: string[] = [];
   pushFrameRule(lines, theme, renderWidth);
   lines.push(...tabLines);
 
-  if (target?.type === "option") {
-    const optIdx = target.optionIndex;
-    const opt = q.options[optIdx];
-    const optLabel = optionLabelOf(q, optIdx);
-    const placeholder = opt?.customPlaceholder ?? TEXTS.fallbacks.defaultOptionCustomPlaceholder;
-
-    lines.push(theme.fg("accent", theme.bold(TEXTS.editor.optionTitle(q.title, optLabel))));
-    if (opt?.description) {
-      pushWrapped(lines, theme.fg("muted", opt.description), renderWidth, "  ");
+  if (target?.type === "form") {
+    lines.push(theme.fg("accent", theme.bold(TEXTS.editor.formTitle(model.formTitle))));
+    if (model.formDescription) {
+      pushWrapped(lines, theme.fg("muted", model.formDescription), renderWidth, "  ");
     }
     lines.push("");
-    lines.push(theme.fg("accent", ` ${placeholder}`));
+    lines.push(theme.fg("accent", ` ${TEXTS.fallbacks.defaultFormCustomPlaceholder}`));
   } else {
-    lines.push(theme.fg("accent", theme.bold(TEXTS.editor.title(q.title))));
-    if (q.description) {
-      pushWrapped(lines, theme.fg("muted", q.description), renderWidth, "  ");
+    const q = model.getQuestion(tab);
+    if (!q) return { lines: [] };
+
+    if (target?.type === "option") {
+      const optIdx = target.optionIndex;
+      const opt = q.options[optIdx];
+      const optLabel = optionLabelOf(q, optIdx);
+      const placeholder = opt?.customPlaceholder ?? TEXTS.fallbacks.defaultOptionCustomPlaceholder;
+
+      lines.push(theme.fg("accent", theme.bold(TEXTS.editor.optionTitle(q.title, optLabel))));
+      if (opt?.description) {
+        pushWrapped(lines, theme.fg("muted", opt.description), renderWidth, "  ");
+      }
+      lines.push("");
+      lines.push(theme.fg("accent", ` ${placeholder}`));
+    } else {
+      lines.push(theme.fg("accent", theme.bold(TEXTS.editor.title(q.title))));
+      if (q.description) {
+        pushWrapped(lines, theme.fg("muted", q.description), renderWidth, "  ");
+      }
+      lines.push("");
+      lines.push(theme.fg("accent", ` ${q.customPlaceholder}`));
     }
-    lines.push("");
-    lines.push(theme.fg("accent", ` ${q.customPlaceholder}`));
   }
   lines.push("");
 

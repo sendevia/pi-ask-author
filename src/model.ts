@@ -7,6 +7,7 @@
  * - 插值文本经 `sanitizeEnvelopeText` 归一，封套定界符无法被作者文本击穿
  * - 显隐快照按 `revision` 缓存，隐藏项的选择既不计入作答也不进入答卷
  * - 推演的插入与撤回整体平移后续题目的条件、作答状态与记录索引
+ * - 整卷补充独立于各题作答状态，作为封套末行的单独令牌输出
  */
 
 import { cleanOptional, cleanText, clamp, toSingleLine } from "./format.js";
@@ -137,14 +138,19 @@ export interface AskAuthorResult {
   questions: NormalizedQuestion[];
   /** 收集到的答卷条目列表 */
   answers: AuthorAnswerItem[];
+  /** 提交页填写的整卷自由补充（未填写时缺省） */
+  supplement?: string;
   /** 用户是否主动取消了本次请示 */
   cancelled: boolean;
   /** 执行过程中的错误信息 */
   error?: string;
 }
 
-/** 批注编辑目标：`question` 题目整体 / `option` 指定选项专属（`optionIndex` 为 0-based，越界不写入状态） */
-export type EditTarget = { type: "question" } | { type: "option"; optionIndex: number };
+/** 批注编辑目标：`form` 整卷补充 / `question` 题目整体 / `option` 指定选项专属（`optionIndex` 为 0-based，越界不写入状态） */
+export type EditTarget =
+  | { type: "form" }
+  | { type: "question" }
+  | { type: "option"; optionIndex: number };
 
 /** 题目视图左侧菜单项的统一模型 */
 export interface MenuItem {
@@ -502,6 +508,9 @@ export class AskAuthorFormModel {
   /** 各题作答状态映射（题目索引 0-based） */
   private readonly states = new Map<number, QuestionAnswerState>();
 
+  /** 整卷自由补充（提交页填写，独立于各题作答状态） */
+  private formNoteValue?: string;
+
   /** 显隐快照缓存（按 `revision` 失效；含题目可见性、选项可见性与可见选中项） */
   private visibilityCache?: { revision: number; questions: boolean[]; options: boolean[][]; selected: number[][] };
 
@@ -576,6 +585,11 @@ export class AskAuthorFormModel {
   /** 当前作答状态版本号（组件层派生缓存失效键） */
   get revision(): number {
     return this.revisionValue;
+  }
+
+  /** 整卷自由补充（未填写时为 undefined） */
+  get formNote(): string | undefined {
+    return this.formNoteValue;
   }
 
   /** 问卷题目总数 */
@@ -1256,6 +1270,29 @@ export class AskAuthorFormModel {
   }
 
   /**
+   * 保存或清空整卷自由补充（空文本视为清空）
+   * @param text - 补充内容（经 `cleanOptional` 归一）
+   * @returns `saved` / `cleared`；无论是否发生实际变更均推进 `revision`
+   */
+  setFormNote(text: string): "saved" | "cleared" {
+    const cleaned = cleanOptional(text);
+    this.formNoteValue = cleaned;
+    this.bumpRevision();
+    return cleaned ? "saved" : "cleared";
+  }
+
+  /**
+   * 清空整卷自由补充（`x` 键路径；不存在时状态不变）
+   * @returns 补充去空白后非空并被清空时为 true（并推进 `revision`）；否则为 false（状态与 `revision` 均不变）
+   */
+  clearFormNote(): boolean {
+    if (!this.formNoteValue?.trim()) return false;
+    this.formNoteValue = undefined;
+    this.bumpRevision();
+    return true;
+  }
+
+  /**
    * 收集全部非空选项批注（含未选中选项上的孤立批注，跳过不可见选项），键转换为 1-based，与总览页一致
    * @param qIndex - 题目顺序索引（0-based）
    * @param q - 归一化题目对象
@@ -1340,12 +1377,17 @@ export class AskAuthorFormModel {
    * 编译答案为确定性的 Markdown 封套文本
    * 插值文本经 {@link sanitizeEnvelopeText} 消毒，模板注入的令牌边界不可能被提前闭合或伪造
    * 片段顺序固定为：已选项（升序）→ 未选中选项的孤立批注（整数键升序）→ 题目级批注
+   * 整卷补充作为作答行之后、收尾指令之前的独立令牌行输出；无补充时封套字节不变
    * 占位题目与标签经 {@link envelopeQuestionTitle} / {@link envelopeOptionLabel} 替换为英文，其余作者文本原样保留
    * @param answers - 答卷列表（通常来自 {@link compileAnswers}）
-   * @returns `envelopePrefix` + 逐题一行（1-based 序号 + 标题 + `; ` 连接的片段）+ `envelopeSuffix`；`answers` 为空时退化为空答卷封套
+   * @returns `envelopePrefix` + 逐题一行（1-based 序号 + 标题 + `; ` 连接的片段）+ 可选的整卷补充行 + `envelopeSuffix`；两者均空时退化为空答卷封套
    */
   formatAnswers(answers: AuthorAnswerItem[]): string {
-    if (answers.length === 0) {
+    const supplementLine = this.formNoteValue?.trim()
+      ? TEXTS.markdown.supplementLine(sanitizeEnvelopeText(this.formNoteValue.trim()))
+      : undefined;
+
+    if (answers.length === 0 && !supplementLine) {
       return `${TEXTS.markdown.envelopePrefix}\n${TEXTS.markdown.envelopeEmpty}\n${TEXTS.markdown.envelopeSuffix}`;
     }
 
@@ -1409,6 +1451,11 @@ export class AskAuthorFormModel {
       );
     });
 
-    return `${TEXTS.markdown.envelopePrefix}\n${answerLines.join("\n")}\n${TEXTS.markdown.envelopeSuffix}`;
+    return [
+      TEXTS.markdown.envelopePrefix,
+      ...answerLines,
+      ...(supplementLine ? [supplementLine] : []),
+      TEXTS.markdown.envelopeSuffix,
+    ].join("\n");
   }
 }

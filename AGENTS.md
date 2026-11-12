@@ -80,7 +80,7 @@
 - `tsconfig.json`：配置 TypeScript 严格模式编译选项。
 - `src/index.ts`：插件主入口模块。注册 `ask_author` 工具与 `/ask-author` 辅助命令，编排工具执行过程中的守卫、模型构建、实时推演执行器的装配与四类结果分支：推演请求取会话投影作为历史、主对话系统提示词拼接推演协议、补在途工具调用的占位结果；并把作答界面挂载为整屏覆盖层；工具声明为 `model-only` 并标注只读、封闭世界。
 - `src/schema.ts`：工具参数的单一源头。基于 TypeBox 声明参数结构、`showIf` 显示条件、表单级与题目级实时推演配置与校验规则，导出 `AskAuthorParams`、`QuestionSchema`、`OptionSchema`、`ShowIfConditionSchema`、`QuestionExpansionSchema`、`ExpansionSchema`、`InsertPositionSchema` 以及派生类型 `RawParams`、`QuestionInput`、`QuestionOption`、`ExpansionConfig`、`QuestionExpansionConfig`、`InsertPosition`、`ExpansionPayload`、`OptionAddition`。
-- `src/model.ts`：问卷状态机与数据模型。定义 `AskAuthorFormModel`，负责题目数据归一化、自适应显示条件解析与显隐快照、作答状态流转、题目级推演配置解析、实时推演结果的追加与栈式撤回、`revision` 版本推进、答卷结果编译以及 Markdown 封套文本生成。
+- `src/model.ts`：问卷状态机与数据模型。定义 `AskAuthorFormModel`，负责题目数据归一化、自适应显示条件解析与显隐快照、作答状态流转（含各题批注与整卷补充）、题目级推演配置解析、实时推演结果的追加与栈式撤回、`revision` 版本推进、答卷结果编译以及 Markdown 封套文本生成。
 - `src/component.ts`：交互式 TUI 核心组件。实现 `AskAuthorComponent`，负责交互状态机、键盘与鼠标滚轮路由、内置 `Editor` 文本编辑器集成、实时推演的发起与结果写入、AbortSignal 级联取消与整屏帧缓存；具体排版委托给 `view-*` 模块。
 - `src/sanitize.ts`：入参防御性清洗模块。提供 `sanitizeAskAuthorArgs` 与 `sanitizeExpansionPayload` 函数，执行不可信入参边界的类型收敛、别名映射、数据纠错与白名单字段过滤（含推演回复的未知题目、重复标签与 ID 冲突过滤）。
 - `src/expansion.ts`：实时推演协议模块。定义推演请求与执行器类型，把表单当前进度（各题属性、显隐、作答状态、选中项与批注）组装为推演模型的用户消息，解析回复文本并委托清洗层过滤非法追加项。
@@ -96,7 +96,7 @@
 - `src/view-question.ts`：题目作答页视图构建模块。实现 `QuestionView`，负责按带序输出整页（顶部分割线、内容预览区、Tab 栏、题目标题块、选项菜单、状态与帮助栏）、预览区高度计算与预览内容缓存。
 - `src/view-editor.ts`：补充说明编辑器视图构建模块。负责整页排版（顶部分割线、Tab 栏、编辑目标标题、上下文、编辑框、页脚提示、底部分割线），并回传编辑框在整页中的位置供鼠标换算。
 - `src/view-rows.ts`：视图排版模块。负责题目选项菜单行、顶部 Tab 标签栏、状态通知、分割线与底部帮助栏的格式化排版。
-- `src/view-summary.ts`：答卷总览页视图构建模块。实现 `SummaryView` 与内容行构建器，负责提交确认页的内容行、分页、提示与操作栏。
+- `src/view-summary.ts`：答卷总览页视图构建模块。实现 `SummaryView` 与内容行构建器，负责提交确认页的内容行、分页、提示与操作栏，并在内容区末尾输出整卷补充块与其点击行范围。
 - `src/tool-result.ts`：工具结果模块。集中产出完成、取消、结构化错误与运行期异常四类结果，收窄宿主传入的 `details`，并把失败结果标记为 `isError`。
 - `src/tool-card.ts`：会话回放卡片模块。实现调用卡片与结果卡片渲染；调用摘要与执行路径共用 `sanitizeAskAuthorArgs`，按 args 对象身份记忆化。
 
@@ -213,7 +213,7 @@ graph TD
 - 视图缓存不写语义状态：视图构建模块只读取组件传入的只读状态，滚动位移与光标写入仅发生在键盘与鼠标事件路径；预览视口与预览区行范围由视图返回，组件负责保存。
 - 整屏覆盖层挂载：作答界面经 `ctx.ui.custom(factory, { overlay: true, overlayOptions })` 挂载为铺满终端的覆盖层；作答页、总览页、编辑页与推演占位页均输出恰好等于终端行数的整页，覆盖层不走 `blocked` 选项，作答期间不向终端上报 OSC 7501 程序状态。
 - 鼠标滚轮接管：组件实现 `handleMouse`，`wheel` 一律返回 `{ handled: true }`，不让滚轮落到 pi 的会话滚动；作答页指针在内容预览区内滚动预览，落在其余位置上下移动选项光标，总览页滚动答卷内容，编辑页与推演在途期间吞掉滚轮。区域判定取自视图返回的预览区行范围，组件不重算带序。
-- 鼠标点击接管：左键按下把光标移到指针下的菜单项，同一条目上松开才算点击并按空格语义激活（选项切换勾选、确认条目确认前进、补充说明条目打开编辑器）；题目导航标签在松开时切页；编辑页把左键点击换算为编辑框内坐标后转交内置 `Editor`，由它定位光标；未命中的按下与松开不接管，留给 pi 做文本选择。命中区域取自视图回传的行范围与 Tab 栏回传的列区间。
+- 鼠标点击接管：左键按下把光标移到指针下的菜单项，同一条目上松开才算点击并按空格语义激活（选项切换勾选、确认条目确认前进、补充说明条目打开编辑器）；题目导航标签在松开时切页；总览页的整卷补充块在松开时打开编辑器；编辑页把左键点击换算为编辑框内坐标后转交内置 `Editor`，由它定位光标；未命中的按下与松开不接管，留给 pi 做文本选择。命中区域取自视图回传的行范围、Tab 栏回传的列区间与总览页补充块的行范围。
 - 资源生命周期释放：组件实现 `dispose` 方法并保持幂等性。在组件销毁或者执行结束时，必须彻底清理计时器、注销 `AbortSignal` 监听器并清空缓存容器。
 
 #### 2.3.5 封套生成与确定性输出

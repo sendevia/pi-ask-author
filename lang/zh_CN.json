@@ -160,11 +160,19 @@
         "optionLabel"
       ]
     },
+    "formTitle": {
+      "template": " {icon.note} 填写整卷补充（{formTitle}）",
+      "params": [
+        "formTitle"
+      ]
+    },
     "footerHelp": " [Enter] 保存并返回 • [Esc/Ctrl+C] 取消"
   },
   "status": {
     "questionNoteSaved": "已保存本题补充说明",
     "noteCleared": "已清空本题补充说明",
+    "formNoteSaved": "已保存整卷补充",
+    "formNoteCleared": "已清空整卷补充",
     "optionNoteSaved": {
       "template": "已保存「{label}」补充说明",
       "params": [
@@ -245,6 +253,7 @@
     "clearNote": "x 清空补充说明",
     "confirmQuestion": "Enter 确认",
     "confirmSubmit": "Enter 提交",
+    "editFormNote": "n 整卷补充",
     "editNote": "n 补充说明",
     "editOptionNote": "n 选项补充说明",
     "editQuestionNote": "N 题目补充说明",
@@ -286,7 +295,11 @@
     },
     "pendingWarning": {
       "template": " {icon.unchecked} 尚有题目未完成，按 Enter 前往作答，Tab/hl/1-9 切换修改"
-    }
+    },
+    "formNoteTitle": {
+      "template": "{icon.note} 整卷补充"
+    },
+    "formNoteEmpty": "（尚未填写，按 n 填写整份答卷之外的补充要求）"
   },
   "card": {
     "callQuestionAndOptionCount": {
@@ -337,6 +350,7 @@
         "text"
       ]
     },
+    "supplementLabel": "整卷补充",
     "errorBullet": {
       "template": "• 错误原因：{err}",
       "params": [
@@ -347,8 +361,9 @@
   "fallbacks": {
     "defaultFormTitle": "创作决策",
     "defaultQuestionTitle": "请选择接下来的创作方案",
-    "defaultCustomPlaceholder": "输入本题整体补充要求、伏笔细节或修改意见...",
-    "defaultOptionCustomPlaceholder": "输入针对该选项的具体补充要求或修改细节...",
+    "defaultCustomPlaceholder": "输入本题整体补充要求、伏笔细节或修改意见…",
+    "defaultOptionCustomPlaceholder": "输入针对该选项的具体补充要求或修改细节…",
+    "defaultFormCustomPlaceholder": "输入整份答卷之外的补充要求（文风、人称、禁忌、后续方向）…",
     "defaultCustomChoiceName": "自定义方案",
     "defaultOptionLabel": "默认方案",
     "unnamedOptionLabel": "未命名方案",

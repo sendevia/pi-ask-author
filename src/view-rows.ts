@@ -281,6 +281,8 @@ export interface ScrollBand {
   readonly lines: string[];
   /** 本帧可视内容行数（内容超出时已扣除滚动信息行） */
   readonly viewHeight: number;
+  /** 本帧首行对应的内容行索引（调用方据此换算内容行在整页中的位置） */
+  readonly offset: number;
 }
 
 /**
@@ -310,7 +312,7 @@ export function buildScrollBand(
     lines.push(safeLine(`  ${theme.fg("dim", scrollInfo)}`, width));
   }
   while (lines.length < height) lines.push("");
-  return { lines, viewHeight };
+  return { lines, viewHeight, offset };
 }
 
 /**

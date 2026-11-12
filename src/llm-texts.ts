@@ -221,6 +221,8 @@ Rules:
     envelopeEmpty: "The author submitted no answers. Use your defaults, or ask a follow-up if the decision is crucial.",
     /** 单题无任何作答（未勾选且无批注）时的占位正文 */
     noSelection: "(No selection; the author skipped this question)",
+    /** 整卷补充行：独占一行，位于作答行之后、收尾指令之前（`text` 已过 `sanitizeEnvelopeText`） */
+    supplementLine: (text: string) => `[Author supplement: ${text}]`,
 
     // ===== 行内令牌定界符（供 `model.ts` 包装作者文本） =====
     /** 行内批注令牌左定界符（尾随 1 空格，与 `noteSuffix` 成对） */
