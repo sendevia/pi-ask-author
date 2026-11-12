@@ -74,35 +74,35 @@
 
 ### 2.1 项目结构
 
-本项目属于面向终端文字创作者交互式决策的 Pi 扩展插件，基于 TypeScript 与 ESM 规范构建。代码组织如下：
+本项目是面向终端文字创作者交互式决策的 Pi 扩展插件，基于 TypeScript 与 ESM 规范构建，代码组织如下：
 
-- `package.json`：定义扩展元数据、依赖项与入口声明，通过 `pi.extensions` 字段导出 `./dist/index.js`。
+- `package.json`：定义扩展元数据、依赖项与入口声明，`pi.extensions` 指向 `./dist/index.js`。
 - `tsconfig.json`：配置 TypeScript 严格模式编译选项。
-- `src/index.ts`：插件主入口模块。注册 `ask_author` 工具与 `/ask-author` 辅助命令，编排工具执行过程中的守卫、模型构建、实时推演执行器的装配与四类结果分支：推演请求取会话投影作为历史、主对话系统提示词拼接推演协议、补在途工具调用的占位结果；并把作答界面挂载为整屏覆盖层；工具声明为 `model-only` 并标注只读、封闭世界。
-- `src/schema.ts`：工具参数的单一源头。基于 TypeBox 声明参数结构、`showIf` 显示条件、表单级与题目级实时推演配置与校验规则，导出 `AskAuthorParams`、`QuestionSchema`、`OptionSchema`、`ShowIfConditionSchema`、`QuestionExpansionSchema`、`ExpansionSchema`、`InsertPositionSchema` 以及派生类型 `RawParams`、`QuestionInput`、`QuestionOption`、`ExpansionConfig`、`QuestionExpansionConfig`、`InsertPosition`、`ExpansionPayload`、`OptionAddition`。
-- `src/model.ts`：问卷状态机与数据模型。定义 `AskAuthorFormModel`，负责题目数据归一化、自适应显示条件解析与显隐快照、作答状态流转（含各题批注与整卷补充）、题目级推演配置解析、实时推演结果的追加与栈式撤回、`revision` 版本推进、答卷结果编译以及 Markdown 封套文本生成。
-- `src/component.ts`：交互式 TUI 核心组件。实现 `AskAuthorComponent`，负责交互状态机、键盘与鼠标滚轮路由、内置 `Editor` 文本编辑器集成、实时推演的发起与结果写入、AbortSignal 级联取消与整屏帧缓存；具体排版委托给 `view-*` 模块。
-- `src/sanitize.ts`：入参防御性清洗模块。提供 `sanitizeAskAuthorArgs` 与 `sanitizeExpansionPayload` 函数，执行不可信入参边界的类型收敛、别名映射、数据纠错与白名单字段过滤（含推演回复的未知题目、重复标签与 ID 冲突过滤）。
-- `src/expansion.ts`：实时推演协议模块。定义推演请求与执行器类型，把表单当前进度（各题属性、显隐、作答状态、选中项与批注）组装为推演模型的用户消息，解析回复文本并委托清洗层过滤非法追加项。
-- `src/format.ts`：纯函数排版与算法工具模块。提供视口边界限制、可见列宽测量、ANSI 文本折行与文本清洗等无状态工具函数，只依赖 `layout.ts`，不装载语言资源。
-- `src/layout.ts`：终端布局几何、图标字形与载荷上限的常量模块。声明 `LAYOUT_CONFIG`、`ICONS`、`MAX_OPTIONS`、`MAX_QUESTIONS`，为纯常量叶层。
-- `src/llm-texts.ts`：面向大语言模型的协议文案模块。声明工具元数据、TypeBox 字段描述、实时推演系统提示词与返回封套模板，全部恒为英文。
-- `src/novel-syntax.ts`：小说语法资产模块。以声明式模板表定义定界符、语义哨兵、最大跨距与主题绘制函数，并派生开定界符与哨兵两个索引。
-- `src/novel-markdown.ts`：小说语法高亮引擎。把对话台词与心理旁白转换为携带语义哨兵的行内代码，由定制 Markdown 主题完成样式渲染。
-- `src/i18n.ts`：语言资源装载模块。注册可用语言文件、按系统语言环境选择界面语言、以 `en_US` 为规范结构编译文案模板，并对占位符未声明、取值种类不一致等情况快速失败。
-- `lang/en_US.json`、`lang/zh_CN.json`：作者界面文案语言资源。文件名即 locale 标识，采用 JSON 格式，平编时由 `esbuild` 打包进产物；新增语言只需追加同构文件并在 `i18n.ts` 注册。
-- `src/texts.ts`：文案字典组装模块。把 `llm-texts.ts` 的英文协议文案（含实时推演协议）与当前语言的作者界面文案合并为 `TEXTS`，并集中派生多选标签与确认按钮文案。
-- `src/theme.ts`：主题类型定义模块。导出 `Theme` 类型别名与 `ThemeColor` 前景色令牌，作为无运行时依赖的叶层节点。
-- `src/view-question.ts`：题目作答页视图构建模块。实现 `QuestionView`，负责按带序输出整页（顶部分割线、内容预览区、Tab 栏、题目标题块、补充说明按钮组、选项菜单、底部操作按钮组、状态与帮助栏）、预览区高度计算、预览内容缓存与按钮矩形回传。
-- `src/view-editor.ts`：补充说明编辑器视图构建模块。负责整页排版（顶部分割线、Tab 栏、编辑目标标题、上下文、编辑框、页脚提示、底部分割线），并回传编辑框在整页中的位置供鼠标换算。
-- `src/view-rows.ts`：视图排版模块。负责题目选项菜单行、顶部 Tab 标签栏、字符框架按钮组（`renderButtonGroup`）、状态通知、分割线与底部帮助栏的格式化排版。
-- `src/view-summary.ts`：答卷总览页视图构建模块。实现 `SummaryView` 与内容行构建器，负责提交确认页的内容行、分页、提示、确认提交按钮与操作栏，并在内容区末尾输出整卷补充按钮与其点击矩形。
-- `src/tool-result.ts`：工具结果模块。集中产出完成、取消、结构化错误与运行期异常四类结果，收窄宿主传入的 `details`，并把失败结果标记为 `isError`。
-- `src/tool-card.ts`：会话回放卡片模块。实现调用卡片与结果卡片渲染；调用摘要与执行路径共用 `sanitizeAskAuthorArgs`，按 args 对象身份记忆化。
+- `src/index.ts`：插件入口。注册 `ask_author` 工具（`model-only`、只读、封闭世界）与 `/ask-author` 命令，串联入参守卫、模型构建、推演执行器装配与四类结果分支，并把作答界面挂载为整屏覆盖层。
+- `src/schema.ts`：工具参数的单一来源。基于 TypeBox 声明参数结构、`showIf` 显示条件以及表单级与题目级的推演配置与校验规则，导出 `AskAuthorParams`、`QuestionSchema`、`OptionSchema`、`ShowIfConditionSchema`、`QuestionExpansionSchema`、`ExpansionSchema`、`InsertPositionSchema` 与派生类型 `RawParams`、`QuestionInput`、`QuestionOption`、`ExpansionConfig`、`QuestionExpansionConfig`、`InsertPosition`、`ExpansionPayload`、`OptionAddition`。
+- `src/model.ts`：问卷状态机与数据模型。`AskAuthorFormModel` 负责题目数据归一化、显示条件解析与显隐快照、作答状态流转（含题目批注与整卷补充）、题目级推演配置解析、推演结果追加与逆序撤回、`revision` 版本推进、答卷结果编译与 Markdown 封套生成。
+- `src/component.ts`：交互式 TUI 核心组件。`AskAuthorComponent` 负责交互状态机、键盘与鼠标事件路由、内置 `Editor` 集成、推演发起与结果写入、AbortSignal 级联取消与整屏帧缓存，排版委托给 `view-*` 模块。
+- `src/sanitize.ts`：不可信入参的清洗边界。`sanitizeAskAuthorArgs` 与 `sanitizeExpansionPayload` 执行类型收敛、别名映射、数据纠错与白名单字段过滤，丢弃推演回复中引用未知题目的追加、重复标签与 ID 冲突。
+- `src/expansion.ts`：实时推演协议。定义推演请求与执行器类型，把表单进度（各题属性、显隐、作答状态、选中项与批注）组装为推演模型的用户消息，解析回复并委托清洗层过滤非法追加项。
+- `src/format.ts`：无状态排版与算法工具。提供视口边界限制、可见列宽测量、ANSI 文本折行与文本清洗，只依赖 `layout.ts`，不装载语言资源。
+- `src/layout.ts`：布局几何、图标字形与数量上限常量。声明 `LAYOUT_CONFIG`、`ICONS`、`MAX_OPTIONS`、`MAX_QUESTIONS`，为纯常量叶层。
+- `src/llm-texts.ts`：面向大语言模型的协议文案。声明工具元数据、TypeBox 字段描述、推演系统提示词与返回封套模板，恒为英文。
+- `src/novel-syntax.ts`：小说语法资产。以声明式模板表定义定界符、语义哨兵、最大跨距与主题绘制函数，派生开定界符与哨兵两个索引。
+- `src/novel-markdown.ts`：小说语法高亮引擎。把对话台词与心理旁白转换为携带语义哨兵的行内代码，样式由定制 Markdown 主题渲染；`buildFullPreviewContentLines` 产出题目内容区的内容行，不带区块标题。
+- `src/i18n.ts`：语言资源装载。注册语言文件、按系统语言环境选择界面语言、以 `en_US` 为规范结构编译文案模板，占位符未声明或者取值种类不一致时在装载期抛出异常。
+- `lang/en_US.json`、`zh_CN.json`、`ja_JP.json`、`ko_KR.json`：作者界面文案资源，文件名即 locale 标识，JSON 格式，由 `esbuild` 打包进产物；新增语言追加同构文件并在 `i18n.ts` 的 `LOCALE_PACKAGES` 注册。
+- `src/texts.ts`：文案字典组装。把 `llm-texts.ts` 的英文协议文案（含推演协议）与当前语言的作者界面文案合并为 `TEXTS`，并派生确认按钮文案。
+- `src/theme.ts`：主题类型定义。导出 `Theme` 类型别名与 `ThemeColor` 前景色令牌，无运行时依赖。
+- `src/view-question.ts`：作答页视图。`QuestionView` 按四区域输出整页（标题区为 Tab 栏与题名、题干说明，内容区为题目内容与补充预览，作答区为选项菜单与动作按钮组，提示区为状态与按键帮助），并回传内容区高度分配、预览内容缓存与按钮矩形。
+- `src/view-editor.ts`：编辑页视图。按四区域排版（标题区为返回按钮与可折行面包屑，内容区为编辑目标上下文与编辑框，作答区留空，提示区为状态与按键帮助），并回传编辑框在整页中的位置与返回按钮矩形。
+- `src/view-rows.ts`：通用排版。负责选项菜单行、Tab 标签栏（含题目类型短标记）、四区域整页组装 `composePage`、字符框架按钮组 `renderButtonGroup`、状态通知、区域分隔线与提示区，以及推演占位页 `renderExpansionPlaceholderPage`。
+- `src/view-summary.ts`：答卷总览视图。`SummaryView` 负责提交确认页的内容行、分页（标题区只保留未完成提示）、内容区里的整卷补充区，以及作答区里整卷补充与确认提交两个按钮及其点击矩形。
+- `src/tool-result.ts`：工具结果。产出完成、取消、结构化错误与运行期异常四类结果，收窄宿主传入的 `details`，失败结果标记 `isError`。
+- `src/tool-card.ts`：会话回放卡片。渲染调用卡片与结果卡片；调用摘要与执行路径共用 `sanitizeAskAuthorArgs`，按 args 对象身份记忆化。
 
 ### 2.2 模块依赖关系
 
-项目各个模块遵循严格的单向依赖规则，禁止出现循环引用：
+各模块遵循单向依赖，禁止循环引用，箭头由导入方指向被导入方：
 
 ```mermaid
 graph TD
@@ -165,6 +165,7 @@ graph TD
     format --> component
     layout --> component
     expansion --> component
+    schema --> component
     model --> toolResult["src/tool-result.ts"]
     model --> toolCard["src/tool-card.ts"]
     texts --> toolResult
@@ -190,68 +191,71 @@ graph TD
 
 #### 2.3.1 架构设计与依赖管理
 
-- 单向依赖原则：底层模块严禁反向导入上层模块。`component.ts` 作为交互协调器，视图构建模块（`view-question.ts`、`view-editor.ts`、`view-rows.ts`、`view-summary.ts`）禁止反向导入 `component.ts`；`tool-result.ts` 与 `tool-card.ts` 禁止导入 `index.ts`。
-- 零额外第三方依赖：生产环境仅依赖 `@earendil-works/pi-coding-agent`、`@earendil-works/pi-tui` 与 `typebox`，禁止引入未授权的外部依赖库。
-- 纯类型与纯常量叶层：`theme.ts` 仅保留类型导出；`layout.ts` 仅保留常量导出，两者不得导入插件内其他模块。
+- 单向依赖：底层模块严禁反向导入上层模块。视图模块（`view-question.ts`、`view-editor.ts`、`view-rows.ts`、`view-summary.ts`）不得导入 `component.ts`；`tool-result.ts` 与 `tool-card.ts` 不得导入 `index.ts`。
+- 依赖范围：生产环境仅依赖 `@earendil-works/pi-coding-agent`、`@earendil-works/pi-tui` 与 `typebox`，不得引入未授权的外部依赖库。
+- 叶层纯净：`theme.ts` 只导出类型，`layout.ts` 只导出常量，两者不得导入插件内其他模块。
 
 #### 2.3.2 文案与常量单一源头
 
-- 集中声明原则：禁止在组件层或者排版层直接书写任何用户可见的字符串字面量、按键提示、图标符号或者几何数值。作者可见文案一律定义在 `lang/*.json` 语言资源中，图标（`ICONS`）与几何配置（`LAYOUT_CONFIG`）定义在 `layout.ts`，小说语法模板定义在 `novel-syntax.ts`，业务逻辑层只做读取与组合。
-- 受众边界划分：`TEXTS` 字典严格区分使用受众。面向大语言模型的文本（`tool` 描述、`schema` 描述、`markdown` 封套）统一使用英文编写并固定声明在 `llm-texts.ts`；面向人类作者的界面文本（提示语、操作指南、选项标签占位符）取自当前语言的资源文件，两者界限清晰。
+- 集中声明：组件层与排版层不得书写任何用户可见的字符串字面量、按键提示、图标符号或者几何数值。作者可见文案定义在 `lang/*.json` 语言资源中，图标 `ICONS` 与几何配置 `LAYOUT_CONFIG` 定义在 `layout.ts`，小说语法模板定义在 `novel-syntax.ts`，业务逻辑层只做读取与组合。
+- 受众划分：`TEXTS` 按受众分区。面向大语言模型的文本（`tool` 描述、`schema` 描述、`markdown` 封套）用英文编写并声明在 `llm-texts.ts`；面向作者的界面文本（提示语、操作指南、选项标签占位符）取自当前语言的资源文件。
 
 #### 2.3.3 参数校验与类型系统
 
-- TypeBox 单一源头：参数 Schema 与 TypeScript 静态类型必须严格一致，运行时参数类型一律经由 `Static<typeof AskAuthorParams>` 派生，禁止重复手动编写平行的类型定义。
-- 纵深防御清洗：不可信输入在 `prepareArguments` 钩子中经由 `sanitizeAskAuthorArgs` 进行第一道清洗，收敛为白名单结构；`AskAuthorFormModel` 在构建时进行第二道数据规范化与默认值补全。
-- 快速失败策略：运行时检测到非法数据或者不可逆错误时，立即抛出明确异常或者返回结构化错误结果，禁止捕获异常后静默忽略。
+- TypeBox 单一来源：参数 Schema 与静态类型严格一致，运行时参数类型一律经 `Static<typeof AskAuthorParams>` 派生，不得手写平行类型。
+- 两段清洗：不可信输入先在 `prepareArguments` 钩子中经 `sanitizeAskAuthorArgs` 收敛为白名单结构，再由 `AskAuthorFormModel` 在构建时规范化并补全默认值。
+- 快速失败：遇到非法数据或者不可恢复的错误，立即抛出明确异常或者返回结构化错误结果，不得捕获后静默忽略。
 
 #### 2.3.4 TUI 渲染与状态机设计
 
-- 终端宽度安全计算：涉及终端列宽计算、截断或者折行时，必须调用 `@earendil-works/pi-tui` 导出的 `visibleWidth`、`truncateToWidth` 与 `wrapTextWithAnsi`，禁止使用 JavaScript 原生 `string.length` 计算字符宽度。
-- 渲染函数纯度约定：`AskAuthorComponent.prototype.render` 及其调用的排版函数必须保持纯净，禁止在渲染周期内修改任何语义状态（例如当前选中项、滚动位移、输入模式标记）。修改语义状态的操作仅允许在键盘与鼠标事件分发路径中执行。
-- 多级缓存失效控制：模型层通过 `revision` 版本计数器标记作答状态突变；组件层掌握整屏帧缓存与 Tab 栏缓存，`QuestionView` 与 `SummaryView` 各自持有按版本计数器与视口尺寸键失效的内容缓存；作答状态突变与主题切换时由组件的 `clearDerivedCaches` 统一清空，焦点变化只失效整屏帧缓存并保留已解析的预览内容。
-- 视图缓存不写语义状态：视图构建模块只读取组件传入的只读状态，滚动位移与光标写入仅发生在键盘与鼠标事件路径；预览视口与预览区行范围由视图返回，组件负责保存。
-- 整屏覆盖层挂载：作答界面经 `ctx.ui.custom(factory, { overlay: true, overlayOptions })` 挂载为铺满终端的覆盖层；作答页、总览页、编辑页与推演占位页均输出恰好等于终端行数的整页，覆盖层不走 `blocked` 选项，作答期间不向终端上报 OSC 7501 程序状态。
-- 鼠标滚轮接管：组件实现 `handleMouse`，`wheel` 一律返回 `{ handled: true }`，不让滚轮落到 pi 的会话滚动；作答页指针在内容预览区内滚动预览，落在其余位置上下移动选项光标，总览页滚动答卷内容，编辑页与推演在途期间吞掉滚轮。区域判定取自视图返回的预览区行范围，组件不重算带序。
-- 鼠标点击接管：左键按下把光标移到指针下的菜单项，同一条目上松开才算点击并按空格语义激活；题目导航标签在松开时切页；作答页的补充说明按钮在松开时打开该批注的编辑器（题目整体或该选项专属）；底部操作按钮组里点补充说明入口打开题目补充说明编辑器，点确认按钮读现有作答推进；总览页的整卷补充按钮打开编辑器，确认提交按钮提交答卷；编辑页把左键点击换算为编辑框内坐标后转交内置 `Editor`，由它定位光标；未命中的按下与松开不接管，留给 pi 做文本选择。命中区域取自视图回传的按钮矩形、菜单项行范围与 Tab 栏回传的列区间。
-- 资源生命周期释放：组件实现 `dispose` 方法并保持幂等性。在组件销毁或者执行结束时，必须彻底清理计时器、注销 `AbortSignal` 监听器并清空缓存容器。
+- 列宽计算：测量、截断与折行一律使用 `@earendil-works/pi-tui` 导出的 `visibleWidth`、`truncateToWidth` 与 `wrapTextWithAnsi`，不得用原生 `string.length` 计算字符宽度。
+- 渲染纯净：`AskAuthorComponent.prototype.render` 及其调用的排版函数保持纯净，渲染周期内不得修改语义状态（当前选中项、滚动位移、输入模式）；语义状态只在键盘与鼠标事件路径中修改。
+- 缓存失效：模型层用 `revision` 标记作答状态变化；组件层持有整屏帧缓存与 Tab 栏缓存，`QuestionView` 与 `SummaryView` 各自按版本与视口尺寸缓存内容；作答状态变化与主题切换由 `clearDerivedCaches` 清空全部派生缓存，焦点变化只失效整屏帧缓存并保留已解析的预览内容。
+- 视图只读：视图模块只读取组件传入的只读状态，滚动位移与光标只在键盘与鼠标事件路径写入；预览视口与预览区行范围由视图返回，组件保存。
+- 整屏覆盖层：作答界面经 `ctx.ui.custom(factory, { overlay: true, overlayOptions })` 挂载为铺满终端的覆盖层；作答页、总览页、编辑页与推演占位页输出的行数恰好等于终端行数，不使用 `blocked` 选项，作答期间不向终端上报 OSC 7501 程序状态。
+- 四区域布局：各页面自上而下为题目标题区（Tab 栏加标题行，编辑页为返回按钮与面包屑）、内容区（吸收剩余高度，下限 `contentMinHeight`）、作答区（选项列表与动作按钮组，没有可操作内容时整区省略）、提示区（状态通知与按键帮助）。整页不画外框双横线，Tab 栏即首行；标题区与内容区之间、作答区（无作答时为内容区）与提示区之间各一条单横分隔线，内容区与作答区之间不画分隔线。标题区不留左右边距：Tab 标签自带的前后空格一并去掉，标签之间固定隔两列，标题行、题干说明与返回按钮从首列起排。作答页的选项补充、题目补充与确认推进归为一个动作按钮组，排在选项列表下方并整组靠右，行内列宽按自然宽度递进分配，长文字在自己的框内折行，一行放不下时自动换行且每一行仍然靠右。编辑页面包屑在返回按钮右侧折行，可用列宽低于 `leadingTextMinWidth` 时改为上下堆叠。
+- 内容区构成：作答页内容区分题目内容区（选项设定说明与正文草稿，不带区块标题，可滚动）与补充预览区（题目补充在前，聚焦选项的补充在后）；总览页内容区分答卷正文与整卷补充区。没有补充时整块补充子区连分隔线一并省略，子区至多占内容区一半高度，超出部分以提示行收尾并指向编辑器查看全文。
+- 总览页标题：不写总览标题，全部完成时不补提示，标题区只剩 Tab 栏，仅在尚有题目未完成时输出一行未完成提示。
+- 滚轮接管：`handleMouse` 对 `wheel` 一律返回 `{ handled: true }`，滚轮不会传给 pi 的会话滚动；作答页指针在内容区内滚动预览，在其余位置时上下移动选项光标，总览页滚动答卷内容，编辑页与推演在途期间吞掉滚轮。区域判定取自视图返回的内容区行范围，组件不重算区域。
+- 点击接管：左键按下把光标移到指针下的菜单项，在同一条目上松开才算点击，按空格语义激活；Tab 标签在松开时切页；作答区动作按钮组里点选项补充打开聚焦选项的批注编辑器、点题目补充打开题目批注编辑器、点确认按钮按现有作答推进；总览页的整卷补充按钮打开编辑器，确认提交按钮提交答卷；编辑页返回按钮退出编辑（与 `Esc` 共用 `requestEditorExit`，有未保存内容时首次点击只提醒丢弃确认），其余位置的左键换算为编辑框内坐标后交内置 `Editor` 定位光标；未命中的按下与松开不接管，留给 pi 做文本选择。命中区域取自视图回传的按钮矩形、菜单项行范围与 Tab 栏的列区间。
+- 资源释放：`dispose` 保持幂等，组件销毁或者执行结束时清理计时器、注销 `AbortSignal` 监听并清空缓存容器。
 
 #### 2.3.5 封套生成与确定性输出
 
-- 固定格式封套：工具执行完成、取消或者错误时，输出内容必须严格遵循预定义的 Markdown 封套结构（`[Author Decision Finalized]`、`[Author Decision Cancelled]`、`[Author Consultation Error]`），前缀格式固定，提升模型前缀缓存命中概率。
-- 失败结果标记：结构化错误与运行期异常必须同时携带 `isError: true`，让宿主按工具错误处理；`content` 仍保留面向模型的原因行与纠正指引。
-- 草稿指令提炼：当选中的选项包含 Markdown 正文草稿预览时，模型层需将其压缩提炼为单行 `[Draft directive: ...]` 指令，便于大语言模型在后续生成中直接读取与遵循。
-- 防止击穿处理：拼装封套时，针对来自不可信源的文本执行清洗与单行化处理，防止恶意输入击穿封套结构。
+- 固定封套：完成、取消与错误三种输出严格遵循预定义的 Markdown 封套结构（`[Author Decision Finalized]`、`[Author Decision Cancelled]`、`[Author Consultation Error]`），前缀固定，提高模型前缀缓存命中率。
+- 失败标记：结构化错误与运行期异常同时携带 `isError: true`，供宿主按工具错误处理；`content` 保留面向模型的原因行与纠正指引。
+- 草稿提炼：选中项带 Markdown 正文草稿预览时，模型层将其压缩为单行 `[Draft directive: ...]` 指令，供大语言模型在后续生成中遵循。
+- 防止击穿：拼装封套时把来自不可信源的文本清洗并单行化，防止恶意输入击穿封套结构。
 
 #### 2.3.6 国际化与语言资源
 
-- 结构定义于语言文件：字符串直接作为文案，字符串数组作为文案列表，`{ "template": "…", "params": ["a"] }` 声明带插值的模板；`params` 声明形参时编译为定参函数，省略 `params` 时在装载期求值为常量文案。
-- 规范语言为 `en_US`：键集合、形参个数与取值种类均以它为凖，其余语言缺失的键回退 `en_US`；模板引用了未声明的占位符或两种语言结构不一致时，在装载期立即抛出异常。
-- 占位符引用共享符号：语言文件通过 `{icon.<ICONS 键>}` 引用终端图标，禁止在语言文件中重复声明图标字形。
-- 语言探测不写死：按 `LANGUAGE` → `LC_ALL` → `LC_MESSAGES` → `LANG` → `Intl` 系统语言的优先级探测，先精确匹配 locale 再匹配同族主语言；禁止在组件层自行读取环境变量或硬编码语言分支，禁止提供手动切换语言的入口。
+- 结构：字符串直接作为文案，字符串数组作为文案列表，`{ "template": "…", "params": ["a"] }` 声明带插值的模板；声明 `params` 时编译为定参函数，省略时在装载期求值为常量。
+- 规范语言：`en_US` 决定键集合、形参个数与取值种类，其余语言缺失的键回退 `en_US`；模板引用未声明的占位符或者两种语言结构不一致时，在装载期抛出异常。
+- 图标共享：语言文件用 `{icon.<ICONS 键>}` 引用终端图标，不得重复声明图标字形。
+- 语言探测：按 `LANGUAGE` → `LC_ALL` → `LC_MESSAGES` → `LANG` → `Intl` 系统语言的优先级探测，先精确匹配 locale 再匹配同族主语言；组件层不得自行读取环境变量或者内置语言分支，不提供手动切换语言的入口。
 
 #### 2.3.7 自适应显示条件
 
-- 条件只向前引用：`showIf` 只能引用同一份问卷中更早出现的题目 ID，选项以标签定位且必须在被引用题目中存在；引用未知题目、后置题目或不存在的选项时，在模型构建期抛出 `AdaptiveConditionError`。
-- 显隐计算集中：可见题目、可见选项与可见选中项统一由 `AskAuthorFormModel` 的显隐快照按 `revision` 派生；组件层与排版层只允许经 `getVisibleQuestionIndices` / `isQuestionVisible` / `isOptionVisible` / `getSelectedIndex` / `getSelectedIndices` 读取，禁止各自重算条件。
-- 隐藏即不参与：隐藏题目不进入导航、总览与答卷；隐藏选项的既有勾选与批注不计入作答判定与答卷。
-- 渲染路径不构模型：`renderCall` 等流式渲染路径禁止构建表单模型（条件可能引用尚未到达的题目），只做入参清洗与计数；调用摘要统一经 `sanitizeAskAuthorArgs` 生成，与执行路径共用同一套别名、包装键、转义清洗与数量上限规则。
+- 只向前引用：`showIf` 只能引用同一份问卷中更早出现的题目 ID，选项以标签定位且必须在被引用题目中存在；引用未知题目、后置题目或不存在的选项时，在模型构建期抛出 `AdaptiveConditionError`。
+- 显隐集中计算：可见题目、可见选项与可见选中项由 `AskAuthorFormModel` 的显隐快照按 `revision` 派生；组件层与排版层只经 `getVisibleQuestionIndices`、`isQuestionVisible`、`isOptionVisible`、`getSelectedIndex`、`getSelectedIndices` 读取，不得各自重算条件。
+- 隐藏即不参与：隐藏题目不进入导航、总览与答卷；隐藏选项的勾选与批注不计入作答判定与答卷。
+- 渲染路径不建模型：`renderCall` 等流式渲染路径只做入参清洗与计数，不构建表单模型（条件可能引用尚未到达的题目）；调用摘要统一经 `sanitizeAskAuthorArgs` 生成，与执行路径共用别名、包装键、转义清洗与数量上限规则。
 
 #### 2.3.8 实时推演
 
-- 开关由调用方声明：只在入参携带 `expansion` 时推演；当前会话没有可用模型时直接返回结构化错误，不静默降级为静态表单。
-- 题目级独立设置：每道题通过 `question.expansion` 独立声明参与推演与否（`false` 关闭）以及本题专属的 `guidance` 与 `insert`；未声明时继承表单级 `expansion` 的缺省值，题目之间的类型、条件与推演设置互不影响。
-- 触发时机唯一：推演只由「作者确认一道题目」触发（`confirmAndAdvance` 路径），勾选、批注与滚动不触发；推演在切页前发起，保证新增题目紧接被确认的题目之后。
-- 在途占位页：请求在途期间激活页的 Tab 标题换成占位文案（`buildTabLines` 的 `expansionPending`，文案取自 `tabs.expansionPlaceholder`），整页内容换成占位提示（`pushExpansionPlaceholder`，取自 `status.expansionRunning` 与 `view.expansionPendingHint`），除取消键外的输入一律忽略（`handleInput` 的在途守卫）；结果写入或失败报告后恢复。
-- 答案签名复用：每道题的推演记录携带该题答案签名（可见选中项标签按序拼接）；同一答案重复确认不重新调用模型，签名变化时先撤回再重新推演。
-- 题头标记：可触发推演的题目在题头展示 `[推演]` 标记，判定集中在 `AskAuthorFormModel.canExpandOnConfirm`（开启推演、该题声明参与推演、题目可见、未达题数上限且该答案尚未推演），组件只在渲染路径读取该结果。
-- 栈式撤回：推演记录按追加顺序入栈，撤回从栈顶开始，撤回该题及后续题目的全部记录；插入与撤回都整体平移后续题目的显示条件、作答状态与记录索引，被撤回题目与其选项上的作答状态一并剪除。
-- 插入位置由调用方预设：`expansion.insert` 取「跟随」（缺省，插到触发题目之后）、「队尾」（排到全部题目之后）或自定义锚点 `{ after: 题目 ID }`；题目级 `question.expansion.insert` 覆盖表单级设置，入参声明的锚点在模型构建期校验，推演生成题目带的锚点在首次确认该题时校验（此时尚未改动任何题目）；引用不存在题目时抛出 `AdaptiveConditionError`，同一锚点的后续推演直接排在锚点之后。
-- 进度完整发送：请求载荷携带 `formTitle` / `formDescription` / 生效的 `guidance` / 生效的 `insert` / 剩余题数 / `trigger`（刚确认的题目）以及每题的序号、属性、`showIf`、推演配置与已追加计数、显隐、`status`（`answered` / `skipped` / `unanswered` / `hidden`）、可见选中项标签、题目批注与选项批注，便于模型接着现有进度续写而不重复既有决策。
-- 上限单一来源：题目总数上限由模型层持有并在 `pushExpansion` 内截断，请求、参数与界面只读取同一上限；推演返回空载荷时记录同样入栈，表单停止增长。
-- 失败不倒作者内容：模型调用失败、回复不可解析或追加内容条件非法时，整批追加丢弃，已填写的作答保持不变，结果写入底部状态栏；仅采纳最新一次请求的结果，中止与卸载一并作废在途请求。
-- 回复走不可信边界：模型回复经 `parseExpansionReply` 提取 JSON，再经 `sanitizeExpansionPayload` 丢弃引用未知题目的选项追加、与既有标签重复的选项、与既有题目 ID 冲突的新题目与无选项的生成题目。
-- 推演用量单独回传：推演调用不计入主对话的用量统计，其 `usage` 累加后挂在工具结果的 `usage` 字段上。
-- 请求上下文同源：推演与主对话看到同一份上下文——会话投影（`ctx.sessionManager.buildSessionProjection()` 经 `convertToLlm` 收敛）作为历史消息，`ctx.getSystemPrompt()` 拼接推演协议作为系统提示词，表单进度载荷作为最后一条用户消息；调用经同一个模型注册表接口，携带当前会话标识与取消信号，缺会话标识时 OpenCode 系 provider 会以 `missing_session_id` 拒绝服务。
-- 在途调用占位：推演发生在 `ask_author` 执行期内，会话尾部带着本次调用（可能还有并行调用）而尚无结果；组装请求时为这类调用追加 `isError: false` 的占位 `toolResult`（正文取自 `TEXTS.expansion.pendingToolResult`），保持调用与结果相邻。
+- 开关由调用方声明：入参携带 `expansion` 时才推演；会话没有可用模型时返回结构化错误，不静默降级为静态表单。
+- 题目级设置：每道题用 `question.expansion` 独立声明是否参与推演（`false` 关闭）以及本题的 `guidance` 与 `insert`；未声明时继承表单级 `expansion` 的缺省值，题目之间的类型、条件与推演设置互不影响。
+- 触发时机唯一：推演只由作者确认一道题目触发（`confirmAndAdvance`），勾选、批注与滚动不触发；推演在切页前发起，新增题目紧接被确认的题目之后。能否触发由 `AskAuthorFormModel.canExpandOnConfirm` 判定（开启推演、该题声明参与、题目可见、未达题数上限且该答案尚未推演），组件在渲染路径只读该结果。
+- 在途占位页：请求在途期间激活页的 Tab 标题换成 `tabs.expansionPlaceholder`，整页内容换成 `renderExpansionPlaceholderPage` 输出的占位提示（`status.expansionRunning` 与 `view.expansionPendingHint`），除取消键外的输入一律忽略（`handleInput` 的在途守卫）；结果写入或者失败报告后恢复。
+- 答案签名复用：每题的推演记录携带该题答案签名（可见选中项标签按序拼接）；同一答案重复确认不重新调用模型，签名变化时先撤回再重新推演。
+- 题头标记：题目类型（`[单选]`、`[多选]`、`[条件]`、`[推演]`）拼进 Tab 标签，形如 `[单选] 第1题`；`[推演]` 取 `expansionConfigFor` 的静态判定（本次会话提供推演服务且该题声明参与）。多选的最少与最多勾选数不在界面常驻，由确认按钮的已选计数与状态栏提示承担。
+- 推演记录与撤回：推演记录按追加顺序编号，撤回从最新一条开始，一并撤回该题及后续题目的全部记录；插入与撤回整体平移后续题目的显示条件、作答状态与记录索引，被撤回题目及其选项上的作答状态一并剪除。
+- 插入位置：`expansion.insert` 取「跟随」（缺省，插到触发题目之后）、「队尾」（排到全部题目之后）或锚点 `{ after: 题目 ID }`；题目级 `question.expansion.insert` 覆盖表单级设置；入参声明的锚点在模型构建期校验，推演生成题目带的锚点在首次确认该题时校验（此时尚未改动任何题目）；引用不存在的题目时抛出 `AdaptiveConditionError`，同一锚点的后续推演直接排在锚点之后。
+- 进度完整发送：载荷携带 `formTitle`、`formDescription`、生效的 `guidance`、生效的 `insert`、剩余题数与 `trigger`（刚确认的题目），以及每题的序号、属性、`showIf`、推演配置与已追加计数、显隐、`status`（`answered`、`skipped`、`unanswered`、`hidden`）、可见选中项标签、题目批注与选项批注，便于模型接着现有进度续写而不重复既有决策。
+- 上限单一来源：题目总数上限由模型层持有并在 `pushExpansion` 内截断，请求、参数与界面只读取同一上限；推演返回空载荷时照样追加一条记录，表单停止增长。
+- 失败不改动作答：模型调用失败、回复不可解析或追加内容条件非法时整批丢弃，已填写的作答保持不变，原因写入底部状态栏；只采纳最新一次请求的结果，中止与卸载作废在途请求。
+- 回复走不可信边界：回复经 `parseExpansionReply` 提取 JSON，再经 `sanitizeExpansionPayload` 丢弃引用未知题目的选项追加、与既有标签重复的选项、与既有题目 ID 冲突的新题目与没有选项的生成题目。
+- 用量单独回传：推演调用不计入主对话用量，其 `usage` 累加后挂在工具结果的 `usage` 字段上。
+- 请求上下文同源：会话投影（`ctx.sessionManager.buildSessionProjection()` 经 `convertToLlm` 收敛）作为历史消息，`ctx.getSystemPrompt()` 拼接推演协议作为系统提示词，表单进度载荷作为最后一条用户消息；调用经同一模型注册表接口，携带当前会话标识与取消信号（缺会话标识时 OpenCode 系 provider 以 `missing_session_id` 拒绝服务）。
+- 在途调用占位：组装请求时为尚无结果的 `ask_author` 调用（可能还有并行调用）追加 `isError: false` 的占位 `toolResult`，正文取自 `TEXTS.expansion.pendingToolResult`，保持调用与结果相邻。
 - 不写回会话：推演请求与回复不进入会话文件，新增题目与选项只经工具结果回到主对话。
