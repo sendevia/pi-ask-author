@@ -82,8 +82,6 @@
     "optionNotePanelTitle": "선택지 추가 설명",
     "storyDescriptionPanelTitle": "플롯 설정 전개",
     "storyDraftPanelTitle": "본문 초안 / 콘티 시안",
-    "customNotePanelTitle": "질문 추가 설명",
-    "confirmPanelTitle": "조작 안내",
     "previewScrollInfo": {
       "template": "({start}-{end}/{total}행, [ ]로 스크롤)",
       "params": [
@@ -93,15 +91,6 @@
       ]
     },
     "previewNoDraft": "(미리보기 내용 없음)",
-    "customNotePanelTips": [
-      "• 언제든지 'N'을 누르거나 이 항목을 선택 후 'Enter'를 눌러 질문 추가 설명을 입력/수정합니다",
-      "• 'x'를 눌러 질문 추가 설명을 지웁니다",
-      "• 추가 설명은 선택된 선택지 및 선택지별 추가 설명과 함께 AI 어시스턴트에게 제출됩니다"
-    ],
-    "confirmPanelTips": [
-      "• `Enter`를 눌러 이 질문을 확정하고 다음 질문으로 이동합니다",
-      "• 마지막 질문을 확정하면 개요 및 제출 화면으로 자동 이동합니다"
-    ],
     "sectionTitle": {
       "template": "### {title}",
       "params": [
@@ -143,8 +132,7 @@
         "noteSuffix"
       ]
     },
-    "confirmNoteSuffix": " + 추가 설명",
-    "confirmDesc": "확정 후 다음 질문 또는 개요 화면으로 이동"
+    "confirmNoteSuffix": " + 추가 설명"
   },
   "editor": {
     "title": {
@@ -252,7 +240,6 @@
     "cancel": "Esc/Ctrl+C 취소",
     "clearNote": "x 추가 설명 삭제",
     "confirmQuestion": "Enter 확정",
-    "confirmSubmit": "Enter 제출",
     "editFormNote": "n 전체 보충",
     "editNote": "n 추가 설명",
     "editOptionNote": "n 선택지 추가 설명",
@@ -291,15 +278,23 @@
       "template": "{icon.note} 질문 추가 설명: "
     },
     "allDonePrompt": {
-      "template": " {icon.check} 모두 완료되었습니다. Enter/Ctrl+S로 제출, Tab/hl/1~9로 돌아가서 수정"
+      "template": " {icon.check} 모두 완료되었습니다. 확정하여 제출"
     },
     "pendingWarning": {
-      "template": " {icon.unchecked} 미완료된 질문이 있습니다. Enter로 답변, Tab/hl/1~9로 전환하여 수정"
+      "template": " {icon.unchecked} 미완료된 질문이 있습니다. 확정하면 미완료 질문으로 이동합니다"
     },
-    "formNoteTitle": {
-      "template": "{icon.note} 전체 보충"
+    "formNoteFilled": {
+      "template": "{icon.note} 전체 보충: {text}",
+      "params": [
+        "text"
+      ]
     },
-    "formNoteEmpty": "(아직 작성하지 않았습니다. n으로 질문 외 전체 보충을 입력)"
+    "formNoteEmpty": {
+      "template": "{icon.note} 전체 보충 (아직 작성하지 않았습니다. n 키 또는 클릭으로 입력)"
+    },
+    "submitButton": {
+      "template": "{icon.check} 제출 확인"
+    }
   },
   "card": {
     "callQuestionAndOptionCount": {

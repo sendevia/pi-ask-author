@@ -35,11 +35,19 @@ import type { ExpansionPayload, InsertPosition } from "./schema.js";
 import { TEXTS } from "./texts.js";
 import type { Theme } from "./theme.js";
 import { renderEditorPage, type EditorArea } from "./view-editor.js";
-import { QuestionView, type MenuItemHit, type PreviewViewport } from "./view-question.js";
+import {
+  QuestionView,
+  type MenuItemHit,
+  type NoteButtonHit,
+  type PreviewViewport,
+  type QuestionActionHit,
+  type QuestionActionKind,
+} from "./view-question.js";
 import {
   buildTabLines,
   optionLabelOf,
   renderExpansionPlaceholderPage,
+  type ButtonRect,
   type RowRange,
   type TabBar,
   type TabSegment,
@@ -144,11 +152,20 @@ export class AskAuthorComponent implements Component, Focusable {
   /** 上一帧菜单项的整页行范围（渲染写入；鼠标点击据此移动光标与激活条目） */
   private menuHitAreas?: readonly MenuItemHit[];
 
+  /** 上一帧补充说明按钮的整页矩形范围（渲染写入；鼠标点击据此打开对应批注的编辑器） */
+  private noteHitAreas?: readonly NoteButtonHit[];
+
+  /** 上一帧题目底部操作按钮的整页矩形范围（渲染写入；鼠标点击据此打开补充说明或推进确认） */
+  private actionHitAreas?: readonly QuestionActionHit[];
+
   /** 上一帧总览页内容视口（渲染写入；滚动位移据此归一化） */
   private summaryViewportObservation?: SummaryViewport;
 
-  /** 上一帧总览页整卷补充块的整页行范围（渲染写入；鼠标点击据此打开编辑器） */
-  private summaryFormNoteHit?: RowRange;
+  /** 上一帧总览页整卷补充按钮的整页矩形（渲染写入；鼠标点击据此打开编辑器） */
+  private summaryFormNoteHit?: ButtonRect;
+
+  /** 上一帧总览页确认提交按钮的整页矩形（渲染写入；鼠标点击据此提交答卷） */
+  private summarySubmitHit?: ButtonRect;
 
   /** 上一帧编辑框位置（渲染写入；输入模式下把鼠标点击换算为编辑框内坐标） */
   private editorAreaObservation?: EditorArea;
@@ -157,6 +174,9 @@ export class AskAuthorComponent implements Component, Focusable {
   private mousePressedTab?: number;
   private mousePressedItem?: number;
   private mousePressedFormNote?: boolean;
+  private mousePressedSubmit?: boolean;
+  private mousePressedNote?: EditTarget;
+  private mousePressedAction?: QuestionActionKind;
 
   /** 当前编辑器针对的目标（题目整体或指定选项） */
   private editTarget?: EditTarget;
@@ -281,12 +301,18 @@ export class AskAuthorComponent implements Component, Focusable {
     this.previewBandObservation = undefined;
     this.tabHitAreas = undefined;
     this.menuHitAreas = undefined;
+    this.noteHitAreas = undefined;
+    this.actionHitAreas = undefined;
     this.summaryViewportObservation = undefined;
     this.summaryFormNoteHit = undefined;
+    this.summarySubmitHit = undefined;
     this.editorAreaObservation = undefined;
     this.mousePressedTab = undefined;
     this.mousePressedItem = undefined;
     this.mousePressedFormNote = undefined;
+    this.mousePressedSubmit = undefined;
+    this.mousePressedNote = undefined;
+    this.mousePressedAction = undefined;
     this.clearFrameCaches();
   }
 
@@ -484,14 +510,11 @@ export class AskAuthorComponent implements Component, Focusable {
 
   /**
    * 当前光标默认的编辑目标
-   * @returns 聚焦预设选项时为该选项，否则为题目整体
+   * @returns 聚焦选项时为该选项，否则为题目整体
    */
   private getEditTargetForCurrentSelection(): EditTarget {
     const currentItem = this.currentMenuItem();
-    if (currentItem?.type === "option" && currentItem.optionIndex !== undefined) {
-      return { type: "option", optionIndex: currentItem.optionIndex };
-    }
-    return { type: "question" };
+    return currentItem ? { type: "option", optionIndex: currentItem.optionIndex } : { type: "question" };
   }
 
   /**
@@ -537,15 +560,20 @@ export class AskAuthorComponent implements Component, Focusable {
   }
 
   /**
-   * 确认当前题并跳转下一题 / 总览页（聚焦预设选项时先经模型写入选中）
-   * @param currentItem - 聚焦菜单项
-   * @param q - 当前题目（未达提交下限时仅提示状态栏，不切页）
+   * 确认当前题并跳转下一题 / 总览页：先把聚焦选项写入模型再推进
+   * @param currentItem - 聚焦选项菜单项
+   * @param q - 当前题目
    */
-  private confirmAndAdvance(currentItem: MenuItem, q: NormalizedQuestion): void {
-    if (currentItem.type === "option" && currentItem.optionIndex !== undefined) {
-      this.model.commitOption(this.currentTab, currentItem.optionIndex);
-    }
+  private confirmAndAdvance(currentItem: MenuItem | undefined, q: NormalizedQuestion): void {
+    if (currentItem) this.model.commitOption(this.currentTab, currentItem.optionIndex);
+    this.advanceIfAnswered(q);
+  }
 
+  /**
+   * 作答达标时确认本题并前进，否则只在状态栏提示（不写入任何选项）
+   * @param q - 当前题目
+   */
+  private advanceIfAnswered(q: NormalizedQuestion): void {
     if (this.model.isQuestionAnswered(this.currentTab)) {
       // 推演必须在切页前发起：切页后 currentTab 不再是刚确认的题目
       this.expandAfterConfirm(this.currentTab);
@@ -830,8 +858,22 @@ export class AskAuthorComponent implements Component, Focusable {
         this.mousePressedTab = tab;
         return { handled: true };
       }
-      if (this.formNoteAt(event.y)) {
+      const noteTarget = this.noteButtonAt(event.y, event.x);
+      if (noteTarget) {
+        this.mousePressedNote = noteTarget;
+        return { handled: true };
+      }
+      const action = this.actionButtonAt(event.y, event.x);
+      if (action) {
+        this.mousePressedAction = action;
+        return { handled: true };
+      }
+      if (this.formNoteAt(event.y, event.x)) {
         this.mousePressedFormNote = true;
+        return { handled: true };
+      }
+      if (this.submitButtonAt(event.y, event.x)) {
+        this.mousePressedSubmit = true;
         return { handled: true };
       }
       const itemIndex = this.menuItemAt(event.y);
@@ -844,16 +886,34 @@ export class AskAuthorComponent implements Component, Focusable {
     const pressedTab = this.mousePressedTab;
     const pressedItem = this.mousePressedItem;
     const pressedFormNote = this.mousePressedFormNote;
+    const pressedSubmit = this.mousePressedSubmit;
+    const pressedNote = this.mousePressedNote;
+    const pressedAction = this.mousePressedAction;
     this.mousePressedTab = undefined;
     this.mousePressedItem = undefined;
     this.mousePressedFormNote = undefined;
+    this.mousePressedSubmit = undefined;
+    this.mousePressedNote = undefined;
+    this.mousePressedAction = undefined;
 
     if (pressedTab !== undefined && this.tabAt(event.y, event.x) === pressedTab) {
       this.switchTab(pressedTab);
       return { handled: true };
     }
-    if (pressedFormNote && this.formNoteAt(event.y)) {
+    if (pressedNote && AskAuthorComponent.sameNoteTarget(pressedNote, this.noteButtonAt(event.y, event.x))) {
+      this.openCustomEditor(pressedNote);
+      return { handled: true };
+    }
+    if (pressedAction && this.actionButtonAt(event.y, event.x) === pressedAction) {
+      this.runQuestionAction(pressedAction);
+      return { handled: true };
+    }
+    if (pressedFormNote && this.formNoteAt(event.y, event.x)) {
       this.openFormNoteEditor();
+      return { handled: true };
+    }
+    if (pressedSubmit && this.submitButtonAt(event.y, event.x)) {
+      this.submitOrJumpToUnfinished();
       return { handled: true };
     }
     if (pressedItem !== undefined && this.menuItemAt(event.y) === pressedItem) {
@@ -894,13 +954,87 @@ export class AskAuthorComponent implements Component, Focusable {
   }
 
   /**
-   * 命中总览页的整卷补充块（未滚动到时该块无可见行，命中恒不成立）
+   * 命中补充说明按钮
    * @param y - 组件内行号
-   * @returns 指针落在补充块可见行上时为 true
+   * @param x - 组件内列号
+   * @returns 命中的按钮对应的批注编辑目标；未落在任何按钮框内时为 undefined
    */
-  private formNoteAt(y: number): boolean {
+  private noteButtonAt(y: number, x: number): EditTarget | undefined {
+    for (const hit of this.noteHitAreas ?? []) {
+      if (AskAuthorComponent.withinRect(hit.rect, y, x)) return hit.target;
+    }
+    return undefined;
+  }
+
+  /**
+   * 命中题目底部的操作按钮
+   * @param y - 组件内行号
+   * @param x - 组件内列号
+   * @returns 命中的按钮种类；未落在任何按钮框内时为 undefined
+   */
+  private actionButtonAt(y: number, x: number): QuestionActionKind | undefined {
+    for (const hit of this.actionHitAreas ?? []) {
+      if (AskAuthorComponent.withinRect(hit.rect, y, x)) return hit.action;
+    }
+    return undefined;
+  }
+
+  /**
+   * 执行题目底部的操作按钮（补充说明入口 / 确认推进）
+   * @param action - 按钮种类
+   */
+  private runQuestionAction(action: QuestionActionKind): void {
+    const q = this.model.getQuestion(this.currentTab);
+    if (!q) return;
+    if (action === "note") {
+      this.openCustomEditor({ type: "question" });
+      return;
+    }
+    this.advanceIfAnswered(q);
+  }
+
+  /**
+   * 判定按下与松开是否落在同一个批注按钮上
+   * @param pressed - 按下时命中的目标
+   * @param released - 松开时命中的目标
+   * @returns 两者为同一题目批注或同一选项的批注时为 true
+   */
+  private static sameNoteTarget(pressed: EditTarget, released: EditTarget | undefined): boolean {
+    if (!released || released.type !== pressed.type) return false;
+    return pressed.type !== "option" || (released.type === "option" && released.optionIndex === pressed.optionIndex);
+  }
+
+  /**
+   * 判定指针是否落在按钮矩形内
+   * @param rect - 按钮矩形（行与列均为 0-based 半开区间）
+   * @param y - 组件内行号
+   * @param x - 组件内列号
+   * @returns 在矩形内为 true
+   */
+  private static withinRect(rect: ButtonRect, y: number, x: number): boolean {
+    return y >= rect.rows.start && y < rect.rows.end && x >= rect.cols.start && x < rect.cols.end;
+  }
+
+  /**
+   * 命中总览页的整卷补充按钮（未滚动到时该按钮无可见行，命中恒不成立）
+   * @param y - 组件内行号
+   * @param x - 组件内列号
+   * @returns 指针落在补充按钮可见矩形内时为 true
+   */
+  private formNoteAt(y: number, x: number): boolean {
     const hit = this.summaryFormNoteHit;
-    return hit !== undefined && y >= hit.start && y < hit.end;
+    return hit !== undefined && AskAuthorComponent.withinRect(hit, y, x);
+  }
+
+  /**
+   * 命中总览页的确认提交按钮
+   * @param y - 组件内行号
+   * @param x - 组件内列号
+   * @returns 指针落在按钮矩形内时为 true
+   */
+  private submitButtonAt(y: number, x: number): boolean {
+    const hit = this.summarySubmitHit;
+    return hit !== undefined && AskAuthorComponent.withinRect(hit, y, x);
   }
 
   /**
@@ -917,25 +1051,22 @@ export class AskAuthorComponent implements Component, Focusable {
     if (this.handleSelectAllShortcut(q, data)) return;
 
     const currentItem = this.currentMenuItem();
-    if (!currentItem) return;
 
     if (matchesKey(data, Key.ctrl("s"))) {
       this.confirmAndAdvance(currentItem, q);
       return;
     }
 
-    if (matchesKey(data, Key.space)) {
-      this.activateMenuItem(currentItem, q);
+    if (matchesKey(data, Key.enter)) {
+      // 单选与多选统一：Enter = 选定并确认前进（多选未达下限时阻断），空格负责 toggle 勾选
+      this.confirmAndAdvance(currentItem, q);
       return;
     }
 
-    if (matchesKey(data, Key.enter)) {
-      if (currentItem.type === "custom_note") {
-        this.openCustomEditor({ type: "question" });
-      } else {
-        // 单选与多选统一：Enter = 选定并确认前进（多选未达下限时阻断），空格负责 toggle 勾选
-        this.confirmAndAdvance(currentItem, q);
-      }
+    if (!currentItem) return;
+
+    if (matchesKey(data, Key.space)) {
+      this.activateMenuItem(currentItem, q);
     }
   }
 
@@ -963,12 +1094,9 @@ export class AskAuthorComponent implements Component, Focusable {
     // 3. 'x' / Delete：清空补充说明（选项专属优先，其次题目整体）
     if (matchesKey(data, "x") || matchesKey(data, Key.delete)) {
       const currentItem = this.currentMenuItem();
-      if (currentItem?.type === "option" && currentItem.optionIndex !== undefined) {
-        const optIdx = currentItem.optionIndex;
-        if (this.model.clearOptionNote(this.currentTab, optIdx)) {
-          this.setStatus(TEXTS.status.optionNoteCleared(optionLabelOf(q, optIdx)));
-          return true;
-        }
+      if (currentItem && this.model.clearOptionNote(this.currentTab, currentItem.optionIndex)) {
+        this.setStatus(TEXTS.status.optionNoteCleared(optionLabelOf(q, currentItem.optionIndex)));
+        return true;
       }
       if (this.model.clearQuestionNote(this.currentTab)) {
         this.setStatus(TEXTS.status.noteCleared);
@@ -1067,25 +1195,38 @@ export class AskAuthorComponent implements Component, Focusable {
   }
 
   /**
-   * 触发聚焦条目主动作（唯一入口为空格键：选项勾选 / 打开补充说明 / 推进确认）
-   * @param currentItem - 聚焦菜单项
-   * @param q - 当前题目（选项命中上限时仅提示状态栏）
+   * 聚焦选项的主动作（唯一入口为空格键：切换勾选，达上限时仅提示状态栏）
+   * @param currentItem - 聚焦选项菜单项
+   * @param q - 当前题目
    */
   private activateMenuItem(currentItem: MenuItem, q: NormalizedQuestion): void {
-    if (currentItem.type === "option" && currentItem.optionIndex !== undefined) {
-      if (this.model.toggleOption(this.currentTab, currentItem.optionIndex) === "limit") {
-        this.setStatus(TEXTS.status.maxSelectExceeded(q.maxSelect));
-      } else {
-        // 模型已变更而键盘路由不触发渲染，须立即重绘否则勾选滞后到下次按键
-        this.touch();
-      }
+    if (this.model.toggleOption(this.currentTab, currentItem.optionIndex) === "limit") {
+      this.setStatus(TEXTS.status.maxSelectExceeded(q.maxSelect));
       return;
     }
-    if (currentItem.type === "custom_note") {
-      this.openCustomEditor({ type: "question" });
+    // 模型已变更而键盘路由不触发渲染，须立即重绘否则勾选滞后到下次按键
+    this.touch();
+  }
+
+  /**
+   * 提交答卷；尚有题目未完成时跳到第一道未完成的题目并在状态栏说明原因
+   * 回车、`Ctrl+S` 与总览页的确认提交按钮共用本逻辑
+   */
+  private submitOrJumpToUnfinished(): void {
+    if (this.model.areAllQuestionsAnswered()) {
+      this.finish(false);
       return;
     }
-    this.confirmAndAdvance(currentItem, q);
+    const firstUnfinished = this.model
+      .getVisibleQuestionIndices()
+      .find((index) => !this.model.isQuestionAnswered(index));
+    if (firstUnfinished === undefined) return;
+    this.switchTab(firstUnfinished);
+    const unfQ = this.model.getQuestion(firstUnfinished);
+    if (!unfQ) return;
+    this.setStatus(
+      unfQ.multiSelect ? TEXTS.status.minSelectRequired(unfQ.minSelect) : TEXTS.status.pleaseAnswerBeforeSubmit,
+    );
   }
 
   /**
@@ -1105,22 +1246,7 @@ export class AskAuthorComponent implements Component, Focusable {
     }
 
     if (matchesKey(data, Key.enter) || matchesKey(data, Key.ctrl("s"))) {
-      if (this.model.areAllQuestionsAnswered()) {
-        this.finish(false);
-      } else {
-        const firstUnfinished = this.model
-          .getVisibleQuestionIndices()
-          .find((index) => !this.model.isQuestionAnswered(index));
-        if (firstUnfinished !== undefined) {
-          this.switchTab(firstUnfinished);
-          const unfQ = this.model.getQuestion(firstUnfinished);
-          if (unfQ) {
-            this.setStatus(
-              unfQ.multiSelect ? TEXTS.status.minSelectRequired(unfQ.minSelect) : TEXTS.status.pleaseAnswerBeforeSubmit,
-            );
-          }
-        }
-      }
+      this.submitOrJumpToUnfinished();
       return;
     }
     if (matchesKey(data, Key.home)) {
@@ -1197,8 +1323,11 @@ export class AskAuthorComponent implements Component, Focusable {
       lines.push(...renderExpansionPlaceholderPage(this.theme, tabBar.lines, layoutWidth, renderHeight));
       this.tabHitAreas = undefined;
       this.menuHitAreas = undefined;
+      this.noteHitAreas = undefined;
+      this.actionHitAreas = undefined;
       this.summaryViewportObservation = undefined;
       this.summaryFormNoteHit = undefined;
+      this.summarySubmitHit = undefined;
       this.editorAreaObservation = undefined;
     } else if (this.inputMode) {
       // 编辑页同样整页占满：编辑框之后补空行，帮助栏与框架线贴在底部（总览页的整卷补充也走本分支）
@@ -1215,8 +1344,11 @@ export class AskAuthorComponent implements Component, Focusable {
       lines.push(...page.lines);
       this.tabHitAreas = undefined;
       this.menuHitAreas = undefined;
+      this.noteHitAreas = undefined;
+      this.actionHitAreas = undefined;
       this.summaryViewportObservation = undefined;
       this.summaryFormNoteHit = undefined;
+      this.summarySubmitHit = undefined;
       this.editorAreaObservation = page.editorArea;
     } else if (this.isSubmitTab) {
       // 总览页自带框架线与 Tab 栏，答卷内容占满顶部分内容区
@@ -1230,8 +1362,11 @@ export class AskAuthorComponent implements Component, Focusable {
       lines.push(...view.lines);
       this.tabHitAreas = { band: view.tabRange, segments: tabBar.segments };
       this.menuHitAreas = undefined;
+      this.noteHitAreas = undefined;
+      this.actionHitAreas = undefined;
       this.summaryViewportObservation = view.viewport;
-      this.summaryFormNoteHit = view.formNoteRange;
+      this.summaryFormNoteHit = view.formNoteButton;
+      this.summarySubmitHit = view.submitButton;
       this.editorAreaObservation = undefined;
     } else {
       // 作答页自上而下自带框架线、预览区、Tab 栏与选项区
@@ -1254,8 +1389,11 @@ export class AskAuthorComponent implements Component, Focusable {
       if (view.previewBand) this.previewBandObservation = view.previewBand;
       if (view.tabRange) this.tabHitAreas = { band: view.tabRange, segments: tabBar.segments };
       this.menuHitAreas = view.menuItemHits;
+      this.noteHitAreas = view.noteButtonHits;
+      this.actionHitAreas = view.actionButtonHits;
       this.summaryViewportObservation = undefined;
       this.summaryFormNoteHit = undefined;
+      this.summarySubmitHit = undefined;
       this.editorAreaObservation = undefined;
     }
 

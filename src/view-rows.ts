@@ -8,7 +8,6 @@
 import { truncateToWidth, visibleWidth, wrapTextWithAnsi } from "@earendil-works/pi-tui";
 import { divider, padToVisibleWidth, pushWrapped, safeLine, windowSlice, clampWindowOffset } from "./format.js";
 import {
-  hasQuestionNote,
   type AskAuthorFormModel,
   type MenuItem,
   type NormalizedQuestion,
@@ -16,7 +15,10 @@ import {
 } from "./model.js";
 import { ICONS, LAYOUT_CONFIG } from "./layout.js";
 import { TEXTS } from "./texts.js";
-import type { Theme } from "./theme.js";
+import type { Theme, ThemeColor } from "./theme.js";
+
+/** 按钮每行除内容之外的固定列数（左右边框各 1 列、内容左右各 1 列空格） */
+const BUTTON_CHROME_WIDTH = 4;
 
 /** 屏幕行范围（0-based 半开区间）：鼠标命中测试与滚轮分区共用 */
 export interface RowRange {
@@ -59,20 +61,14 @@ export function optionLabelOf(q: NormalizedQuestion, optionIndex: number): strin
 }
 
 /**
- * 判定菜单项是否处于已选中或已生效状态
+ * 判定菜单项是否处于已选中状态
  * @param item - 目标菜单项
  * @param q - 当前题目
  * @param st - 作答状态
- * @returns 多选查 `selectedIndices`，单选比对 `selectedIndex`；`custom_note` 在题目补充说明非空时生效；其余恒为 false
+ * @returns 多选查 `selectedIndices`，单选比对 `selectedIndex`
  */
 function isItemSelected(item: MenuItem, q: NormalizedQuestion, st: QuestionAnswerState): boolean {
-  if (item.type === "option" && item.optionIndex !== undefined) {
-    return q.multiSelect ? st.selectedIndices.has(item.optionIndex) : st.selectedIndex === item.optionIndex;
-  }
-  if (item.type === "custom_note") {
-    return hasQuestionNote(st);
-  }
-  return false;
+  return q.multiSelect ? st.selectedIndices.has(item.optionIndex) : st.selectedIndex === item.optionIndex;
 }
 
 /**
@@ -81,10 +77,9 @@ function isItemSelected(item: MenuItem, q: NormalizedQuestion, st: QuestionAnswe
  * @param q - 当前题目
  * @param st - 作答状态
  * @param item - 菜单项
- * @returns 多选已勾选 `success` / 未勾选 `dim`，单选已选中 `accent` / 未选中 `dim`；非选项条目返回空串
+ * @returns 多选已勾选 `success` / 未勾选 `dim`，单选已选中 `accent` / 未选中 `dim`
  */
 function optionCheckMark(theme: Theme, q: NormalizedQuestion, st: QuestionAnswerState, item: MenuItem): string {
-  if (item.type !== "option" || item.optionIndex === undefined) return "";
   if (q.multiSelect) {
     return st.selectedIndices.has(item.optionIndex)
       ? theme.fg("success", ICONS.checkedMulti)
@@ -99,7 +94,7 @@ function optionCheckMark(theme: Theme, q: NormalizedQuestion, st: QuestionAnswer
  * 格式化单个菜单条目行
  *
  * - 首行携带「光标 + 勾选」前缀，后续折行悬挂缩进；聚焦项全部折行套用 `selectedBg` 与 `bold` 至 `targetWidth`
- * - 非聚焦的未选中选项与补充说明入口淡化 `dim`；带专属批注的选项追加 `ICONS.note`
+ * - 非聚焦的未选选项淡化 `dim`；带专属批注的选项追加 `ICONS.note`
  * - 标签未超宽时直接复用单行，跳过 `wrapTextWithAnsi`
  *
  * @param theme - 主题样式提供者
@@ -126,13 +121,7 @@ export function formatMenuItemRow(
   const indent = " ".repeat(prefixW);
   const textWidth = Math.max(8, targetWidth - prefixW);
 
-  let labelText = item.label;
-  if (item.type === "option" && item.optionIndex !== undefined) {
-    const optNote = st.optionNotes.get(item.optionIndex);
-    if (optNote) {
-      labelText = `${item.label} ${ICONS.note}`;
-    }
-  }
+  const labelText = st.optionNotes.has(item.optionIndex) ? `${item.label} ${ICONS.note}` : item.label;
 
   const contentLines = visibleWidth(labelText) <= textWidth ? [labelText] : wrapTextWithAnsi(labelText, textWidth);
 
@@ -142,8 +131,7 @@ export function formatMenuItemRow(
       return theme.bg("selectedBg", theme.fg("text", theme.bold(padToVisibleWidth(row, targetWidth))));
     }
 
-    const isUnselected = (item.type === "option" || item.type === "custom_note") && !isSelected;
-    const styledLine = isUnselected ? theme.fg("dim", line) : theme.fg("text", line);
+    const styledLine = isSelected ? theme.fg("text", line) : theme.fg("dim", line);
     const row = idx === 0 ? `${prefix}${styledLine}` : `${indent}${styledLine}`;
     return safeLine(row, targetWidth);
   });
@@ -345,6 +333,121 @@ function joinHelpParts(parts: readonly string[]): string {
  */
 export function pushHelpFooter(lines: string[], parts: readonly string[], theme: Theme, renderWidth: number): void {
   pushWrapped(lines, theme.fg("dim", joinHelpParts(parts)), renderWidth, " ");
+}
+
+/** 按钮文字与框线配色 */
+export interface ButtonSpec {
+  /** 按钮文字（可含换行，已含的着色保留） */
+  readonly text: string;
+  /** 框线前景色令牌 */
+  readonly tone: ThemeColor;
+}
+
+/** 按钮在输出行中的矩形范围（列区间按可见列计，0-based 半开） */
+export interface ButtonRect {
+  /** 行范围（含上下缘） */
+  readonly rows: RowRange;
+  /** 列区间 */
+  readonly cols: RowRange;
+}
+
+/** 按钮组渲染产物 */
+export interface ButtonGroup {
+  /** 整组行：组内同行的按钮高度对齐，短按钮补空内容行 */
+  readonly lines: string[];
+  /** 各按钮的矩形范围（与 `buttons` 同序） */
+  readonly rects: readonly ButtonRect[];
+}
+
+/** 按钮组的单个按钮测量结果（内容行已按行宽折行） */
+interface ButtonCell {
+  /** 框线前景色令牌 */
+  readonly tone: ThemeColor;
+  /** 折行后的内容行 */
+  readonly contentLines: string[];
+  /** 内容区可见列宽（取最长内容行） */
+  readonly inner: number;
+}
+
+/**
+ * 渲染横排字符框架按钮组：上缘 `┌ ─ ┐`、两侧 `│`、下缘 `┕ ━ ┙`
+ *
+ * - 按钮宽度贴着文字，超过行宽时按列折行；一行放不下时后续按钮另起一行
+ * - 同一行内按钮高度取该行最大值，短按钮的内容区补空行保持上下缘对齐
+ * - `align` 决定整组靠向：左对齐首列留 `inset` 列，右对齐末列距右缘 `inset` 列
+ *
+ * @param theme - 主题样式提供者
+ * @param buttons - 按钮序列（空数组时无输出行）
+ * @param maxWidth - 可用总宽度（含缩进）
+ * @param align - 各行靠左或靠右
+ * @param inset - 靠向一侧的空白列数
+ * @returns 整组行与各按钮矩形范围
+ */
+export function renderButtonGroup(
+  theme: Theme,
+  buttons: readonly ButtonSpec[],
+  maxWidth: number,
+  align: "left" | "right" = "left",
+  inset = 0,
+): ButtonGroup {
+  const frame = LAYOUT_CONFIG.buttonFrame;
+  const available = Math.max(BUTTON_CHROME_WIDTH + 1, maxWidth - inset);
+
+  const cells: ButtonCell[] = buttons.map((button) => {
+    const contentLines = wrapTextWithAnsi(button.text, Math.max(1, available - BUTTON_CHROME_WIDTH));
+    const inner = contentLines.reduce((max, line) => Math.max(max, visibleWidth(line)), 0);
+    return { tone: button.tone, contentLines, inner };
+  });
+
+  // 贪心折行：与上一个按钮之间留 1 列间隙，超出可用宽度就另起一行
+  const rows: { cells: ButtonCell[]; width: number }[] = [];
+  for (const cell of cells) {
+    const width = cell.inner + BUTTON_CHROME_WIDTH;
+    const current = rows[rows.length - 1];
+    if (current && current.width + 1 + width <= available) {
+      current.width += 1 + width;
+      current.cells.push(cell);
+    } else {
+      rows.push({ cells: [cell], width });
+    }
+  }
+
+  const lines: string[] = [];
+  const rects: ButtonRect[] = [];
+  for (const row of rows) {
+    const leftPad = " ".repeat(Math.max(0, align === "right" ? maxWidth - inset - row.width : inset));
+    const height = Math.max(...row.cells.map((cell) => cell.contentLines.length));
+    const tops: string[] = [];
+    const bottoms: string[] = [];
+    const columns: string[][] = [];
+    const spans: RowRange[] = [];
+    let column = leftPad.length;
+
+    for (const cell of row.cells) {
+      const width = cell.inner + BUTTON_CHROME_WIDTH;
+      const side = theme.fg(cell.tone, frame.side);
+      tops.push(theme.fg(cell.tone, frame.topLeft + frame.top.repeat(cell.inner + 2) + frame.topRight));
+      bottoms.push(theme.fg(cell.tone, frame.bottomLeft + frame.bottom.repeat(cell.inner + 2) + frame.bottomRight));
+      columns.push(
+        Array.from(
+          { length: height },
+          (_, lineIndex) => `${side} ${padToVisibleWidth(cell.contentLines[lineIndex] ?? "", cell.inner)} ${side}`,
+        ),
+      );
+      spans.push({ start: column, end: column + width });
+      column += width + 1;
+    }
+
+    const top = lines.length;
+    lines.push(leftPad + tops.join(" "));
+    for (let lineIndex = 0; lineIndex < height; lineIndex++) {
+      lines.push(leftPad + columns.map((columnLines) => columnLines[lineIndex]).join(" "));
+    }
+    lines.push(leftPad + bottoms.join(" "));
+    for (const span of spans) rects.push({ rows: { start: top, end: lines.length }, cols: span });
+  }
+
+  return { lines, rects };
 }
 
 /**

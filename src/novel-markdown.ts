@@ -594,20 +594,9 @@ function markNovelSyntax(source: string): string {
 }
 
 /**
- * 把面板标题与提示行序列组装为单个 Markdown 区块
- * 固定为标题行 + 空行 + 每条提示独占一行，每行保留行尾换行，便于续接后续区块；`tips` 为空时仅含标题与空行
- * @param title - 面板标题文案
- * @param tips - 面板提示行文案序列，按数组顺序逐行输出
- * @returns 组装后的 Markdown 区块字符串
- */
-function buildTipsSection(title: string, tips: readonly string[]): string {
-  return `${TEXTS.view.sectionTitle(title)}\n\n${tips.map((tip) => `${tip}\n`).join("")}`;
-}
-
-/**
  * 构建预览框的完整未切片内容行（原生 Markdown 渲染 + 小说语法标注）
- * @param item - 当前选中的菜单项
- * @param customText - 当前填写的题目自由补充说明
+ * 只展示聚焦选项的内容：专属补充说明、情节设定推演与正文草稿
+ * @param item - 当前聚焦的选项菜单项
  * @param optionNote - 当前选项填写的专属补充说明
  * @param targetWidth - 预览区渲染总列宽，含 `Markdown` 组件左右各 1 列 `paddingX`（正文可用宽度为其减 2）
  * @param theme - TUI 主题实例
@@ -615,7 +604,6 @@ function buildTipsSection(title: string, tips: readonly string[]): string {
  */
 export function buildFullPreviewContentLines(
   item: MenuItem | undefined,
-  customText: string | undefined,
   optionNote: string | undefined,
   targetWidth: number,
   theme: Theme,
@@ -624,30 +612,21 @@ export function buildFullPreviewContentLines(
 
   let mdSource = "";
 
-  if (item.type === "option") {
-    // 1. 选项专属作者补充说明（若已填写）
-    if (optionNote) {
-      mdSource += `${TEXTS.view.sectionTitle(TEXTS.view.optionNotePanelTitle)}\n\n${cleanText(optionNote)}\n\n`;
-    }
+  // 1. 选项专属作者补充说明（若已填写）
+  if (optionNote) {
+    mdSource += `${TEXTS.view.sectionTitle(TEXTS.view.optionNotePanelTitle)}\n\n${cleanText(optionNote)}\n\n`;
+  }
 
-    // 2. 情节设定推演说明
-    if (item.description) {
-      mdSource += `${TEXTS.view.sectionTitle(TEXTS.view.storyDescriptionPanelTitle)}\n\n${cleanText(item.description)}\n\n`;
-    }
+  // 2. 情节设定推演说明
+  if (item.description) {
+    mdSource += `${TEXTS.view.sectionTitle(TEXTS.view.storyDescriptionPanelTitle)}\n\n${cleanText(item.description)}\n\n`;
+  }
 
-    // 3. 正文草稿/分镜头预览
-    if (item.preview) {
-      mdSource += `${TEXTS.view.sectionTitle(TEXTS.view.storyDraftPanelTitle)}\n\n${cleanText(item.preview)}\n\n`;
-    } else if (!item.description && !optionNote) {
-      mdSource += `${TEXTS.view.italicLine(TEXTS.view.previewNoDraft.trim())}\n\n`;
-    }
-  } else if (item.type === "custom_note") {
-    mdSource += buildTipsSection(TEXTS.view.customNotePanelTitle, TEXTS.view.customNotePanelTips);
-    if (customText) {
-      mdSource += `\n${cleanText(customText)}\n\n`;
-    }
-  } else {
-    mdSource += buildTipsSection(TEXTS.view.confirmPanelTitle, TEXTS.view.confirmPanelTips);
+  // 3. 正文草稿/分镜头预览
+  if (item.preview) {
+    mdSource += `${TEXTS.view.sectionTitle(TEXTS.view.storyDraftPanelTitle)}\n\n${cleanText(item.preview)}\n\n`;
+  } else if (!item.description && !optionNote) {
+    mdSource += `${TEXTS.view.italicLine(TEXTS.view.previewNoDraft.trim())}\n\n`;
   }
 
   const mdTheme = createNovelMarkdownTheme(theme);

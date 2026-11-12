@@ -11,6 +11,7 @@ import { LAYOUT_CONFIG } from "./layout.js";
 import {
   hasQuestionNote,
   type AskAuthorFormModel,
+  type EditTarget,
   type MenuItem,
   type NormalizedQuestion,
   type QuestionAnswerState,
@@ -25,6 +26,9 @@ import {
   pushFrameRule,
   pushHelpFooter,
   pushStatusMessage,
+  renderButtonGroup,
+  type ButtonRect,
+  type ButtonSpec,
   type RowRange,
 } from "./view-rows.js";
 
@@ -67,6 +71,35 @@ export interface MenuItemHit {
   readonly range: RowRange;
 }
 
+/** 补充说明按钮在整页中的可点击矩形范围 */
+export interface NoteButtonHit {
+  /** 点击后打开的批注编辑器目标 */
+  readonly target: EditTarget;
+  /** 按钮矩形 */
+  readonly rect: ButtonRect;
+}
+
+/** 题目底部操作按钮的种类：补充说明入口 / 确认推进 */
+export type QuestionActionKind = "note" | "confirm";
+
+/** 题目底部操作按钮在整页中的可点击矩形范围 */
+export interface QuestionActionHit {
+  /** 按钮种类 */
+  readonly action: QuestionActionKind;
+  /** 按钮矩形 */
+  readonly rect: ButtonRect;
+}
+
+/**
+ * 把按钮组的相对矩形平移为整页矩形
+ * @param rect - 相对行号的矩形
+ * @param rowOffset - 该行数组在整页中的起始行
+ * @returns 行号平移后的矩形，列区间不变
+ */
+function offsetRect(rect: ButtonRect, rowOffset: number): ButtonRect {
+  return { rows: { start: rect.rows.start + rowOffset, end: rect.rows.end + rowOffset }, cols: rect.cols };
+}
+
 /** 题目作答页渲染结果 */
 export interface QuestionViewResult {
   /** 整页终端行（含底部状态、帮助与框架线） */
@@ -79,6 +112,10 @@ export interface QuestionViewResult {
   readonly tabRange?: RowRange;
   /** 各菜单项的整页行范围（鼠标点击路由依据） */
   readonly menuItemHits?: readonly MenuItemHit[];
+  /** 补充说明按钮的整页矩形范围（鼠标点击路由依据） */
+  readonly noteButtonHits?: readonly NoteButtonHit[];
+  /** 题目底部操作按钮的整页矩形范围（鼠标点击路由依据） */
+  readonly actionButtonHits?: readonly QuestionActionHit[];
 }
 
 /**
@@ -158,25 +195,15 @@ export class QuestionView {
       pushWrapped(body, this.theme.fg("muted", q.description), renderWidth, "  ");
     }
 
-    // 补充说明横幅（题目整体补充 + 当前聚焦选项专属补充）
-    if (st.customText?.trim()) {
-      pushWrapped(body, this.theme.fg("success", TEXTS.view.attachedNoteBanner(st.customText)), renderWidth, "  ");
-    }
-    if (currentItem?.type === "option" && currentItem.optionIndex !== undefined) {
-      const optNote = st.optionNotes.get(currentItem.optionIndex)?.trim();
-      if (optNote) {
-        const optLabel = optionLabelOf(q, currentItem.optionIndex);
-        pushWrapped(
-          body,
-          this.theme.fg("success", TEXTS.view.optionAttachedNoteBanner(optLabel, optNote)),
-          renderWidth,
-          "  ",
-        );
-      }
-    }
+    // 补充说明按钮组（题目整体补充 + 当前聚焦选项专属补充），整框可点击
+    const noteButtonHits = this.pushNoteButtons(body, q, st, currentItem, renderWidth);
     body.push("");
 
     const menuItemHits = this.pushListItems(body, q, st, state, renderWidth - 2);
+
+    // 选项列表之后的操作按钮组（补充说明入口 + 确认推进），贴右缘
+    body.push("");
+    const actionButtonHits = this.pushActionButtons(body, state.tab, renderWidth);
 
     pushStatusMessage(body, this.theme, state.statusMessage);
 
@@ -186,16 +213,13 @@ export class QuestionView {
       helpParts.push(TEXTS.help.jumpQuestion);
     }
     helpParts.push(TEXTS.help.moveCursor);
-    if (currentItem?.type === "option") {
+    if (currentItem) {
       helpParts.push(TEXTS.help.editOptionNote);
       helpParts.push(TEXTS.help.editQuestionNote);
     } else {
       helpParts.push(TEXTS.help.editNote);
     }
-    const optHasNote =
-      currentItem?.type === "option" &&
-      currentItem.optionIndex !== undefined &&
-      st.optionNotes.has(currentItem.optionIndex);
+    const optHasNote = currentItem ? st.optionNotes.has(currentItem.optionIndex) : false;
     if (optHasNote || hasQuestionNote(st)) {
       helpParts.push(TEXTS.help.clearNote);
     }
@@ -215,14 +239,10 @@ export class QuestionView {
       LAYOUT_CONFIG.previewMinHeight,
       terminalRows - 1 - state.tabLines.length - body.length,
     );
-    const currentOptNote =
-      currentItem?.type === "option" && currentItem.optionIndex !== undefined
-        ? st.optionNotes.get(currentItem.optionIndex)
-        : undefined;
+    const currentOptNote = currentItem ? st.optionNotes.get(currentItem.optionIndex) : undefined;
     const preview = this.renderPreviewBand(
       state.tab,
       currentItem,
-      st.customText,
       currentOptNote,
       renderWidth,
       previewHeight,
@@ -243,14 +263,105 @@ export class QuestionView {
         index: hit.index,
         range: { start: bodyStart + hit.range.start, end: bodyStart + hit.range.end },
       })),
+      noteButtonHits: noteButtonHits.map((hit) => ({ target: hit.target, rect: offsetRect(hit.rect, bodyStart) })),
+      actionButtonHits: actionButtonHits.map((hit) => ({ action: hit.action, rect: offsetRect(hit.rect, bodyStart) })),
     };
   }
 
   /**
-   * 获取聚焦条目的完整内容行（经 `previewCache` 缓存，跨条目切换零重复解析）
+   * 追加题目底部的操作按钮组（补充说明入口 + 确认推进）
+   * 整组贴右缘，确认按钮框线随作答达标与否换色
+   * @param lines - 输出行数组（原地追加）
+   * @param tab - 题目索引
+   * @param renderWidth - 终端布局列宽
+   * @returns 各按钮在 `lines` 中的相对矩形
+   */
+  private pushActionButtons(lines: string[], tab: number, renderWidth: number): QuestionActionHit[] {
+    const actions = this.model.getQuestionActions(tab);
+    if (!actions) return [];
+
+    const buttons: { action: QuestionActionKind; spec: ButtonSpec }[] = [];
+    if (actions.note) {
+      const filled = hasQuestionNote(this.model.getState(tab));
+      buttons.push({ action: "note", spec: { text: actions.note, tone: filled ? "success" : "muted" } });
+    }
+    buttons.push({
+      action: "confirm",
+      spec: {
+        text: actions.confirm,
+        tone: this.model.isQuestionAnswered(tab) ? "success" : "accent",
+      },
+    });
+
+    const group = renderButtonGroup(
+      this.theme,
+      buttons.map((button) => button.spec),
+      renderWidth,
+      "right",
+    );
+    const start = lines.length;
+    lines.push(...group.lines);
+
+    const hits: QuestionActionHit[] = [];
+    for (const [index, rect] of group.rects.entries()) {
+      const button = buttons[index];
+      if (!button) continue;
+      hits.push({ action: button.action, rect: offsetRect(rect, start) });
+    }
+    return hits;
+  }
+
+  /**
+   * 追加补充说明按钮组（题目整体补充 + 当前聚焦选项的专属补充）
+   * 按钮框整体可点击，点击后打开对应批注的编辑器
+   * @param lines - 输出行数组（原地追加）
+   * @param q - 当前题目
+   * @param st - 作答状态
+   * @param currentItem - 聚焦菜单项（选项专属补充按钮的索引来源）
+   * @param renderWidth - 终端布局列宽
+   * @returns 各按钮在 `lines` 中的相对矩形
+   */
+  private pushNoteButtons(
+    lines: string[],
+    q: NormalizedQuestion,
+    st: QuestionAnswerState,
+    currentItem: MenuItem | undefined,
+    renderWidth: number,
+  ): NoteButtonHit[] {
+    const hits: NoteButtonHit[] = [];
+    const pushButton = (target: EditTarget, text: string): void => {
+      const group = renderButtonGroup(
+        this.theme,
+        [{ text: this.theme.fg("success", text), tone: "success" }],
+        renderWidth,
+        "left",
+        LAYOUT_CONFIG.noteButtonIndent,
+      );
+      const rect = group.rects[0];
+      if (!rect) return;
+      hits.push({ target, rect: offsetRect(rect, lines.length) });
+      lines.push(...group.lines);
+    };
+
+    const questionNote = st.customText?.trim();
+    if (questionNote) pushButton({ type: "question" }, TEXTS.view.attachedNoteBanner(questionNote));
+
+    if (currentItem) {
+      const optionNote = st.optionNotes.get(currentItem.optionIndex)?.trim();
+      if (optionNote) {
+        pushButton(
+          { type: "option", optionIndex: currentItem.optionIndex },
+          TEXTS.view.optionAttachedNoteBanner(optionLabelOf(q, currentItem.optionIndex), optionNote),
+        );
+      }
+    }
+    return hits;
+  }
+
+  /**
+   * 获取聚焦选项的完整内容行（经 `previewCache` 缓存，跨选项切换零重复解析）
    * @param tab - 题目索引
    * @param item - 目标菜单项
-   * @param customText - 题目整体补充说明
    * @param optionNote - 选项专属补充说明
    * @param targetWidth - 预览可用列宽
    * @returns 未切片的完整内容行数组
@@ -258,19 +369,16 @@ export class QuestionView {
   private previewContentLines(
     tab: number,
     item: MenuItem,
-    customText: string | undefined,
     optionNote: string | undefined,
     targetWidth: number,
   ): string[] {
     // 定界拼接杜绝变长字段歧义（字段值均已剥离控制字符）
-    const cacheKey = [tab, item.type, item.optionIndex ?? -1, targetWidth, customText ?? "", optionNote ?? ""].join(
-      "\x1f",
-    );
+    const cacheKey = [tab, item.optionIndex, targetWidth, optionNote ?? ""].join("\x1f");
 
     const cached = this.previewCache.get(cacheKey);
     if (cached) return cached;
 
-    const fullLines = buildFullPreviewContentLines(item, customText, optionNote, targetWidth, this.theme);
+    const fullLines = buildFullPreviewContentLines(item, optionNote, targetWidth, this.theme);
     // 超容量按插入序淘汰最旧条目（`keys().next()` 在 Map 非空时必然产出条目）
     if (this.previewCache.size >= PREVIEW_CACHE_CAPACITY) {
       const oldest = this.previewCache.keys().next();
@@ -284,7 +392,6 @@ export class QuestionView {
    * 计算并切片本帧内容预览区（纯计算，不写回滚动位移）
    * @param tab - 题目索引
    * @param item - 聚焦菜单项（缺省时预览区留空）
-   * @param customText - 题目整体补充说明
    * @param optionNote - 选项专属补充说明
    * @param targetWidth - 预览可用列宽
    * @param height - 预览区占用的终端行数（不足时补空行）
@@ -294,13 +401,12 @@ export class QuestionView {
   private renderPreviewBand(
     tab: number,
     item: MenuItem | undefined,
-    customText: string | undefined,
     optionNote: string | undefined,
     targetWidth: number,
     height: number,
     scrollOffset: number,
   ): RenderedPreviewBand {
-    const fullLines = item ? this.previewContentLines(tab, item, customText, optionNote, targetWidth) : [];
+    const fullLines = item ? this.previewContentLines(tab, item, optionNote, targetWidth) : [];
     const band = buildScrollBand(fullLines, height, scrollOffset, this.theme, targetWidth);
     return { lines: band.lines, viewport: { total: fullLines.length, viewHeight: band.viewHeight } };
   }
@@ -334,12 +440,6 @@ export class QuestionView {
       if (!item) continue;
       const globalIndex = state.listScrollOffset + offset;
       const isFocused = globalIndex === state.optionIndex;
-
-      // 预设选项与操作区（补充说明/确认按钮）之间间隔一行
-      const prevItem = state.menuItems[globalIndex - 1];
-      if (prevItem && prevItem.type === "option" && item.type !== "option") {
-        lines.push("");
-      }
 
       const rowLines = formatMenuItemRow(this.theme, item, isFocused, q, st, rowWidth);
       hits.push({ index: globalIndex, range: { start: lines.length, end: lines.length + rowLines.length } });

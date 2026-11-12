@@ -82,8 +82,6 @@
     "optionNotePanelTitle": "选项补充说明",
     "storyDescriptionPanelTitle": "情节设定推演",
     "storyDraftPanelTitle": "正文草稿/分镜头试撰写",
-    "customNotePanelTitle": "题目补充说明",
-    "confirmPanelTitle": "操作说明",
     "previewScrollInfo": {
       "template": "(行 {start}-{end}/{total}，用 [ ] 滚动)",
       "params": [
@@ -93,15 +91,6 @@
       ]
     },
     "previewNoDraft": "(无内容预览)",
-    "customNotePanelTips": [
-      "• 随时按「N」或选择此项按「Enter」填写/修改本题补充说明",
-      "• 按「x」清空本题补充说明",
-      "• 补充说明将随所选选项及选项专属补充说明一并提交给 AI 助手"
-    ],
-    "confirmPanelTips": [
-      "• 按 `Enter` 确认本题并前往下一题",
-      "• 最后一题确认后自动进入总览提交页"
-    ],
     "sectionTitle": {
       "template": "### {title}",
       "params": [
@@ -143,8 +132,7 @@
         "noteSuffix"
       ]
     },
-    "confirmNoteSuffix": " + 补充说明",
-    "confirmDesc": "确认并前往下一题或总览页"
+    "confirmNoteSuffix": " + 补充说明"
   },
   "editor": {
     "title": {
@@ -252,7 +240,6 @@
     "cancel": "Esc/Ctrl+C 取消",
     "clearNote": "x 清空补充说明",
     "confirmQuestion": "Enter 确认",
-    "confirmSubmit": "Enter 提交",
     "editFormNote": "n 整卷补充",
     "editNote": "n 补充说明",
     "editOptionNote": "n 选项补充说明",
@@ -291,15 +278,23 @@
       "template": "{icon.note} 题目补充说明："
     },
     "allDonePrompt": {
-      "template": " {icon.check} 全部完成，按 Enter/Ctrl+S 提交答卷，Tab/hl/1-9 返回修改"
+      "template": " {icon.check} 全部完成，确认后提交答卷"
     },
     "pendingWarning": {
-      "template": " {icon.unchecked} 尚有题目未完成，按 Enter 前往作答，Tab/hl/1-9 切换修改"
+      "template": " {icon.unchecked} 尚有题目未完成，确认将前往未完成的题目"
     },
-    "formNoteTitle": {
-      "template": "{icon.note} 整卷补充"
+    "formNoteFilled": {
+      "template": "{icon.note} 整卷补充：{text}",
+      "params": [
+        "text"
+      ]
     },
-    "formNoteEmpty": "（尚未填写，按 n 填写整份答卷之外的补充要求）"
+    "formNoteEmpty": {
+      "template": "{icon.note} 整卷补充（未填写，按 n 或点击填写）"
+    },
+    "submitButton": {
+      "template": "{icon.check} 确认提交"
+    }
   },
   "card": {
     "callQuestionAndOptionCount": {

@@ -10,12 +10,24 @@ import { LAYOUT_CONFIG } from "./layout.js";
 import type { AskAuthorFormModel } from "./model.js";
 import { TEXTS } from "./texts.js";
 import type { Theme } from "./theme.js";
-import { buildScrollBand, pushFrameRule, pushHelpFooter, pushStatusMessage, type RowRange } from "./view-rows.js";
+import {
+  buildScrollBand,
+  pushFrameRule,
+  pushHelpFooter,
+  pushStatusMessage,
+  renderButtonGroup,
+  type ButtonRect,
+  type RowRange,
+} from "./view-rows.js";
+
+/** 总览页内容区左右缩进（与题目行的悬挂缩进一致） */
+const SUMMARY_INSET = 2;
 
 /**
  * 构建总览页底部按键提示片段（可见题目数大于 1 时插入跳转题目提示）
+ * 提交与整卷补充各有底部按钮，提示行不再重复
  * @param model - 问卷模型
- * @returns 切换题目 / 滚动 / 整卷补充 / 提交 / 取消，可见题目数大于 1 时额外插入跳转题目
+ * @returns 切换题目 / 滚动 / 补充说明清空 / 取消，可见题目数大于 1 时额外插入跳转题目
  */
 export function buildSummaryHelpParts(model: AskAuthorFormModel): string[] {
   return [
@@ -23,7 +35,6 @@ export function buildSummaryHelpParts(model: AskAuthorFormModel): string[] {
     ...(model.getVisibleQuestionIndices().length > 1 ? [TEXTS.help.jumpQuestion] : []),
     TEXTS.help.scrollSummary,
     TEXTS.help.editFormNote,
-    TEXTS.help.confirmSubmit,
     TEXTS.help.cancel,
   ];
 }
@@ -38,22 +49,24 @@ export interface SummaryViewport {
 
 /** 总览页渲染结果 */
 export interface SummaryViewResult {
-  /** 整页终端行（含顶部分割线、内容区、Tab 栏、提示与帮助栏） */
+  /** 整页终端行（含顶部分割线、内容区、Tab 栏、提示、按钮与帮助栏） */
   readonly lines: string[];
   /** 本帧内容视口观察值 */
   readonly viewport: SummaryViewport;
   /** Tab 栏占用的整页行范围（鼠标点击路由依据） */
   readonly tabRange: RowRange;
-  /** 本帧可见的整卷补充块行范围（鼠标点击路由依据）；未滚动到时为 undefined */
-  readonly formNoteRange?: RowRange;
+  /** 本帧可见的整卷补充按钮矩形（鼠标点击路由依据）；未滚动到时为 undefined */
+  readonly formNoteButton?: ButtonRect;
+  /** 确认提交按钮的整页矩形（鼠标点击路由依据） */
+  readonly submitButton?: ButtonRect;
 }
 
-/** 总览页未切片的完整内容行与其中整卷补充块的行范围 */
+/** 总览页未切片的完整内容行与其中整卷补充按钮的矩形 */
 export interface SummaryContent {
   /** 完整未切片的内容行 */
   readonly lines: string[];
-  /** 整卷补充块在内容行中的范围 */
-  readonly formNoteRange: RowRange;
+  /** 整卷补充按钮在内容行中的矩形（行号相对内容首行） */
+  readonly formNoteButton?: ButtonRect;
 }
 
 /** 答卷总览与提交页构建器（持有内容行缓存，主题与模型在构造期固定） */
@@ -102,13 +115,24 @@ export class SummaryView {
       };
     }
 
-    // 1. 内容区以下的各带：标题、提示、状态、快捷键与底部分割线
+    // 1. 内容区以下的各带：标题、提示、状态、确认提交按钮、快捷键与底部分割线
+    const ready = this.model.areAllQuestionsAnswered();
     const body: string[] = [this.theme.fg("accent", this.theme.bold(TEXTS.summary.title))];
-    const prompt = this.model.areAllQuestionsAnswered()
+    const prompt = ready
       ? this.theme.fg("success", this.theme.bold(TEXTS.summary.allDonePrompt))
       : this.theme.fg("warning", TEXTS.summary.pendingWarning);
     pushWrapped(body, prompt, contentWidth);
     pushStatusMessage(body, this.theme, statusMessage);
+
+    body.push("");
+    const submitGroup = renderButtonGroup(
+      this.theme,
+      [{ text: TEXTS.summary.submitButton, tone: ready ? "success" : "warning" }],
+      renderWidth,
+      "right",
+    );
+    body.push(...submitGroup.lines);
+
     body.push("");
     pushHelpFooter(body, buildSummaryHelpParts(this.model), this.theme, renderWidth);
     pushFrameRule(body, this.theme, renderWidth);
@@ -118,9 +142,12 @@ export class SummaryView {
     const content = this.cache.content;
     const band = buildScrollBand(content.lines, bandHeight, scrollOffset, this.theme, renderWidth);
 
-    // 整卷补充块只在滚入可视窗口时回传，鼠标换行到带宽之外的点不接管
-    const formNoteStart = Math.max(content.formNoteRange.start, band.offset);
-    const formNoteEnd = Math.min(content.formNoteRange.end, band.offset + band.viewHeight);
+    // 整卷补充按钮只在滚入可视窗口时回传，鼠标换行到带宽之外的点不接管
+    const noteButton = content.formNoteButton;
+    const noteStart = noteButton ? Math.max(noteButton.rows.start, band.offset) : 0;
+    const noteEnd = noteButton ? Math.min(noteButton.rows.end, band.offset + band.viewHeight) : 0;
+    const submitRect = submitGroup.rects[0];
+    const bodyStart = 1 + bandHeight + tabLines.length;
 
     // 3. 按带序输出整页（顶部分割线占首行，内容区紧接其后）
     const lines: string[] = [];
@@ -130,10 +157,16 @@ export class SummaryView {
       lines,
       viewport: { total: content.lines.length, viewHeight: band.viewHeight },
       tabRange: { start: 1 + bandHeight, end: 1 + bandHeight + tabLines.length },
-      formNoteRange:
-        formNoteEnd > formNoteStart
-          ? { start: 1 + formNoteStart - band.offset, end: 1 + formNoteEnd - band.offset }
+      formNoteButton:
+        noteButton && noteEnd > noteStart
+          ? { rows: { start: 1 + noteStart - band.offset, end: 1 + noteEnd - band.offset }, cols: noteButton.cols }
           : undefined,
+      submitButton: submitRect
+        ? {
+            rows: { start: bodyStart + submitRect.rows.start, end: bodyStart + submitRect.rows.end },
+            cols: submitRect.cols,
+          }
+        : undefined,
     };
   }
 }
@@ -218,15 +251,30 @@ export function buildSubmitSummaryContentLines(
   }
 
   // 整卷补充排在全部题目条目之后：作者在提交前最后填写，位置与封套中的输出顺序一致
-  const formNoteStart = summaryContentLines.length;
-  summaryContentLines.push(theme.fg("accent", theme.bold(TEXTS.summary.formNoteTitle)));
   const formNote = model.formNote?.trim();
-  pushWrapped(
-    summaryContentLines,
-    formNote ? theme.fg("accent", formNote) : theme.fg("dim", TEXTS.summary.formNoteEmpty),
+  const start = summaryContentLines.length;
+  const group = renderButtonGroup(
+    theme,
+    [
+      {
+        text: formNote ? TEXTS.summary.formNoteFilled(formNote) : TEXTS.summary.formNoteEmpty,
+        tone: formNote ? "success" : "muted",
+      },
+    ],
     contentWidth,
-    "  ",
+    "left",
+    SUMMARY_INSET,
   );
+  summaryContentLines.push(...group.lines);
 
-  return { lines: summaryContentLines, formNoteRange: { start: formNoteStart, end: summaryContentLines.length } };
+  const rect = group.rects[0];
+  return {
+    lines: summaryContentLines,
+    formNoteButton: rect
+      ? {
+          rows: { start: start + rect.rows.start, end: start + rect.rows.end },
+          cols: rect.cols,
+        }
+      : undefined,
+  };
 }

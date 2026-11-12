@@ -13,6 +13,18 @@ export const LAYOUT_CONFIG = {
   /** 内部内容分割线字符（单横线） */
   dividerThin: "─",
 
+  // ===== 按钮框架字符 =====
+  /** 按钮框架字符（上缘单横线、下缘粗横线、两侧竖线） */
+  buttonFrame: {
+    topLeft: "┌",
+    top: "─",
+    topRight: "┐",
+    side: "│",
+    bottomLeft: "┕",
+    bottom: "━",
+    bottomRight: "┙",
+  },
+
   // ===== 视口几何 =====
   /** Tab 自定义短标签的最大可见宽度 (cols)，超出由 `truncateToWidth` 截断 */
   tabLabelMaxWidth: 14,
@@ -26,6 +38,8 @@ export const LAYOUT_CONFIG = {
   summaryScrollStep: 3,
   /** 菜单每页最多可见的选项数 */
   visibleOptionCount: 7,
+  /** 补充说明按钮的左侧缩进 (cols) */
+  noteButtonIndent: 2,
 
   // ===== 状态提示时长 =====
   /** 底部状态通知停留时长 (ms) */

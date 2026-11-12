@@ -82,8 +82,6 @@
     "optionNotePanelTitle": "Option Note",
     "storyDescriptionPanelTitle": "Plot Deduction",
     "storyDraftPanelTitle": "Draft / Storyboard Preview",
-    "customNotePanelTitle": "Question Note",
-    "confirmPanelTitle": "Controls",
     "previewScrollInfo": {
       "template": "(lines {start}-{end}/{total}, use [ ] to scroll)",
       "params": [
@@ -93,15 +91,6 @@
       ]
     },
     "previewNoDraft": "(nothing to preview)",
-    "customNotePanelTips": [
-      "• Press \"N\", or select this item and press \"Enter\", to write or edit the question note",
-      "• Press \"x\" to clear the question note",
-      "• The note is submitted together with the selected options and their option notes"
-    ],
-    "confirmPanelTips": [
-      "• Press `Enter` to confirm this question and move on to the next one",
-      "• Confirming the last question opens the summary and submit page"
-    ],
     "sectionTitle": {
       "template": "### {title}",
       "params": [
@@ -143,8 +132,7 @@
         "noteSuffix"
       ]
     },
-    "confirmNoteSuffix": " + note",
-    "confirmDesc": "Confirm and continue to the next question or the summary"
+    "confirmNoteSuffix": " + note"
   },
   "editor": {
     "title": {
@@ -252,7 +240,6 @@
     "cancel": "Esc/Ctrl+C cancel",
     "clearNote": "x clear note",
     "confirmQuestion": "Enter confirm",
-    "confirmSubmit": "Enter submit",
     "editFormNote": "n form supplement",
     "editNote": "n question note",
     "editOptionNote": "n option note",
@@ -291,15 +278,23 @@
       "template": "{icon.note} Question note:"
     },
     "allDonePrompt": {
-      "template": " {icon.check} All questions answered; press Enter/Ctrl+S to submit, Tab/hl/1-9 to revise"
+      "template": " {icon.check} All questions answered; confirm to submit"
     },
     "pendingWarning": {
-      "template": " {icon.unchecked} Some questions are unanswered; press Enter to answer, Tab/hl/1-9 to switch"
+      "template": " {icon.unchecked} Some questions are unanswered; confirming jumps to the first one"
     },
-    "formNoteTitle": {
-      "template": "{icon.note} Form supplement"
+    "formNoteFilled": {
+      "template": "{icon.note} Form supplement: {text}",
+      "params": [
+        "text"
+      ]
     },
-    "formNoteEmpty": "(empty; press n to add requirements beyond the questions)"
+    "formNoteEmpty": {
+      "template": "{icon.note} Form supplement (empty; press n or click here)"
+    },
+    "submitButton": {
+      "template": "{icon.check} Submit answers"
+    }
   },
   "card": {
     "callQuestionAndOptionCount": {

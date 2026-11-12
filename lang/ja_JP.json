@@ -82,8 +82,6 @@
     "optionNotePanelTitle": "選択肢の補足説明",
     "storyDescriptionPanelTitle": "ストーリー設定の展開",
     "storyDraftPanelTitle": "本文下書き／シーン試筆",
-    "customNotePanelTitle": "質問の補足説明",
-    "confirmPanelTitle": "操作案内",
     "previewScrollInfo": {
       "template": "({start}-{end}/{total} 行、[ ] でスクロール)",
       "params": [
@@ -93,15 +91,6 @@
       ]
     },
     "previewNoDraft": "(プレビュー内容なし)",
-    "customNotePanelTips": [
-      "• 「N」キーを押すか、本項目を選択して「Enter」を押すと質問の補足説明を入力・編集できます",
-      "• 「x」キーを押すと質問の補足説明を消去できます",
-      "• 補足説明は選択された選択肢および選択肢ごとの補足説明と共に AI アシスタントへ送信されます"
-    ],
-    "confirmPanelTips": [
-      "• `Enter` を押してこの質問を確定し、次の質問へ進みます",
-      "• 最後の質問を確定すると、自動的に概要確認・提出画面へ遷移します"
-    ],
     "sectionTitle": {
       "template": "### {title}",
       "params": [
@@ -143,8 +132,7 @@
         "noteSuffix"
       ]
     },
-    "confirmNoteSuffix": " + 補足説明",
-    "confirmDesc": "確定して次の質問または概要画面へ進む"
+    "confirmNoteSuffix": " + 補足説明"
   },
   "editor": {
     "title": {
@@ -252,7 +240,6 @@
     "cancel": "Esc/Ctrl+C 取消",
     "clearNote": "x 補足説明を消去",
     "confirmQuestion": "Enter 確定",
-    "confirmSubmit": "Enter 提出",
     "editFormNote": "n 全体の補足",
     "editNote": "n 補足説明",
     "editOptionNote": "n 選択肢の補足説明",
@@ -291,15 +278,23 @@
       "template": "{icon.note} 質問の補足説明："
     },
     "allDonePrompt": {
-      "template": " {icon.check} すべて完了しました。Enter/Ctrl+S で提出、Tab/hl/1〜9 で戻って修正"
+      "template": " {icon.check} すべて完了しました。確定して提出"
     },
     "pendingWarning": {
-      "template": " {icon.unchecked} 未完了の質問があります。Enter で回答、Tab/hl/1〜9 で切り替えて修正"
+      "template": " {icon.unchecked} 未完了の質問があります。確定すると未完了の質問へ移動します"
     },
-    "formNoteTitle": {
-      "template": "{icon.note} 全体の補足"
+    "formNoteFilled": {
+      "template": "{icon.note} 全体の補足：{text}",
+      "params": [
+        "text"
+      ]
     },
-    "formNoteEmpty": "（未入力です。n で質問全体以外の補足を入力）"
+    "formNoteEmpty": {
+      "template": "{icon.note} 全体の補足（未入力です。n キーまたはクリックで入力）"
+    },
+    "submitButton": {
+      "template": "{icon.check} 提出を確定"
+    }
   },
   "card": {
     "callQuestionAndOptionCount": {

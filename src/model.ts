@@ -152,18 +152,24 @@ export type EditTarget =
   | { type: "question" }
   | { type: "option"; optionIndex: number };
 
-/** 题目视图左侧菜单项的统一模型 */
+/** 题目菜单项（一个可见预设选项） */
 export interface MenuItem {
-  /** 菜单项类型：预设选项 / 题目补充入口 / 确认按钮 */
-  type: "option" | "custom_note" | "confirm_btn";
-  /** 预设选项索引（0-based，仅 option 类型有效） */
-  optionIndex?: number;
+  /** 预设选项索引（0-based） */
+  optionIndex: number;
   /** 菜单项显示文本 */
   label: string;
   /** 菜单项背景描述推演 */
   description?: string;
   /** 菜单项正文草稿/分镜头预览 */
   preview?: string;
+}
+
+/** 题目底部操作按钮的文案（补在选项列表之后，靠右成组） */
+export interface QuestionActions {
+  /** 题目补充说明入口按钮文案；题目禁用补充说明时缺省 */
+  readonly note?: string;
+  /** 确认推进按钮文案 */
+  readonly confirm: string;
 }
 
 /** 勾选 toggle 的操作语义（不导出，组件层映射为状态栏提示） */
@@ -1024,30 +1030,32 @@ export class AskAuthorFormModel {
   }
 
   /**
-   * 派生指定题目的左侧菜单项列表（预设选项 + 自由补充入口 + 确认推进按钮）
-   * 标签与确认按钮明细随作答状态派生：多选展示已选数/下限，单选展示已选项标签、自定义方案名或未选
+   * 派生指定题目的选项菜单项
+   * 只产出可见预设选项，顺序与声明一致；题目级补充入口与确认推进是选项列表之后的按钮，由 {@link getQuestionActions} 提供文案
    * @param qIndex - 题目顺序索引（0-based）
-   * @returns 顺序固定的菜单项数组（选项按声明顺序、补充入口居中、确认按钮殿后）；题目不存在为空数组；`allowCustom` 为 false 时省略补充入口；不可见选项不产出条目
+   * @returns 选项菜单项数组；题目不存在为空数组
    */
   getMenuItems(qIndex: number): MenuItem[] {
     const q = this.getQuestion(qIndex);
     if (!q) return [];
-    const st = this.getState(qIndex);
-    const noted = this.hasSubmittableNote(qIndex);
-
     const items: MenuItem[] = [];
     for (const [optionIndex, opt] of q.options.entries()) {
       if (!this.isOptionVisible(qIndex, optionIndex)) continue;
-      items.push({ type: "option", optionIndex, label: opt.label, description: opt.description, preview: opt.preview });
+      items.push({ optionIndex, label: opt.label, description: opt.description, preview: opt.preview });
     }
+    return items;
+  }
 
-    if (q.allowCustom) {
-      items.push({
-        type: "custom_note",
-        label: hasQuestionNote(st) ? TEXTS.menu.customNoteLabelFilled : TEXTS.menu.customNoteLabel,
-      });
-    }
-
+  /**
+   * 派生题目底部操作按钮的文案
+   * 确认按钮的明细随作答状态派生：多选展示已选数/下限，单选展示已选项标签、自定义方案名或未选
+   * @param qIndex - 题目顺序索引（0-based）
+   * @returns 补充说明与确认推进按钮文案；题目不存在时为 undefined
+   */
+  getQuestionActions(qIndex: number): QuestionActions | undefined {
+    const q = this.getQuestion(qIndex);
+    if (!q) return undefined;
+    const noted = this.hasSubmittableNote(qIndex);
     const selectedIndex = this.getSelectedIndex(qIndex);
     const confirmDetail = q.multiSelect
       ? TEXTS.menu.confirmDetailMulti(this.getSelectedIndices(qIndex).length, q.minSelect)
@@ -1056,14 +1064,14 @@ export class AskAuthorFormModel {
         : noted
           ? TEXTS.fallbacks.defaultCustomChoiceName
           : TEXTS.fallbacks.unselectedOption;
-
-    items.push({
-      type: "confirm_btn",
-      label: TEXTS.menu.confirmLabel(confirmDetail, noted),
-      description: TEXTS.menu.confirmDesc,
-    });
-
-    return items;
+    return {
+      note: q.allowCustom
+        ? hasQuestionNote(this.getState(qIndex))
+          ? TEXTS.menu.customNoteLabelFilled
+          : TEXTS.menu.customNoteLabel
+        : undefined,
+      confirm: TEXTS.menu.confirmLabel(confirmDetail, noted),
+    };
   }
 
   /**
