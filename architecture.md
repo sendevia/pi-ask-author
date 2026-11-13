@@ -59,7 +59,7 @@ graph TD
   interaction --> assets
 ```
 
-依赖只从上层指向下层：视图不导入 `component.ts`，`tool-result.ts` 与 `tool-card.ts` 不导入 `index.ts`，`layout.ts` 与 `theme.ts` 不导入插件内任何模块。逐条的具体边见 AGENTS.md 第 2.2 节。
+依赖只从上层指向下层：视图不导入 `component.ts`，`tool-result.ts` 与 `tool-card.ts` 不导入 `index.ts`，`layout.ts` 与 `theme.ts` 不导入插件内任何模块。
 
 ## 横向不变式
 
@@ -80,7 +80,3 @@ graph TD
 - **不引入第三方依赖**：宿主的排版原语与 `typebox` 已覆盖需要，减少安装体积与版本冲突面。
 - **小说语法借哨兵转换**：`novel-markdown.ts` 把台词与心理旁白转换为携带语义哨兵的行内代码，由定制 Markdown 主题完成着色，复用宿主 `Markdown` 解析器。
 - **英文协议与本地化界面分离**：面向模型的描述、封套与推演提示词恒为英文并集中在 `llm-texts.ts`；作者界面文案取自 `lang/*.json`，规范语言为 `en_US`。
-
-## 编码纪律
-
-编码约束、强制规则与禁令以 AGENTS.md 为准；本图谱记录架构与边界，两处互相引用而不复制同一段内容。

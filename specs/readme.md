@@ -31,7 +31,7 @@ references: [ask-author-architecture, mod-interaction]
 ## 内容边界
 
 - 只写作者可感知的行为：界面分区、展示内容、按键、批注、题型、语言。模块划分、缓存失效、入参清洗、Schema 字段、推演协议与封套格式属于 specs，不进入 README。
-- 构建、类型检查与测试命令属于开发流程，由 AGENTS.md 承载；README 不设开发章节。
+- 构建、类型检查与测试命令属于开发流程，取自 `package.json` 的 scripts；README 不设开发章节。
 - 面向大语言模型的工具说明不在此展开，需要指导模型使用时指向 `/ask-author` 命令的提示。
 
 ## 事实来源
