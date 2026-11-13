@@ -135,14 +135,35 @@ const fakeTui = { terminal: { rows: 40 }, requestRender() {} };
           { label: "刺客", preview: "一击必杀" },
         ],
       },
+      {
+        title: "选择章节重点",
+        multiSelect: true,
+        options: [{ label: "开篇" }, { label: "高潮" }],
+      },
     ],
   };
 
   const sanitized = sanitizeAskAuthorArgs(rawBatch);
   const model = new AskAuthorFormModel(sanitized);
 
+  assert.equal(
+    model.getQuestionActions(0)?.confirm,
+    TEXTS.menu.confirmLabel(TEXTS.menu.confirmDetail(0, 2)),
+    "显式声明上下限的多选应在确认按钮上显示已选数与上限",
+  );
+  assert.equal(
+    model.getQuestionActions(1)?.confirm,
+    TEXTS.menu.confirmLabel(""),
+    "未声明上下限的多选与单选一样只写确认本题",
+  );
+
   model.toggleOption(0, 0);
   model.toggleOption(0, 1);
+  assert.equal(
+    model.getQuestionActions(0)?.confirm,
+    TEXTS.menu.confirmLabel(TEXTS.menu.confirmDetail(2, 2)),
+    "勾选数变化后计数片段应随之更新",
+  );
   const limitResult = model.toggleOption(0, 2);
   assert.equal(limitResult, "limit", "超过最大勾选数上限时应返回 limit");
 
@@ -1518,7 +1539,7 @@ const fakeTui = { terminal: { rows: 40 }, requestRender() {} };
 
         const optionRow = frame.findIndex((l) => plain(l).includes(TEXTS.menu.optionNoteLabelFilled));
         const questionRow = frame.findIndex((l) => plain(l).includes(TEXTS.menu.customNoteLabelFilled));
-        const confirmRow = frame.findIndex((l) => plain(l).includes(TEXTS.menu.confirmLabel("甲", true)));
+        const confirmRow = frame.findIndex((l) => plain(l).includes(TEXTS.menu.confirmLabel("")));
         assert.ok(optionRow > 0 && questionRow === optionRow && confirmRow === optionRow, "三个按钮应成组同一行");
 
         const listRow = frame.findIndex((l) => plain(l).includes("乙"));
@@ -1531,7 +1552,7 @@ const fakeTui = { terminal: { rows: 40 }, requestRender() {} };
         assert.equal(visibleWidth(frame[optionRow + 1]), WIDTH, "按钮组应贴右缘");
         assert.ok(
           columnOf(plain(frame[optionRow]), TEXTS.menu.optionNoteLabelFilled) <
-            columnOf(plain(frame[optionRow]), TEXTS.menu.confirmLabel("甲", true)),
+            columnOf(plain(frame[optionRow]), TEXTS.menu.confirmLabel("")),
           "选项补充与题目补充在左、确认在右",
         );
 
@@ -1571,7 +1592,7 @@ const fakeTui = { terminal: { rows: 40 }, requestRender() {} };
         const narrowWidth = 46;
         const narrow = component.render(narrowWidth).join("\n").split("\n");
         for (const line of narrow) assert.ok(visibleWidth(line) <= narrowWidth, `窄终端存在超宽行：${JSON.stringify(line)}`);
-        const narrowConfirmRow = narrow.findIndex((l) => plain(l).includes(TEXTS.menu.confirmLabel("甲", true)));
+        const narrowConfirmRow = narrow.findIndex((l) => plain(l).includes(TEXTS.menu.confirmLabel("")));
         const narrowNoteRow = narrow.findIndex((l) => plain(l).includes(TEXTS.menu.optionNoteLabelFilled));
         assert.ok(narrowConfirmRow > narrowNoteRow, "窄终端下确认按钮应换到下一行");
         for (const row of [narrowNoteRow, narrowConfirmRow]) {
@@ -1621,7 +1642,7 @@ const fakeTui = { terminal: { rows: 40 }, requestRender() {} };
   const columnOf = (line, needle) => visibleWidth(line.slice(0, line.indexOf(needle)));
 
   const noteLabel = TEXTS.menu.customNoteLabel;
-  const confirmLabel = TEXTS.menu.confirmLabel(TEXTS.fallbacks.unselectedOption, false);
+  const confirmLabel = TEXTS.menu.confirmLabel("");
 
   const ctx = {
     mode: "tui",
@@ -1673,7 +1694,7 @@ const fakeTui = { terminal: { rows: 40 }, requestRender() {} };
         // 选定选项后点确认：单题直接进入总览页
         component.handleInput(" ");
         const answered = render();
-        const answeredLabel = TEXTS.menu.confirmLabel("第一人称", false);
+        const answeredLabel = TEXTS.menu.confirmLabel("");
         // 状态提示行让内容区变矮，作答区随之整体上移，按钮行以当前帧重算
         const answeredRow = answered.findIndex((l) => plain(l).includes(answeredLabel));
         assert.ok(answeredRow > 0, "作答后应有确认按钮行");

@@ -90,28 +90,22 @@
     "customNoteLabelFilled": {
       "template": "{icon.note} 질문 추가 설명 (작성됨)"
     },
-    "confirmDetailMulti": {
-      "template": "{selectedCount}개 선택됨",
+    "confirmDetail": {
+      "template": "{selectedCount}/{limit}",
       "params": [
         "selectedCount",
-        "minSelect"
-      ]
-    },
-    "confirmDetailMultiBelowMin": {
-      "template": "{selectedCount}/{minSelect}개 선택됨",
-      "params": [
-        "selectedCount",
-        "minSelect"
+        "limit"
       ]
     },
     "confirmLabel": {
-      "template": "{icon.check} 이 질문 확정 ({detail}{noteSuffix})",
-      "params": [
-        "detail",
-        "noteSuffix"
-      ]
+      "template": "{icon.check} 이 질문 확정"
     },
-    "confirmNoteSuffix": " + 추가 설명"
+    "confirmLabelWithDetail": {
+      "template": "{icon.check} 이 질문 확정 ({detail})",
+      "params": [
+        "detail"
+      ]
+    }
   },
   "editor": {
     "footerHelp": "[Enter] 저장 후 돌아가기 • [Esc/Ctrl+C] 취소"
@@ -312,7 +306,6 @@
     "defaultCustomPlaceholder": "이 질문에 대한 전반적인 추가 요구사항, 복선 디테일 또는 수정 의견을 입력하세요...",
     "defaultOptionCustomPlaceholder": "해당 선택지에 대한 구체적인 추가 요구사항 또는 수정 세부 내용을 입력하세요...",
     "defaultFormCustomPlaceholder": "질문 외 전체 요구사항을 입력하세요 (문체, 인칭, 금기, 이후 방향)...",
-    "defaultCustomChoiceName": "사용자 지정 방안",
     "defaultOptionLabel": "기본 방안",
     "unnamedOptionLabel": "이름 없는 방안",
     "unselectedOption": "선택 안 함",

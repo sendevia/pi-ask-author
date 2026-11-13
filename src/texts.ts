@@ -17,24 +17,12 @@ const resolveTemplateConstant = (name: string): string | undefined =>
 const LOCALE_TEXTS = loadTexts(resolveTemplateConstant);
 
 /**
- * 渲染多选确认按钮的已选计数明细
- * @param selectedCount - 已选数
- * @param minSelect - 本题下限
- * @returns 未达下限时为 `已选 n/min 项`，否则为 `已选 n 项`
- */
-const confirmDetailMulti = (selectedCount: number, minSelect: number): string =>
-  selectedCount < minSelect
-    ? LOCALE_TEXTS.menu.confirmDetailMultiBelowMin(selectedCount, minSelect)
-    : LOCALE_TEXTS.menu.confirmDetailMulti(selectedCount, minSelect);
-
-/**
  * 渲染确认本题按钮标签
- * @param detail - 已选计数明细
- * @param hasNote - 是否已填写题目补充说明
- * @returns 形如 `󰄬 确认本题 (已选 2 项 + 补充说明)`
+ * @param detail - 已选数与边界的计数片段（形如 `2/4`）；本题不受上下限约束时为空串
+ * @returns 空片段时为 `󰄬 确认本题`，否则为 `󰄬 确认本题 (2/4)`
  */
-const confirmLabel = (detail: string, hasNote: boolean): string =>
-  LOCALE_TEXTS.menu.confirmLabel(detail, hasNote ? LOCALE_TEXTS.menu.confirmNoteSuffix : "");
+const confirmLabel = (detail: string): string =>
+  detail ? LOCALE_TEXTS.menu.confirmLabelWithDetail(detail) : LOCALE_TEXTS.menu.confirmLabel;
 
 // ===== 文案字典 =====
 
@@ -63,8 +51,8 @@ export const TEXTS = {
   titleArea: LOCALE_TEXTS.titleArea,
   /** 作答视图与预览区文案 */
   view: LOCALE_TEXTS.view,
-  /** 题目菜单条目文案（`confirmDetailMulti` / `confirmLabel` 由已选数片段组合而成） */
-  menu: { ...LOCALE_TEXTS.menu, confirmDetailMulti, confirmLabel },
+  /** 题目菜单条目文案（`confirmLabel` 由已选计数片段组合而成） */
+  menu: { ...LOCALE_TEXTS.menu, confirmLabel },
   /** 全屏补充说明编辑页的提示区按键帮助 */
   editor: LOCALE_TEXTS.editor,
   /** 底部临时状态栏通知（操作结果、阻断原因与纠正路径） */

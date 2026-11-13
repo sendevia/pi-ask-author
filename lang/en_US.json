@@ -90,28 +90,22 @@
     "customNoteLabelFilled": {
       "template": "{icon.note} Question note (filled)"
     },
-    "confirmDetailMulti": {
-      "template": "{selectedCount} selected",
+    "confirmDetail": {
+      "template": "{selectedCount}/{limit}",
       "params": [
         "selectedCount",
-        "minSelect"
-      ]
-    },
-    "confirmDetailMultiBelowMin": {
-      "template": "{selectedCount}/{minSelect} selected",
-      "params": [
-        "selectedCount",
-        "minSelect"
+        "limit"
       ]
     },
     "confirmLabel": {
-      "template": "{icon.check} Confirm question ({detail}{noteSuffix})",
-      "params": [
-        "detail",
-        "noteSuffix"
-      ]
+      "template": "{icon.check} Confirm question"
     },
-    "confirmNoteSuffix": " + note"
+    "confirmLabelWithDetail": {
+      "template": "{icon.check} Confirm question ({detail})",
+      "params": [
+        "detail"
+      ]
+    }
   },
   "editor": {
     "footerHelp": "[Enter] save and return • [Esc/Ctrl+C] cancel"
@@ -312,7 +306,6 @@
     "defaultCustomPlaceholder": "Enter overall requirements, foreshadowing details, or revision notes for this question...",
     "defaultOptionCustomPlaceholder": "Enter specific requirements or revision details for this option...",
     "defaultFormCustomPlaceholder": "Enter requirements beyond the questions (style, person, taboos, next direction)...",
-    "defaultCustomChoiceName": "Custom option",
     "defaultOptionLabel": "Default option",
     "unnamedOptionLabel": "Unnamed option",
     "unselectedOption": "Not selected",

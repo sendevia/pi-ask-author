@@ -90,28 +90,22 @@
     "customNoteLabelFilled": {
       "template": "{icon.note} 题目补充说明 (已填写)"
     },
-    "confirmDetailMulti": {
-      "template": "已选 {selectedCount} 项",
+    "confirmDetail": {
+      "template": "{selectedCount}/{limit}",
       "params": [
         "selectedCount",
-        "minSelect"
-      ]
-    },
-    "confirmDetailMultiBelowMin": {
-      "template": "已选 {selectedCount}/{minSelect} 项",
-      "params": [
-        "selectedCount",
-        "minSelect"
+        "limit"
       ]
     },
     "confirmLabel": {
-      "template": "{icon.check} 确认本题 ({detail}{noteSuffix})",
-      "params": [
-        "detail",
-        "noteSuffix"
-      ]
+      "template": "{icon.check} 确认本题"
     },
-    "confirmNoteSuffix": " + 补充说明"
+    "confirmLabelWithDetail": {
+      "template": "{icon.check} 确认本题 ({detail})",
+      "params": [
+        "detail"
+      ]
+    }
   },
   "editor": {
     "footerHelp": "[Enter] 保存并返回 • [Esc/Ctrl+C] 取消"
@@ -312,7 +306,6 @@
     "defaultCustomPlaceholder": "输入本题整体补充要求、伏笔细节或修改意见…",
     "defaultOptionCustomPlaceholder": "输入针对该选项的具体补充要求或修改细节…",
     "defaultFormCustomPlaceholder": "输入整份答卷之外的补充要求（文风、人称、禁忌、后续方向）…",
-    "defaultCustomChoiceName": "自定义方案",
     "defaultOptionLabel": "默认方案",
     "unnamedOptionLabel": "未命名方案",
     "unselectedOption": "未选",

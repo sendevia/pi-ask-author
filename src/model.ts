@@ -64,6 +64,8 @@ export interface NormalizedQuestion {
   minSelectExplicit: boolean;
   /** 收敛后的最多勾选数（`minSelect ~ options.length`） */
   maxSelect: number;
+  /** 是否显式给出 `maxSelect`（区分缺省上限与强制上限） */
+  maxSelectExplicit: boolean;
   /** 是否允许 0 勾选提交（默认 false，单选与多选均生效） */
   allowEmpty: boolean;
   /** 归一化后的候选选项列表（至少一项） */
@@ -232,6 +234,8 @@ interface SelectBounds {
   minSelectExplicit: boolean;
   /** 收敛后的最多勾选数 */
   maxSelect: number;
+  /** 是否显式给出最多勾选数（区分缺省上限与强制上限） */
+  maxSelectExplicit: boolean;
 }
 
 /**
@@ -239,13 +243,25 @@ interface SelectBounds {
  * @param minRaw - 原始最少勾选数
  * @param maxRaw - 原始最多勾选数
  * @param optionCount - 题目选项总数
- * @returns `minSelect` 收敛至 `[0, optionCount]`，`maxSelect` 收敛至 `[minSelect, optionCount]`；`minSelectExplicit` 标记入参是否显式给出下限
+ * @returns `minSelect` 收敛至 `[0, optionCount]`，`maxSelect` 收敛至 `[minSelect, optionCount]`；`minSelectExplicit` / `maxSelectExplicit` 标记入参是否显式给出边界
  */
 function clampSelectBounds(minRaw: number | undefined, maxRaw: number | undefined, optionCount: number): SelectBounds {
   const minSelectExplicit = minRaw !== undefined;
+  const maxSelectExplicit = maxRaw !== undefined;
   const minSelect = clamp(minRaw ?? 1, 0, optionCount);
   const maxSelect = clamp(maxRaw ?? optionCount, minSelect, optionCount);
-  return { minSelect, minSelectExplicit, maxSelect };
+  return { minSelect, minSelectExplicit, maxSelect, maxSelectExplicit };
+}
+
+/**
+ * 派生确认按钮的已选计数片段
+ * @param q - 归一化题目
+ * @param selectedCount - 当前可见勾选数
+ * @returns 单选或未声明选择上下限时为空串，否则形如 `2/4`（显式上限优先，仅声明下限时取下限）
+ */
+function confirmDetailOf(q: NormalizedQuestion, selectedCount: number): string {
+  if (!q.multiSelect || (!q.minSelectExplicit && !q.maxSelectExplicit)) return "";
+  return TEXTS.menu.confirmDetail(selectedCount, q.maxSelectExplicit ? q.maxSelect : q.minSelect);
 }
 
 /** 待解析的显示条件（题目 ID 与选项标签尚未映射到索引） */
@@ -962,7 +978,7 @@ export class AskAuthorFormModel {
       const options = [...q.options, ...entry.options];
       const bounds = clampSelectBounds(
         q.minSelectExplicit ? q.minSelect : undefined,
-        q.maxSelect === q.options.length ? undefined : q.maxSelect,
+        q.maxSelectExplicit ? q.maxSelect : undefined,
         options.length,
       );
       this.questionList[entry.questionIndex] = { ...q, options, ...bounds };
@@ -980,7 +996,11 @@ export class AskAuthorFormModel {
       const q = this.questionList[addition.questionIndex];
       if (!q) continue;
       const options = q.options.slice(0, Math.max(0, q.options.length - addition.count));
-      const bounds = clampSelectBounds(q.minSelectExplicit ? q.minSelect : undefined, q.maxSelect, options.length);
+      const bounds = clampSelectBounds(
+        q.minSelectExplicit ? q.minSelect : undefined,
+        q.maxSelectExplicit ? q.maxSelect : undefined,
+        options.length,
+      );
       this.questionList[addition.questionIndex] = { ...q, options, ...bounds };
       this.dropOptionsFromState(addition.questionIndex, options.length);
     }
@@ -1047,7 +1067,7 @@ export class AskAuthorFormModel {
 
   /**
    * 派生选项下方动作区的按钮文案
-   * 确认按钮的明细随作答状态派生：多选展示已选数/下限，单选展示已选项标签、自定义方案名或未选；
+   * 确认按钮的计数片段只在题目显式声明选择上下限时出现：优先取上限，仅声明下限时取下限；
    * 两个补充入口按是否已填写在文案里标注，禁用补充说明时直接缺省
    * @param qIndex - 题目顺序索引（0-based）
    * @param optionIndex - 当前聚焦选项的顺序索引（0-based）；未给出时不出选项补充入口
@@ -1057,15 +1077,6 @@ export class AskAuthorFormModel {
     const q = this.getQuestion(qIndex);
     if (!q) return undefined;
     const st = this.getState(qIndex);
-    const noted = this.hasSubmittableNote(qIndex);
-    const selectedIndex = this.getSelectedIndex(qIndex);
-    const confirmDetail = q.multiSelect
-      ? TEXTS.menu.confirmDetailMulti(this.getSelectedIndices(qIndex).length, q.minSelect)
-      : selectedIndex !== undefined
-        ? (q.options[selectedIndex]?.label ?? TEXTS.fallbacks.unselectedOption)
-        : noted
-          ? TEXTS.fallbacks.defaultCustomChoiceName
-          : TEXTS.fallbacks.unselectedOption;
     const optionNoted = optionIndex !== undefined && (st.optionNotes.get(optionIndex)?.trim() ?? "") !== "";
     return {
       optionNote:
@@ -1079,7 +1090,7 @@ export class AskAuthorFormModel {
           ? TEXTS.menu.customNoteLabelFilled
           : TEXTS.menu.customNoteLabel
         : undefined,
-      confirm: TEXTS.menu.confirmLabel(confirmDetail, noted),
+      confirm: TEXTS.menu.confirmLabel(confirmDetailOf(q, this.getSelectedIndices(qIndex).length)),
     };
   }
 

@@ -90,28 +90,22 @@
     "customNoteLabelFilled": {
       "template": "{icon.note} 質問の補足説明 (入力済み)"
     },
-    "confirmDetailMulti": {
-      "template": "{selectedCount} 項目選択済み",
+    "confirmDetail": {
+      "template": "{selectedCount}/{limit}",
       "params": [
         "selectedCount",
-        "minSelect"
-      ]
-    },
-    "confirmDetailMultiBelowMin": {
-      "template": "{selectedCount}/{minSelect} 項目選択済み",
-      "params": [
-        "selectedCount",
-        "minSelect"
+        "limit"
       ]
     },
     "confirmLabel": {
-      "template": "{icon.check} この質問を確定 ({detail}{noteSuffix})",
-      "params": [
-        "detail",
-        "noteSuffix"
-      ]
+      "template": "{icon.check} この質問を確定"
     },
-    "confirmNoteSuffix": " + 補足説明"
+    "confirmLabelWithDetail": {
+      "template": "{icon.check} この質問を確定 ({detail})",
+      "params": [
+        "detail"
+      ]
+    }
   },
   "editor": {
     "footerHelp": "[Enter] 保存して戻る • [Esc/Ctrl+C] 取り消し"
@@ -312,7 +306,6 @@
     "defaultCustomPlaceholder": "この質問に対する全体的な要望、伏線などの詳細、または修正意見を入力...",
     "defaultOptionCustomPlaceholder": "この選択肢に対する具体的な追加要望や修正の詳細を入力...",
     "defaultFormCustomPlaceholder": "質問全体以外の要望を入力（文体、人称、禁止事項、今後の方向）...",
-    "defaultCustomChoiceName": "カスタム案",
     "defaultOptionLabel": "デフォルト案",
     "unnamedOptionLabel": "名称未設定の案",
     "unselectedOption": "未選択",
