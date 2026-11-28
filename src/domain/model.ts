@@ -776,14 +776,32 @@ export class AskAuthorFormModel {
   /**
    * 计算指定题目的答案签名（判断该题推演结果是否仍然有效）
    * @param qIndex - 题目顺序索引（0-based）
-   * @returns 可见选中项标签按索引升序以 `|` 拼接的签名；未作答或题目不存在时为 undefined
+   * @returns 可见选中项、题目批注、可见选项批注与允许空答状态共同决定的签名；未作答且不允许空答或题目不存在时为 undefined
    */
   answerSignature(qIndex: number): string | undefined {
     const q = this.questionList[qIndex];
     if (!q) return undefined;
     const indices = this.getSelectedIndices(qIndex);
-    if (indices.length === 0) return undefined;
-    return indices.map((index) => q.options[index]?.label ?? "").join("|");
+    const st = this.states.get(qIndex);
+    const questionNote = st?.customText?.trim();
+    const optionNotes: string[] = [];
+    if (st) {
+      for (const [optIdx, note] of [...st.optionNotes.entries()].sort((a, b) => a[0] - b[0])) {
+        const trimmed = note?.trim();
+        if (trimmed && q.options[optIdx] && this.isOptionVisible(qIndex, optIdx)) {
+          optionNotes.push(`${optIdx}:${trimmed}`);
+        }
+      }
+    }
+    if (indices.length === 0 && !questionNote && optionNotes.length === 0) {
+      return q.allowEmpty ? "" : undefined;
+    }
+    const labels = indices.map((index) => q.options[index]?.label ?? "").join("|");
+    if (!questionNote && optionNotes.length === 0) return labels;
+    const parts = [labels];
+    if (questionNote) parts.push(`q:${questionNote}`);
+    if (optionNotes.length > 0) parts.push(`o:${optionNotes.join("\x1e")}`);
+    return parts.join("\x1f");
   }
 
   /**
@@ -818,8 +836,10 @@ export class AskAuthorFormModel {
     const insertAt = this.resolveInsertIndex(input.insert ?? this.expansionInsert, input.questionIndex);
     const addedQuestions = this.insertQuestions(insertAt, input.payload.questions.slice(0, room));
     const addedOptions = this.appendOptions(input.payload.optionAdditions);
+    const recordQuestionIndex =
+      insertAt <= input.questionIndex ? input.questionIndex + addedQuestions : input.questionIndex;
     const record: ExpansionRecord = {
-      questionIndex: input.questionIndex,
+      questionIndex: recordQuestionIndex,
       signature: input.signature,
       insertAt,
       addedQuestions,

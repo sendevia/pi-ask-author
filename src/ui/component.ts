@@ -395,6 +395,7 @@ export class AskAuthorComponent implements Component, Focusable {
       formDescription: this.model.formDescription,
       questions: this.model.questions,
       answers: cancelled ? [] : this.model.compileAnswers(),
+      supplement: cancelled ? undefined : this.model.formNote,
       cancelled,
     });
   }
