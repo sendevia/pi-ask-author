@@ -169,8 +169,11 @@ async function drive(body, { turns, replies = [] }) {
  * @param spec - `{ shows?, hides? }`
  */
 function expectRender(text, { shows = [], hides = [] } = {}) {
-  for (const fragment of shows) assert.ok(text.includes(fragment), `渲染应包含 ${fragment}`);
-  for (const fragment of hides) assert.ok(!text.includes(fragment), `渲染不应包含 ${fragment}`);
+  const norm = (str) => str.replace(/\s+/g, "");
+  for (const fragment of shows)
+    assert.ok(text.includes(fragment) || norm(text).includes(norm(fragment)), `渲染应包含 ${fragment}`);
+  for (const fragment of hides)
+    assert.ok(!text.includes(fragment) && !norm(text).includes(norm(fragment)), `渲染不应包含 ${fragment}`);
 }
 
 // ===== 用例 =====

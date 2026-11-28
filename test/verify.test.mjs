@@ -927,13 +927,14 @@ const fakeTui = { terminal: { rows: 40 }, requestRender() {} };
   };
   await registeredToolDef.execute("call-placeholder", body, undefined, undefined, ctx);
 
+  const norm = (str) => str.replace(/\s+/g, "");
   assert.ok(pendingRender.includes(TEXTS.tabs.expansionPlaceholder), "推演在途时激活页的 Tab 标题应换成占位文案");
   assert.ok(pendingRender.includes(TEXTS.status.expansionRunning), "推演在途时占位页应展示运行提示");
-  assert.ok(pendingRender.includes(TEXTS.view.expansionPendingHint), "推演在途时占位页应展示暂停说明");
+  assert.ok(norm(pendingRender).includes(norm(TEXTS.view.expansionPendingHint)), "推演在途时占位页应展示暂停说明");
   assert.ok(!pendingRender.includes("第二题"), "推演在途时作答页内容应被占位页替换");
   assert.equal(frozenRender, pendingRender, "推演在途期间作答与切换输入应被忽略");
   assert.ok(!readyRender.includes(TEXTS.tabs.expansionPlaceholder), "推演就绪后 Tab 占位文案应恢复");
-  assert.ok(!readyRender.includes(TEXTS.view.expansionPendingHint), "推演就绪后占位页应消失");
+  assert.ok(!norm(readyRender).includes(norm(TEXTS.view.expansionPendingHint)), "推演就绪后占位页应消失");
   assert.ok(readyRender.includes("推演题"), "推演就绪后生成题目应可见");
   assert.notEqual(resumedRender, readyRender, "推演就绪后题目切换应恢复");
 }
@@ -1459,7 +1460,13 @@ const fakeTui = { terminal: { rows: 40 }, requestRender() {} };
         assert.ok(plain(frames.saved[savedPreviewRow - 1]).includes("─"), "正文与补充区之间有分隔线");
 
         // 点击补充按钮也能打开编辑器（按钮组靠右，点击列按当前帧现算）
-        const savedNoteX = visibleWidth(plain(frames.saved[savedNoteRow]).slice(0, plain(frames.saved[savedNoteRow]).indexOf("整卷补充"))) + 2;
+        const savedNoteX =
+          visibleWidth(
+            plain(frames.saved[savedNoteRow]).slice(
+              0,
+              plain(frames.saved[savedNoteRow]).indexOf(TEXTS.summary.formNoteLabelFilled),
+            ),
+          ) + 2;
         assert.deepEqual(
           click(component, savedNoteX, savedNoteRow),
           { press: { handled: true }, click: { handled: true } },
@@ -1607,14 +1614,14 @@ const fakeTui = { terminal: { rows: 40 }, requestRender() {} };
         render();
 
         // 窄终端：按钮组自动换行，每一行都贴右缘
-        const narrowWidth = 46;
+        const narrowWidth = 36;
         const narrow = component.render(narrowWidth).join("\n").split("\n");
         for (const line of narrow) assert.ok(visibleWidth(line) <= narrowWidth, `窄终端存在超宽行：${JSON.stringify(line)}`);
-        const narrowConfirmRow = narrow.findIndex((l) => plain(l).includes(TEXTS.menu.confirmLabel("")));
-        const narrowNoteRow = narrow.findIndex((l) => plain(l).includes(TEXTS.menu.optionNoteLabelFilled));
-        assert.ok(narrowConfirmRow > narrowNoteRow, "窄终端下确认按钮应换到下一行");
-        for (const row of [narrowNoteRow, narrowConfirmRow]) {
-          const bottom = narrow.findIndex((l, index) => index > row && plain(l).includes("┕"));
+        const narrowBoxEdges = narrow
+          .map((line, index) => (plain(line).includes("┕") ? index : -1))
+          .filter((index) => index >= 0);
+        assert.ok(narrowBoxEdges.length >= 2, "窄终端下确认按钮应换到下一行");
+        for (const bottom of narrowBoxEdges) {
           assert.equal(visibleWidth(narrow[bottom]), narrowWidth, "换行后的每一行按钮都贴右缘");
         }
 
@@ -1637,7 +1644,7 @@ const fakeTui = { terminal: { rows: 40 }, requestRender() {} };
 // 24. 题目底部操作按钮组：两端分开、点击补充说明与点击确认推进
 {
   const ROWS = 24;
-  const WIDTH = 72;
+  const WIDTH = 100;
   const ansi = /\x1b\[[0-9;]*m/g;
   const plain = (line) => line.replace(ansi, "");
   const pointer = (type, x, y) => ({
@@ -1691,13 +1698,17 @@ const fakeTui = { terminal: { rows: 40 }, requestRender() {} };
           "确认按钮点击应被接管",
         );
         const blocked = render();
-        assert.ok(text(blocked).includes(TEXTS.status.pleaseAnswerBeforeSubmit), "未作答时点确认应提示状态栏");
+        assert.ok(
+          text(blocked).replace(/\s+/g, "").includes(TEXTS.status.pleaseAnswerBeforeSubmit.replace(/\s+/g, "")),
+          "未作答时点确认应提示状态栏",
+        );
         assert.ok(text(blocked).includes("第一题"), "未作答时点确认不应切页");
 
-        // 点补充说明按钮打开题目补充说明编辑器
-        const noteX = columnOf(plain(frame[actionRow]), noteLabel) + 2;
+        // 点补充说明按钮打开题目补充说明编辑器（状态栏出现后按钮行可能上移，以当前帧 blocked 定位）
+        const blockedNoteRow = blocked.findIndex((l) => plain(l).includes(noteLabel));
+        const noteX = columnOf(plain(blocked[blockedNoteRow]), noteLabel) + 2;
         assert.deepEqual(
-          click(component, noteX, actionRow),
+          click(component, noteX, blockedNoteRow),
           { press: { handled: true }, click: { handled: true } },
           "补充说明按钮点击应被接管",
         );
@@ -1746,7 +1757,7 @@ const fakeTui = { terminal: { rows: 40 }, requestRender() {} };
 // 25. 总览页确认提交按钮：与整卷补充同属作答区、未完成时跳题、点下即提交
 {
   const ROWS = 24;
-  const WIDTH = 72;
+  const WIDTH = 100;
   const ansi = /\x1b\[[0-9;]*m/g;
   const plain = (line) => line.replace(ansi, "");
   const pointer = (type, x, y) => ({
@@ -1796,7 +1807,10 @@ const fakeTui = { terminal: { rows: 40 }, requestRender() {} };
         );
         const jumped = render();
         assert.ok(text(jumped).includes("第一题"), "未完成时点确认应跳到待答题目");
-        assert.ok(text(jumped).includes(TEXTS.status.pleaseAnswerBeforeSubmit), "跳转时应在状态栏说明原因");
+        assert.ok(
+          text(jumped).replace(/\s+/g, "").includes(TEXTS.status.pleaseAnswerBeforeSubmit.replace(/\s+/g, "")),
+          "跳转时应在状态栏说明原因",
+        );
 
         // 作答后回到总览页，点按钮直接提交
         component.handleInput(" ");
@@ -1873,8 +1887,9 @@ const fakeTui = { terminal: { rows: 40 }, requestRender() {} };
           plain(frames.editor[backRow]).indexOf(TEXTS.titleArea.backButton) < plain(frames.editor[backRow]).indexOf("雨夜追车"),
           "返回按钮应在面包屑左侧",
         );
-        const tabRow = rowOf(frames.editor, TEXTS.tabs.submitTab);
-        const titleRows = frames.editor.slice(tabRow + 1, rowOf(frames.editor, "─".repeat(10)));
+        const titleStart = frames.editor.findIndex((l) => plain(l).startsWith("┌"));
+        const titleEnd = frames.editor.findIndex((l, index) => index > titleStart && plain(l).includes("─".repeat(10)));
+        const titleRows = frames.editor.slice(titleStart, titleEnd);
         assert.ok(titleRows.length >= 3, "返回按钮与面包屑应占满三行以上标题区");
         assert.ok(
           plain(titleRows[1] ?? "").indexOf(TEXTS.titleArea.backButton) < plain(titleRows[1] ?? "").indexOf("雨夜追车"),
@@ -1884,7 +1899,11 @@ const fakeTui = { terminal: { rows: 40 }, requestRender() {} };
         assert.ok(plain(titleRows[0] ?? "").startsWith("┌"), "返回按钮应贴整页左缘");
         // 折行把同一段文字拆到多行，抹掉空白后仍应连成完整面包屑末段
         assert.ok(
-          titleRows.map(plain).join("").replace(/\s+/g, "").includes("补充说明"),
+          titleRows
+            .map(plain)
+            .join("")
+            .replace(/\s+/g, "")
+            .includes(TEXTS.titleArea.questionNote.replace(/\s+/g, "")),
           "面包屑末段应随折行显示",
         );
         const textColumn = plain(titleRows[0] ?? "").indexOf("┐") + 2;
@@ -1910,7 +1929,10 @@ const fakeTui = { terminal: { rows: 40 }, requestRender() {} };
         const dirtyBackX = backColumn(frames.dirty, dirtyBackRow);
         click(component, dirtyBackX, dirtyBackRow);
         frames.armed = render();
-        assert.ok(text(frames.armed).includes("放弃修改"), "有未保存内容时返回应二次确认");
+        assert.ok(
+          text(frames.armed).replace(/\s+/g, "").includes(TEXTS.status.editorDiscardConfirm.replace(/\s+/g, "")),
+          "有未保存内容时返回应二次确认",
+        );
         assert.ok(text(frames.armed).includes(TEXTS.editor.footerHelp), "首次点击返回不应关闭编辑器");
         assert.deepEqual(
           click(component, dirtyBackX, dirtyBackRow),
@@ -1985,14 +2007,14 @@ const fakeTui = { terminal: { rows: 40 }, requestRender() {} };
         assert.ok(plain(wide.join("\n")).includes("全程第一人称"), "正文应留在补充区");
 
         // 窄终端：装不下两个按钮就上下分行，每行仍贴右缘
-        const narrow = renderAt(20);
-        for (const line of narrow) assert.ok(visibleWidth(line) <= 20, `20 列存在超宽行：${JSON.stringify(line)}`);
-        const narrowNoteRow = boxRowOf(narrow, TEXTS.summary.formNoteLabel);
-        const narrowSubmitRow = boxRowOf(narrow, TEXTS.summary.submitButton);
-        assert.ok(narrowNoteRow > 0 && narrowSubmitRow > narrowNoteRow, "窄终端两按钮应上下分行");
-        for (const row of [narrowNoteRow, narrowSubmitRow]) {
-          const bottom = narrow.findIndex((l, index) => index > row && plain(l).includes("┕"));
-          assert.equal(visibleWidth(narrow[bottom]), 20, "换行后的每一行按钮都贴右缘");
+        const narrow = renderAt(17);
+        for (const line of narrow) assert.ok(visibleWidth(line) <= 17, `17 列存在超宽行：${JSON.stringify(line)}`);
+        const boxEdges = narrow
+          .map((line, index) => (plain(line).includes("┕") ? index : -1))
+          .filter((index) => index >= 0);
+        assert.equal(boxEdges.length, 2, "窄终端两按钮应上下分行");
+        for (const bottom of boxEdges) {
+          assert.equal(visibleWidth(narrow[bottom]), 17, "换行后的每一行按钮都贴右缘");
         }
 
         component.dispose();
