@@ -1,18 +1,18 @@
 /**
- * @file tool-result.ts
+ * @file domain/result.ts
  * @description `ask_author` 的四类结果工厂与结果详情的宿主边界收窄
  *
  * 封套前缀保持字节稳定；失败类结果同时设置 `isError: true`
  */
 
 import type { AgentToolResult } from "@earendil-works/pi-coding-agent";
+import { TEXTS } from "../core/texts.js";
 import {
   type AskAuthorFormModel,
   type AskAuthorResult,
   type AuthorAnswerItem,
   type NormalizedQuestion,
 } from "./model.js";
-import { TEXTS } from "./texts.js";
 
 /** `ask_author` 工具执行结果结构（基于 Pi 官方 `AgentToolResult` 特化） */
 export type AskAuthorToolResult = AgentToolResult<AskAuthorResult>;

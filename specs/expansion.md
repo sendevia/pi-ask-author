@@ -8,7 +8,7 @@ parent: ask-author-architecture
 
 # 实时推演协议
 
-`src/expansion.ts` 定义扩展与推演模型之间的请求与回复形态。
+`src/protocol/expansion.ts` 定义扩展与推演模型之间的请求与回复形态。
 
 ## 责任
 
@@ -22,7 +22,7 @@ parent: ask-author-architecture
 
 - 不调用模型：模型调用在入口层装配，会话历史与系统提示词同样在入口层取得，本模块只处理请求与回复的数据形态。
 - 不修改表单状态：写入走 `AskAuthorFormModel.pushExpansion`。
-- 依赖 `sanitize` / `schema` / `model` / `texts`，不依赖 `component` 与视图模块。
+- 依赖 `protocol/sanitize` / `protocol/schema` / `domain/model` / `core/texts`，不依赖 `ui/component` 与视图模块。
 
 ## 决策
 

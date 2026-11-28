@@ -1,13 +1,13 @@
 /**
- * @file texts.ts
+ * @file core/texts.ts
  * @description 全局文案字典的组装点：LLM 面协议常量与当前语言的作者面文案在此汇合
  *
  * 作者面文案一律取自 `lang/*.json`，本文件只做装载、组合与派生，不新增字面量
  */
 
+import { LLM_TEXTS } from "../protocol/prompts.js";
 import { loadTexts } from "./i18n.js";
 import { ICONS } from "./layout.js";
-import { LLM_TEXTS } from "./llm-texts.js";
 
 /** `{icon.<键>}` 占位符的解析器；非图标占位符返回 undefined，交由模板形参处理 */
 const resolveTemplateConstant = (name: string): string | undefined =>

@@ -1,16 +1,21 @@
 /**
- * @file view-rows.ts
+ * @file ui/rows.ts
  * @description 视图排版纯函数：题目菜单行、Tab 导航栏、内容区与底部框架
  *
  * 全部导出函数无状态；文案取自 `texts.ts`，宽度经 `visibleWidth` / `wrapTextWithAnsi` / `safeLine` 计算
  */
 
 import { truncateToWidth, visibleWidth, wrapTextWithAnsi } from "@earendil-works/pi-tui";
-import { divider, padToVisibleWidth, pushWrapped, safeLine, windowSlice, clampWindowOffset } from "./format.js";
-import { type AskAuthorFormModel, type MenuItem, type NormalizedQuestion, type QuestionAnswerState } from "./model.js";
-import { ICONS, LAYOUT_CONFIG } from "./layout.js";
-import { TEXTS } from "./texts.js";
-import type { Theme, ThemeColor } from "./theme.js";
+import { divider, padToVisibleWidth, pushWrapped, safeLine, windowSlice, clampWindowOffset } from "../core/format.js";
+import { ICONS, LAYOUT_CONFIG } from "../core/layout.js";
+import { TEXTS } from "../core/texts.js";
+import type { Theme, ThemeColor } from "../core/theme.js";
+import {
+  type AskAuthorFormModel,
+  type MenuItem,
+  type NormalizedQuestion,
+  type QuestionAnswerState,
+} from "../domain/model.js";
 
 /** 按钮每行除内容之外的固定列数（左右边框各 1 列、内容左右各 1 列空格） */
 const BUTTON_CHROME_WIDTH = 4;

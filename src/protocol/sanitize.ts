@@ -1,5 +1,5 @@
 /**
- * @file sanitize.ts
+ * @file protocol/sanitize.ts
  * @description 入参防御性清洗：`prepareArguments` 钩子与不可信工具边界的容错处理
  *
  * - 容错范围：JSON 串包裹 / `raw` 包装键 / 字段别名 / 纯字符串选项 / 空选项兜底
@@ -7,9 +7,9 @@
  * - 本层做类型收敛、别名映射与区间兜底，模型层再幂等兜底一次
  */
 
-import { cleanOptional, parseJson } from "./format.js";
-import { MAX_OPTIONS, MAX_QUESTIONS } from "./layout.js";
-import { TEXTS } from "./texts.js";
+import { cleanOptional, parseJson } from "../core/format.js";
+import { MAX_OPTIONS, MAX_QUESTIONS } from "../core/layout.js";
+import { TEXTS } from "../core/texts.js";
 import type {
   ExpansionConfig,
   ExpansionPayload,

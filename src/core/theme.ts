@@ -1,5 +1,5 @@
 /**
- * @file theme.ts
+ * @file core/theme.ts
  * @description TUI 主题类型别名，实例由 Pi 运行时注入
  *
  * 仅含类型导出，编译期擦除，无插件内依赖

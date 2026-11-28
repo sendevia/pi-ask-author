@@ -21,7 +21,7 @@ parent: ask-author-architecture
 
 ## 边界
 
-- 依赖 `component` / `expansion` / `format` / `model` / `schema` / `sanitize` / `texts` / `tool-card` / `tool-result`，不导入任何视图模块。
+- 依赖 `ui/component` / `protocol/expansion` / `core/format` / `domain/model` / `protocol/schema` / `protocol/sanitize` / `core/texts` / `domain/card` / `domain/result`，不导入任何视图模块。
 - 不持有问卷语义状态，不参与排版，不注册监听器与定时器。
 - 工具声明 `executionMode: "sequential"`、`exposure: "model-only"`、`annotations: { readOnlyHint: true, openWorldHint: false }`。
 - `dist/index.js` 的具名导出是二次开发接口：模型类与相关类型、Schema、清洗函数、推演协议、`TEXTS`、布局常量、locale 探测与文本工具。

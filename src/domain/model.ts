@@ -1,5 +1,5 @@
 /**
- * @file model.ts
+ * @file domain/model.ts
  * @description 问卷数据模型与状态机：题目归一化、作答状态流转、答卷编译与封套输出
  *
  * - 内部作答状态 0-based，对外答卷编号 1-based
@@ -10,9 +10,9 @@
  * - 整卷补充独立于各题作答状态，作为封套末行的单独令牌输出
  */
 
-import { cleanOptional, cleanText, clamp, toSingleLine } from "./format.js";
-import { MAX_QUESTIONS } from "./layout.js";
-import { TEXTS } from "./texts.js";
+import { cleanOptional, cleanText, clamp, toSingleLine } from "../core/format.js";
+import { MAX_QUESTIONS } from "../core/layout.js";
+import { TEXTS } from "../core/texts.js";
 import type {
   ExpansionPayload,
   InsertPosition,
@@ -21,7 +21,7 @@ import type {
   QuestionOption,
   RawParams,
   ShowIfInput,
-} from "./schema.js";
+} from "../protocol/schema.js";
 
 /**
  * 显示条件的归一化形态（题目索引与选项索引已解析）

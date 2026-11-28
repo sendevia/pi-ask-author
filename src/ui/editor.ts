@@ -1,17 +1,17 @@
 /**
- * @file view-editor.ts
+ * @file ui/editor.ts
  * @description 补充说明编辑页的全屏视图构建：面包屑标题区、编辑内容区与提示区
  *
  * 编辑框实例由组件传入并保持焦点；构造后回传编辑框位置供鼠标点击换算
  */
 
 import type { Editor } from "@earendil-works/pi-tui";
-import { pushWrapped } from "./format.js";
-import { ICONS } from "./layout.js";
-import type { AskAuthorFormModel, EditTarget } from "./model.js";
-import { TEXTS } from "./texts.js";
-import type { Theme } from "./theme.js";
-import { composePage, optionLabelOf, renderLeadingButton, type ButtonRect } from "./view-rows.js";
+import { pushWrapped } from "../core/format.js";
+import { ICONS } from "../core/layout.js";
+import { TEXTS } from "../core/texts.js";
+import type { Theme } from "../core/theme.js";
+import type { AskAuthorFormModel, EditTarget } from "../domain/model.js";
+import { composePage, optionLabelOf, renderLeadingButton, type ButtonRect } from "./rows.js";
 
 /** 编辑框左右两侧的缩进列数 */
 const EDITOR_INDENT = 2;

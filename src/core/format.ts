@@ -1,5 +1,5 @@
 /**
- * @file format.ts
+ * @file core/format.ts
  * @description 纯函数工具层：视口计算、文本折行、ANSI 宽度测量与文本规整
  *
  * 无副作用，不装载语言资源；终端宽度一律经 `visibleWidth` / `truncateToWidth` / `wrapTextWithAnsi` 计算

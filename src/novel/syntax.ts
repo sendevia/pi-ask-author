@@ -1,11 +1,11 @@
 /**
- * @file novel-syntax.ts
+ * @file novel/syntax.ts
  * @description 小说语法模板表：定界符 → 语义哨兵 → 主题样式
  *
  * 新增语法只需在 `NOVEL_TEMPLATES` 追加一项，两个派生索引自动生成
  */
 
-import type { Theme } from "./theme.js";
+import type { Theme } from "../core/theme.js";
 
 /**
  * 语义哨兵前缀：不可见 NUL 字符，仅存在于转换产物与 `theme.code` 分类之间这个中间态，不进入终端输出

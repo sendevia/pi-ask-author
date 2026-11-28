@@ -1,5 +1,5 @@
 /**
- * @file i18n.ts
+ * @file core/i18n.ts
  * @description 语言资源注册、系统语言探测与模板字典编译
  *
  * - 语言文件位于 `lang/`，文件名即 locale 标识，新增语言在 {@link LOCALE_PACKAGES} 追加导入
@@ -10,10 +10,10 @@
  * 语言探测按 `LANGUAGE` → `LC_ALL` → `LC_MESSAGES` → `LANG` → `Intl` 的优先级，先精确匹配 locale 再匹配同族语言
  */
 
-import enUS from "../lang/en_US.json" with { type: "json" };
-import jaJP from "../lang/ja_JP.json" with { type: "json" };
-import koKR from "../lang/ko_KR.json" with { type: "json" };
-import zhCN from "../lang/zh_CN.json" with { type: "json" };
+import enUS from "../../lang/en_US.json" with { type: "json" };
+import jaJP from "../../lang/ja_JP.json" with { type: "json" };
+import koKR from "../../lang/ko_KR.json" with { type: "json" };
+import zhCN from "../../lang/zh_CN.json" with { type: "json" };
 
 /** 带插值的模板声明（`params` 决定编译后函数的形参个数） */
 export interface TemplateSpec {

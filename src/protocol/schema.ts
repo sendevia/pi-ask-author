@@ -1,5 +1,5 @@
 /**
- * @file schema.ts
+ * @file protocol/schema.ts
  * @description `ask_author` 工具参数 Schema 与类型的单一源头
  *
  * - 字段名、可选性与区间约束仅在 TypeBox 定义一次，运行时类型经 `Static<typeof>` 派生
@@ -8,8 +8,8 @@
  */
 
 import { Type, type Static } from "typebox";
-import { MAX_OPTIONS, MAX_QUESTIONS } from "./layout.js";
-import { TEXTS } from "./texts.js";
+import { MAX_OPTIONS, MAX_QUESTIONS } from "../core/layout.js";
+import { TEXTS } from "../core/texts.js";
 
 /** 显示条件：引用更早题目的作答状态，决定本题或本选项是否出现 */
 export const ShowIfConditionSchema = Type.Object({

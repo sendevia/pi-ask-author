@@ -1,5 +1,5 @@
 /**
- * @file layout.ts
+ * @file core/layout.ts
  * @description 终端布局几何、图标字形与载荷上限的常量声明
  *
  * 纯常量叶层，无插件内依赖；语言文件经 `{icon.<键>}` 引用图标

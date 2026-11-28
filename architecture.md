@@ -12,27 +12,30 @@ parent: ask-author-goal
 
 单个 npm 包、单个 Pi 扩展。`src/index.ts` 是唯一入口，导出扩展工厂 `askAuthorExtension`，注册 `ask_author` 工具与 `/ask-author` 命令。构建时 `tsc` 产出类型声明，`esbuild` 打包 `dist/index.js`，`terser` 压缩；`@earendil-works/pi-coding-agent`、`@earendil-works/pi-tui` 与 `typebox` 保持外部引用，运行期不携带其他第三方代码。
 
-## 分层
+## 分层与目录结构
 
-- **入口**：`index.ts` 只做守卫与分支编排，并装配推演执行器；不持有语义状态，不参与排版。
-- **交互**：`component.ts` 持有键盘状态机、整屏帧缓存、在途推演的取消与 `dispose`；四个 `view-*` 模块只负责排版。
-- **领域**：`model.ts` 是问卷语义状态的唯一持有者——归一化、显隐快照、作答状态、推演插入与撤回、答卷编译与封套文本。
-- **协议**：`schema.ts` 声明入参，`sanitize.ts` 收敛不可信入参，`llm-texts.ts` 提供面向模型的英文协议文案，`expansion.ts` 组装推演请求并解析回复。
-- **资产与工具**：`layout.ts`（几何、图标、上限）、`format.ts`（视口与文本工具）、`i18n.ts` 与 `texts.ts`（语言资源装载与合并）、`theme.ts`（主题类型）、`novel-syntax.ts` 与 `novel-markdown.ts`（小说语法高亮）。
+源码在 `src/` 下按职责归入五个分类目录，唯一入口为 `src/index.ts`：
+
+- **入口**（`src/index.ts`）：只做守卫与分支编排，并装配推演执行器；不持有语义状态，不参与排版。
+- **交互与视图**（`src/ui/`）：`component.ts` 持有键盘状态机、整屏帧缓存、在途推演的取消与 `dispose`；`rows.ts`、`question.ts`、`editor.ts`、`summary.ts` 四个视图模块只负责排版。
+- **小说高亮**（`src/novel/`）：`syntax.ts` 与 `markdown.ts` 把小说台词与心理旁白转换为携带语义哨兵的行内代码，配合定制 Markdown 主题着色。
+- **领域与结果**（`src/domain/`）：`model.ts` 是问卷语义状态的唯一持有者——归一化、显隐快照、作答状态、推演插入与撤回、答卷编译与封套文本；`result.ts` 与 `card.ts` 负责工具结果构造与会话回放卡片渲染。
+- **协议与边界**（`src/protocol/`）：`schema.ts` 声明入参，`sanitize.ts` 收敛不可信入参，`prompts.ts` 提供面向模型的英文协议文案，`expansion.ts` 组装推演请求并解析回复。
+- **基础资产与工具**（`src/core/`）：`layout.ts`（几何、图标、上限）、`format.ts`（视口与文本工具）、`i18n.ts` 与 `texts.ts`（语言资源装载与合并）、`theme.ts`（主题类型）。
 
 ## 模块依赖
 
 ```mermaid
 graph TD
-  entry["入口 index.ts"]
-  interaction["交互 component.ts"]
-  views["视图 view-*.ts"]
-  novel["小说高亮 novel-syntax / novel-markdown"]
-  expansion["推演 expansion.ts"]
-  model["表单模型 model.ts"]
-  results["结果与卡片 tool-result / tool-card"]
-  contract["参数与协议 schema / sanitize / llm-texts"]
-  assets["资产与工具 layout / format / i18n / texts / theme"]
+  entry["入口 src/index.ts"]
+  interaction["交互 src/ui/component.ts"]
+  views["视图 src/ui/rows / question / editor / summary"]
+  novel["小说高亮 src/novel/syntax / markdown"]
+  expansion["推演 src/protocol/expansion.ts"]
+  model["表单模型 src/domain/model.ts"]
+  results["结果与卡片 src/domain/result / card"]
+  contract["参数与协议 src/protocol/schema / sanitize / prompts"]
+  assets["资产与工具 src/core/layout / format / i18n / texts / theme"]
 
   entry --> interaction
   entry --> expansion
@@ -59,7 +62,7 @@ graph TD
   interaction --> assets
 ```
 
-依赖只从上层指向下层：视图不导入 `component.ts`，`tool-result.ts` 与 `tool-card.ts` 不导入 `index.ts`，`layout.ts` 与 `theme.ts` 不导入插件内任何模块。
+依赖只从上层指向下层：视图不导入 `ui/component.ts`，`domain/result.ts` 与 `domain/card.ts` 不导入 `index.ts`，`core/layout.ts` 与 `core/theme.ts` 不导入插件内任何模块。
 
 ## 横向不变式
 
@@ -78,5 +81,5 @@ graph TD
 - **工具声明 `exposure: "model-only"`**：问卷是模型向作者提问的通道，嵌套调用会破坏独占界面；同时标注只读与封闭世界，供权限扩展判断。
 - **交互式界面的串行执行**：`executionMode: "sequential"`，多个表单不会同时挂载。
 - **不引入第三方依赖**：宿主的排版原语与 `typebox` 已覆盖需要，减少安装体积与版本冲突面。
-- **小说语法借哨兵转换**：`novel-markdown.ts` 把台词与心理旁白转换为携带语义哨兵的行内代码，由定制 Markdown 主题完成着色，复用宿主 `Markdown` 解析器。
-- **英文协议与本地化界面分离**：面向模型的描述、封套与推演提示词恒为英文并集中在 `llm-texts.ts`；作者界面文案取自 `lang/*.json`，规范语言为 `en_US`。
+- **小说语法借哨兵转换**：`novel/markdown.ts` 把台词与心理旁白转换为携带语义哨兵的行内代码，由定制 Markdown 主题完成着色，复用宿主 `Markdown` 解析器。
+- **英文协议与本地化界面分离**：面向模型的描述、封套与推演提示词恒为英文并集中在 `protocol/prompts.ts`；作者界面文案取自 `lang/*.json`，规范语言为 `en_US`。

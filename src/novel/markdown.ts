@@ -1,24 +1,24 @@
 /**
- * @file novel-markdown.ts
+ * @file novel/markdown.ts
  * @description 小说语法高亮：把 `「」` 与 `（）` 标注为携带哨兵的原生行内代码，折行与配色交给 Pi 原生 Markdown 引擎
  *
- * 语法模板表在 `novel-syntax.ts`；`theme.code` 回调兼作哨兵分类器，未命中即交还原生行内代码样式
+ * 语法模板表在 `syntax.ts`；`theme.code` 回调兼作哨兵分类器，未命中即交还原生行内代码样式
  * 不变量：输出剥离哨兵与新增反引号后与输入完全等价
  * 索引约定：下文「扁平索引 / 行内列索引」均为 UTF-16 码元下标
  */
 
 import { getMarkdownTheme } from "@earendil-works/pi-coding-agent";
 import { Markdown, type MarkdownTheme } from "@earendil-works/pi-tui";
-import { cleanText } from "./format.js";
-import type { MenuItem } from "./model.js";
+import { cleanText } from "../core/format.js";
+import { TEXTS } from "../core/texts.js";
+import type { Theme } from "../core/theme.js";
+import type { MenuItem } from "../domain/model.js";
 import {
   NOVEL_MARKER_PREFIX,
   NOVEL_TEMPLATE_BY_MARKER,
   NOVEL_TEMPLATE_BY_OPENER,
   type NovelSyntaxTemplate,
-} from "./novel-syntax.js";
-import { TEXTS } from "./texts.js";
-import type { Theme } from "./theme.js";
+} from "./syntax.js";
 
 /**
  * 基于 `getMarkdownTheme()` 定制小说预览主题；`code` 回调兼作哨兵分类器（命中即着色并剥离哨兵）

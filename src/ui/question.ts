@@ -1,23 +1,23 @@
 /**
- * @file view-question.ts
+ * @file ui/question.ts
  * @description 题目作答页的视图构建：题目标题区、内容预览区、作答区（选项、补充与切换）与提示区
  *
  * 只读取组件传入的视口状态并返回终端行，滚动位移与光标写入由组件在输入路径完成
  */
 
 import { visibleWidth } from "@earendil-works/pi-tui";
-import { pushWrapped } from "./format.js";
-import { LAYOUT_CONFIG } from "./layout.js";
+import { pushWrapped } from "../core/format.js";
+import { LAYOUT_CONFIG } from "../core/layout.js";
+import { TEXTS } from "../core/texts.js";
+import type { Theme } from "../core/theme.js";
 import {
   hasQuestionNote,
   type AskAuthorFormModel,
   type MenuItem,
   type NormalizedQuestion,
   type QuestionAnswerState,
-} from "./model.js";
-import { buildFullPreviewContentLines } from "./novel-markdown.js";
-import { TEXTS } from "./texts.js";
-import type { Theme } from "./theme.js";
+} from "../domain/model.js";
+import { buildFullPreviewContentLines } from "../novel/markdown.js";
 import {
   composePage,
   formatMenuItemRow,
@@ -26,7 +26,7 @@ import {
   type ButtonRect,
   type ButtonSpec,
   type RowRange,
-} from "./view-rows.js";
+} from "./rows.js";
 
 /** 预览缓存池容量上限（条目数），防止长会话下无界增长 */
 const PREVIEW_CACHE_CAPACITY = 32;

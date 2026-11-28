@@ -1,15 +1,15 @@
 /**
- * @file view-summary.ts
+ * @file ui/summary.ts
  * @description 答卷总览确认页的视图构建：题目标题区、答卷内容区、作答区按钮与提示区
  *
  * 内容构建器与提示构建器无状态；`SummaryView` 只持有按列宽与 `revision` 失效的内容行缓存
  */
 
-import { pushWrapped } from "./format.js";
-import { LAYOUT_CONFIG } from "./layout.js";
-import type { AskAuthorFormModel } from "./model.js";
-import { TEXTS } from "./texts.js";
-import type { Theme } from "./theme.js";
+import { pushWrapped } from "../core/format.js";
+import { LAYOUT_CONFIG } from "../core/layout.js";
+import { TEXTS } from "../core/texts.js";
+import type { Theme } from "../core/theme.js";
+import type { AskAuthorFormModel } from "../domain/model.js";
 import {
   composePage,
   renderButtonGroup,
@@ -17,7 +17,7 @@ import {
   type ButtonRect,
   type ButtonSpec,
   type RowRange,
-} from "./view-rows.js";
+} from "./rows.js";
 
 /**
  * 构建总览页提示区按键提示片段（可见题目数大于 1 时插入跳转题目提示）

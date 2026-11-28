@@ -9,21 +9,26 @@
 
 import type { AgentToolResult, ExtensionAPI, ExtensionToolContext } from "@earendil-works/pi-coding-agent";
 import { convertToLlm } from "@earendil-works/pi-coding-agent";
-import { AskAuthorComponent, type ExpansionService } from "./component.js";
-import { buildExpansionUserMessage, expansionContext, parseExpansionReply, type ExpansionRunner } from "./expansion.js";
-import { cleanOptional } from "./format.js";
-import { AdaptiveConditionError, AskAuthorFormModel, type AskAuthorResult } from "./model.js";
-import { AskAuthorParams } from "./schema.js";
-import { sanitizeAskAuthorArgs } from "./sanitize.js";
-import { TEXTS } from "./texts.js";
-import { renderCallCard, renderResultCard, type CallRenderState } from "./tool-card.js";
+import { cleanOptional } from "./core/format.js";
+import { TEXTS } from "./core/texts.js";
+import { renderCallCard, renderResultCard, type CallRenderState } from "./domain/card.js";
+import { AdaptiveConditionError, AskAuthorFormModel, type AskAuthorResult } from "./domain/model.js";
 import {
   createCancelledResult,
   createErrorResult,
   createRuntimeErrorResult,
   createSuccessResult,
   type AskAuthorToolResult,
-} from "./tool-result.js";
+} from "./domain/result.js";
+import {
+  buildExpansionUserMessage,
+  expansionContext,
+  parseExpansionReply,
+  type ExpansionRunner,
+} from "./protocol/expansion.js";
+import { sanitizeAskAuthorArgs } from "./protocol/sanitize.js";
+import { AskAuthorParams } from "./protocol/schema.js";
+import { AskAuthorComponent, type ExpansionService } from "./ui/component.js";
 
 /** 工具结果中携带的用量字段（结构与宿主 `AgentToolResult.usage` 一致） */
 type ToolUsage = NonNullable<AgentToolResult<unknown>["usage"]>;
@@ -296,7 +301,7 @@ export {
   type NormalizedOption,
   type NormalizedQuestion,
   type VisibilityCondition,
-} from "./model.js";
+} from "./domain/model.js";
 export {
   AskAuthorParams,
   ExpansionSchema,
@@ -309,18 +314,18 @@ export {
   type OptionAddition,
   type QuestionExpansionConfig,
   type RawParams,
-} from "./schema.js";
-export { sanitizeAskAuthorArgs, sanitizeExpansionPayload, type ExpansionContext } from "./sanitize.js";
+} from "./protocol/schema.js";
+export { sanitizeAskAuthorArgs, sanitizeExpansionPayload, type ExpansionContext } from "./protocol/sanitize.js";
 export {
   buildExpansionUserMessage,
   expansionContext,
   parseExpansionReply,
   type ExpansionRequest,
   type ExpansionRunner,
-} from "./expansion.js";
-export { TEXTS } from "./texts.js";
-export { ICONS, LAYOUT_CONFIG, MAX_OPTIONS, MAX_QUESTIONS } from "./layout.js";
-export { ACTIVE_LOCALE, detectLocale } from "./i18n.js";
-export { cleanOptional, cleanText, normalizeImeKey, padToVisibleWidth, safeLine } from "./format.js";
-export type { AskAuthorToolResult, ResultContext } from "./tool-result.js";
-export type { CallCardData, CallRenderState } from "./tool-card.js";
+} from "./protocol/expansion.js";
+export { TEXTS } from "./core/texts.js";
+export { ICONS, LAYOUT_CONFIG, MAX_OPTIONS, MAX_QUESTIONS } from "./core/layout.js";
+export { ACTIVE_LOCALE, detectLocale } from "./core/i18n.js";
+export { cleanOptional, cleanText, normalizeImeKey, padToVisibleWidth, safeLine } from "./core/format.js";
+export type { AskAuthorToolResult, ResultContext } from "./domain/result.js";
+export type { CallCardData, CallRenderState } from "./domain/card.js";

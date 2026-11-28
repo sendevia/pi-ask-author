@@ -1,5 +1,5 @@
 /**
- * @file tool-card.ts
+ * @file domain/card.ts
  * @description 会话回放卡片渲染：`renderCall` 的摘要派生与 `renderResult` 的三态明细
  *
  * 调用摘要与执行路径共用 `sanitizeAskAuthorArgs`；卡片只存与主题无关的派生数据，着色每帧现算
@@ -7,12 +7,12 @@
 
 import type { ToolDefinition, ToolRenderResultOptions } from "@earendil-works/pi-coding-agent";
 import { Text, type Component } from "@earendil-works/pi-tui";
+import { TEXTS } from "../core/texts.js";
+import type { Theme } from "../core/theme.js";
+import { sanitizeAskAuthorArgs } from "../protocol/sanitize.js";
+import type { AskAuthorParams, RawParams } from "../protocol/schema.js";
 import type { AskAuthorResult } from "./model.js";
-import type { AskAuthorParams, RawParams } from "./schema.js";
-import { sanitizeAskAuthorArgs } from "./sanitize.js";
-import { TEXTS } from "./texts.js";
-import type { Theme } from "./theme.js";
-import { formatAnswerLine, narrowResultDetails, type AskAuthorToolResult } from "./tool-result.js";
+import { formatAnswerLine, narrowResultDetails, type AskAuthorToolResult } from "./result.js";
 
 /** 调用卡片派生数据（与主题无关；颜色每帧按当前主题现场计算） */
 export interface CallCardData {

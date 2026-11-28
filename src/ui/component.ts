@@ -1,8 +1,8 @@
 /**
- * @file component.ts
+ * @file ui/component.ts
  * @description `ask_author` 交互式 TUI 主组件（作答页、总览页与补充说明编辑页）
  *
- * - 本组件只负责交互状态机、按键与鼠标路由、整屏帧缓存，排版由 `view-*` 构建
+ * - 本组件只负责交互状态机、按键与鼠标路由、整屏帧缓存，排版由 `rows` / `question` / `editor` / `summary` 构建
  * - 作答界面挂载为整屏覆盖层；多级缓存分别按尺寸、`revision` 与状态突变失效
  * - 推演只采纳最新请求，在途期间页面换成占位并暂停作答输入
  * - `render()` 及其可达被调函数禁止写入语义状态，滚动位移只在输入路径归一化
@@ -20,9 +20,10 @@ import {
   type TuiMouseEvent,
   type TuiMouseEventResult,
 } from "@earendil-works/pi-tui";
-import { clamp, clampWindowOffset, normalizeImeKey, safeLine } from "./format.js";
-import type { ExpansionRequest, ExpansionRunner } from "./expansion.js";
-import { LAYOUT_CONFIG } from "./layout.js";
+import { clamp, clampWindowOffset, normalizeImeKey, safeLine } from "../core/format.js";
+import { LAYOUT_CONFIG } from "../core/layout.js";
+import { TEXTS } from "../core/texts.js";
+import type { Theme } from "../core/theme.js";
 import {
   AskAuthorFormModel,
   type AskAuthorResult,
@@ -30,18 +31,17 @@ import {
   type ExpansionRecord,
   type MenuItem,
   type NormalizedQuestion,
-} from "./model.js";
-import type { ExpansionPayload, InsertPosition } from "./schema.js";
-import { TEXTS } from "./texts.js";
-import type { Theme } from "./theme.js";
-import { renderEditorPage, type EditorArea } from "./view-editor.js";
+} from "../domain/model.js";
+import type { ExpansionRequest, ExpansionRunner } from "../protocol/expansion.js";
+import type { ExpansionPayload, InsertPosition } from "../protocol/schema.js";
+import { renderEditorPage, type EditorArea } from "./editor.js";
 import {
   QuestionView,
   type MenuItemHit,
   type PreviewViewport,
   type QuestionActionHit,
   type QuestionActionKind,
-} from "./view-question.js";
+} from "./question.js";
 import {
   buildTabLines,
   optionLabelOf,
@@ -50,8 +50,8 @@ import {
   type RowRange,
   type TabBar,
   type TabSegment,
-} from "./view-rows.js";
-import { SummaryView, type SummaryViewport } from "./view-summary.js";
+} from "./rows.js";
+import { SummaryView, type SummaryViewport } from "./summary.js";
 
 /**
  * 实时推演服务（由入口层装配模型调用；缺省表示本表单不推演）
@@ -62,6 +62,15 @@ export interface ExpansionService {
   /** 调用方给出的长期推演方向指示（可选） */
   readonly guidance?: string;
 }
+
+/** 鼠标按下时的命中目标：按下与松开落在同一目标上才触发点击动作 */
+type PressedTarget =
+  | { readonly kind: "tab"; readonly tab: number }
+  | { readonly kind: "item"; readonly index: number }
+  | { readonly kind: "action"; readonly action: QuestionActionKind }
+  | { readonly kind: "formNote" }
+  | { readonly kind: "submit" }
+  | { readonly kind: "back" };
 
 /**
  * `ask_author` 交互式 TUI 组件（问卷作答与答卷总览）
@@ -170,12 +179,7 @@ export class AskAuthorComponent implements Component, Focusable {
   private editorBackHit?: ButtonRect;
 
   /** 鼠标按下时的目标（按下与松开同在该目标上才算一次点击） */
-  private mousePressedTab?: number;
-  private mousePressedItem?: number;
-  private mousePressedFormNote?: boolean;
-  private mousePressedSubmit?: boolean;
-  private mousePressedAction?: QuestionActionKind;
-  private mousePressedBack?: boolean;
+  private pressedTarget?: PressedTarget;
 
   /** 当前编辑器针对的目标（题目整体或指定选项） */
   private editTarget?: EditTarget;
@@ -298,6 +302,13 @@ export class AskAuthorComponent implements Component, Focusable {
     this.clearDerivedCaches();
     this.previewViewportObservation = undefined;
     this.previewBandObservation = undefined;
+    this.resetHitAreas();
+    this.pressedTarget = undefined;
+    this.clearFrameCaches();
+  }
+
+  /** 清空当前帧记录的全部鼠标命中区与总览/编辑器观察值 */
+  private resetHitAreas(): void {
     this.tabHitAreas = undefined;
     this.menuHitAreas = undefined;
     this.actionHitAreas = undefined;
@@ -306,13 +317,6 @@ export class AskAuthorComponent implements Component, Focusable {
     this.summarySubmitHit = undefined;
     this.editorAreaObservation = undefined;
     this.editorBackHit = undefined;
-    this.mousePressedTab = undefined;
-    this.mousePressedItem = undefined;
-    this.mousePressedFormNote = undefined;
-    this.mousePressedSubmit = undefined;
-    this.mousePressedAction = undefined;
-    this.mousePressedBack = undefined;
-    this.clearFrameCaches();
   }
 
   /** 清空整屏帧缓存（列宽 / 行数键；不触发重绘） */
@@ -839,13 +843,13 @@ export class AskAuthorComponent implements Component, Focusable {
       const back = this.editorBackHit;
       const onBack = back !== undefined && AskAuthorComponent.withinRect(back, event.y, event.x);
       if (event.button === "left" && event.type === "press") {
-        this.mousePressedBack = onBack;
+        this.pressedTarget = onBack ? { kind: "back" } : undefined;
         return onBack ? { handled: true } : undefined;
       }
       if (event.type !== "click" || event.button !== "left") return undefined;
-      const pressedBack = this.mousePressedBack;
-      this.mousePressedBack = undefined;
-      if (pressedBack && onBack) {
+      const pressed = this.pressedTarget;
+      this.pressedTarget = undefined;
+      if (pressed?.kind === "back" && onBack) {
         this.requestEditorExit();
         return { handled: true };
       }
@@ -872,66 +876,72 @@ export class AskAuthorComponent implements Component, Focusable {
 
     if (event.button !== "left" || (event.type !== "press" && event.type !== "click")) return undefined;
 
+    const target = this.hitTargetAt(event.y, event.x);
     if (event.type === "press") {
-      const tab = this.tabAt(event.y, event.x);
-      if (tab !== undefined) {
-        this.mousePressedTab = tab;
-        return { handled: true };
-      }
-      const action = this.actionButtonAt(event.y, event.x);
-      if (action) {
-        this.mousePressedAction = action;
-        return { handled: true };
-      }
-      if (this.formNoteAt(event.y, event.x)) {
-        this.mousePressedFormNote = true;
-        return { handled: true };
-      }
-      if (this.submitButtonAt(event.y, event.x)) {
-        this.mousePressedSubmit = true;
-        return { handled: true };
-      }
-      const itemIndex = this.menuItemAt(event.y);
-      if (itemIndex === undefined) return undefined;
-      this.mousePressedItem = itemIndex;
-      this.moveCursor(itemIndex);
+      this.pressedTarget = target;
+      if (!target) return undefined;
+      if (target.kind === "item") this.moveCursor(target.index);
       return { handled: true };
     }
 
-    const pressedTab = this.mousePressedTab;
-    const pressedItem = this.mousePressedItem;
-    const pressedFormNote = this.mousePressedFormNote;
-    const pressedSubmit = this.mousePressedSubmit;
-    const pressedAction = this.mousePressedAction;
-    this.mousePressedTab = undefined;
-    this.mousePressedItem = undefined;
-    this.mousePressedFormNote = undefined;
-    this.mousePressedSubmit = undefined;
-    this.mousePressedAction = undefined;
+    const pressed = this.pressedTarget;
+    this.pressedTarget = undefined;
+    if (!pressed || !target || !AskAuthorComponent.sameTarget(pressed, target)) return undefined;
 
-    if (pressedTab !== undefined && this.tabAt(event.y, event.x) === pressedTab) {
-      this.switchTab(pressedTab);
-      return { handled: true };
+    switch (target.kind) {
+      case "tab":
+        this.switchTab(target.tab);
+        return { handled: true };
+      case "action":
+        this.runQuestionAction(target.action);
+        return { handled: true };
+      case "formNote":
+        this.openFormNoteEditor();
+        return { handled: true };
+      case "submit":
+        this.submitOrJumpToUnfinished();
+        return { handled: true };
+      case "item": {
+        const q = this.model.getQuestion(this.currentTab);
+        const item = this.currentMenuItem();
+        if (q && item) this.activateMenuItem(item, q);
+        return { handled: true };
+      }
+      case "back":
+        return undefined;
     }
-    if (pressedAction && this.actionButtonAt(event.y, event.x) === pressedAction) {
-      this.runQuestionAction(pressedAction);
-      return { handled: true };
-    }
-    if (pressedFormNote && this.formNoteAt(event.y, event.x)) {
-      this.openFormNoteEditor();
-      return { handled: true };
-    }
-    if (pressedSubmit && this.submitButtonAt(event.y, event.x)) {
-      this.submitOrJumpToUnfinished();
-      return { handled: true };
-    }
-    if (pressedItem !== undefined && this.menuItemAt(event.y) === pressedItem) {
-      const q = this.model.getQuestion(this.currentTab);
-      const item = this.currentMenuItem();
-      if (q && item) this.activateMenuItem(item, q);
-      return { handled: true };
-    }
+  }
+
+  /**
+   * 判定非输入模式下的指针坐标命中的点击目标
+   * @param y - 组件内行号
+   * @param x - 组件内列号
+   * @returns 命中的目标；未落在可点击区域时为 undefined
+   */
+  private hitTargetAt(y: number, x: number): PressedTarget | undefined {
+    const tab = this.tabAt(y, x);
+    if (tab !== undefined) return { kind: "tab", tab };
+    const action = this.actionButtonAt(y, x);
+    if (action) return { kind: "action", action };
+    if (this.formNoteAt(y, x)) return { kind: "formNote" };
+    if (this.submitButtonAt(y, x)) return { kind: "submit" };
+    const itemIndex = this.menuItemAt(y);
+    if (itemIndex !== undefined) return { kind: "item", index: itemIndex };
     return undefined;
+  }
+
+  /**
+   * 判定按下与松开是否命中同一目标
+   * @param a - 按下目标
+   * @param b - 松开目标
+   * @returns 种类与标识完全一致时为 true
+   */
+  private static sameTarget(a: PressedTarget, b: PressedTarget): boolean {
+    if (a.kind !== b.kind) return false;
+    if (a.kind === "tab" && b.kind === "tab") return a.tab === b.tab;
+    if (a.kind === "item" && b.kind === "item") return a.index === b.index;
+    if (a.kind === "action" && b.kind === "action") return a.action === b.action;
+    return true;
   }
 
   /**
@@ -1042,20 +1052,13 @@ export class AskAuthorComponent implements Component, Focusable {
 
     const currentItem = this.currentMenuItem();
 
-    if (matchesKey(data, Key.ctrl("s"))) {
+    if (matchesKey(data, Key.ctrl("s")) || matchesKey(data, Key.enter)) {
+      // 单选与多选统一：Enter / Ctrl+S = 选定并确认前进（多选未达下限时阻断），空格负责 toggle 勾选
       this.confirmAndAdvance(currentItem, q);
       return;
     }
 
-    if (matchesKey(data, Key.enter)) {
-      // 单选与多选统一：Enter = 选定并确认前进（多选未达下限时阻断），空格负责 toggle 勾选
-      this.confirmAndAdvance(currentItem, q);
-      return;
-    }
-
-    if (!currentItem) return;
-
-    if (matchesKey(data, Key.space)) {
+    if (currentItem && matchesKey(data, Key.space)) {
       this.activateMenuItem(currentItem, q);
     }
   }
@@ -1314,18 +1317,11 @@ export class AskAuthorComponent implements Component, Focusable {
 
     const lines: string[] = [];
     const tabBar = this.tabBar(layoutWidth);
+    this.resetHitAreas();
 
     if (this.expansionPending) {
       // 推演在途占位页也是整页：在途期间不响应鼠标点击
       lines.push(...renderExpansionPlaceholderPage(this.theme, tabBar.lines, layoutWidth, renderHeight));
-      this.tabHitAreas = undefined;
-      this.menuHitAreas = undefined;
-      this.actionHitAreas = undefined;
-      this.summaryViewportObservation = undefined;
-      this.summaryFormNoteHit = undefined;
-      this.summarySubmitHit = undefined;
-      this.editorAreaObservation = undefined;
-      this.editorBackHit = undefined;
     } else if (this.inputMode) {
       // 编辑页同样整页占满：内容区放编辑框，作答区为空，提示区贴底（总览页的整卷补充也走本分支）
       const page = renderEditorPage(
@@ -1340,12 +1336,6 @@ export class AskAuthorComponent implements Component, Focusable {
         renderHeight,
       );
       lines.push(...page.lines);
-      this.tabHitAreas = undefined;
-      this.menuHitAreas = undefined;
-      this.actionHitAreas = undefined;
-      this.summaryViewportObservation = undefined;
-      this.summaryFormNoteHit = undefined;
-      this.summarySubmitHit = undefined;
       this.editorAreaObservation = page.editorArea;
       this.editorBackHit = page.backButton;
     } else if (this.isSubmitTab) {
@@ -1359,13 +1349,9 @@ export class AskAuthorComponent implements Component, Focusable {
       );
       lines.push(...view.lines);
       this.tabHitAreas = { band: view.tabRange, segments: tabBar.segments };
-      this.menuHitAreas = undefined;
-      this.actionHitAreas = undefined;
       this.summaryViewportObservation = view.viewport;
       this.summaryFormNoteHit = view.formNoteButton;
       this.summarySubmitHit = view.submitButton;
-      this.editorAreaObservation = undefined;
-      this.editorBackHit = undefined;
     } else {
       // 作答页自带四个区域：标题区、内容预览区、作答区与提示区
       const view = this.questionView.render(
@@ -1387,11 +1373,6 @@ export class AskAuthorComponent implements Component, Focusable {
       if (view.tabRange) this.tabHitAreas = { band: view.tabRange, segments: tabBar.segments };
       this.menuHitAreas = view.menuItemHits;
       this.actionHitAreas = view.actionButtonHits;
-      this.summaryViewportObservation = undefined;
-      this.summaryFormNoteHit = undefined;
-      this.summarySubmitHit = undefined;
-      this.editorAreaObservation = undefined;
-      this.editorBackHit = undefined;
     }
 
     // 3. 最终行宽保护（按调用方真实列宽截断）与缓存写入

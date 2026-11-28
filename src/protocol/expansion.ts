@@ -1,5 +1,5 @@
 /**
- * @file expansion.ts
+ * @file protocol/expansion.ts
  * @description 实时推演协议：请求载荷构建、模型回复解析与推演结果的不可信边界收敛
  *
  * - 请求载荷完整携带表单当前进度，便于模型接着现有进度续写
@@ -7,10 +7,10 @@
  * - 载荷过滤全部委托 `sanitize.ts`，本模块不重复实现清洗规则
  */
 
-import type { AskAuthorFormModel, NormalizedQuestion, VisibilityCondition } from "./model.js";
+import { TEXTS } from "../core/texts.js";
+import type { AskAuthorFormModel, NormalizedQuestion, VisibilityCondition } from "../domain/model.js";
 import { sanitizeExpansionPayload, type ExpansionContext } from "./sanitize.js";
 import type { ExpansionPayload } from "./schema.js";
-import { TEXTS } from "./texts.js";
 
 /** 一次推演的输入：表单模型、触发题目与本次新增上限 */
 export interface ExpansionRequest {

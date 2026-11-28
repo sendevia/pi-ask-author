@@ -8,7 +8,7 @@ parent: ask-author-architecture
 
 # 交互组件与键盘状态机
 
-`src/component.ts` 的 `AskAuthorComponent` 是 `ctx.ui.custom` 挂载的那个组件。
+`src/ui/component.ts` 的 `AskAuthorComponent` 是 `ctx.ui.custom` 挂载的那个组件。
 
 ## 责任
 
@@ -25,7 +25,7 @@ parent: ask-author-architecture
 ## 边界
 
 - 只经模型的读接口判断显隐与选中（`getVisibleQuestionIndices` / `isQuestionVisible` / `isOptionVisible` / `getSelectedIndex` / `getSelectedIndices`），不重算条件。
-- 排版全部委托 `view-*`；不直接书写界面文案与几何数值。
+- 排版全部委托 `ui/rows`、`ui/question`、`ui/editor`、`ui/summary`；不直接书写界面文案与几何数值。
 - `render` 及其可达函数不写语义状态；滚动位移的归一化只发生在输入路径，透明备忘缓存不在禁止之列。
 
 ## 决策

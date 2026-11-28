@@ -1,11 +1,11 @@
 /**
- * @file llm-texts.ts
+ * @file protocol/prompts.ts
  * @description 面向大语言模型的协议文案：工具元数据、字段描述、推演提示词与返回封套模板
  *
  * 全部恒为英文，不参与语言切换；唯一非英文片段是封套的选项标签定界符 `【】`
  */
 
-import { MAX_OPTIONS, MAX_QUESTIONS } from "./layout.js";
+import { MAX_OPTIONS, MAX_QUESTIONS } from "../core/layout.js";
 
 /** 面向大模型的提示词、字段描述与返回封套：固定英文，提升前缀缓存命中率 */
 export const LLM_TEXTS = {

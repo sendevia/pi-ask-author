@@ -8,7 +8,7 @@ parent: ask-author-architecture
 
 # 问卷数据模型与状态机
 
-`src/model.ts` 是问卷语义状态的唯一持有者，`AskAuthorFormModel` 是它的实现。
+`src/domain/model.ts` 是问卷语义状态的唯一持有者，`AskAuthorFormModel` 是它的实现。
 
 ## 责任
 
@@ -21,12 +21,12 @@ parent: ask-author-architecture
 
 ## 边界
 
-- 依赖 `format` / `layout` / `schema` / `texts`；不引用 `Theme` 与任何 TUI 组件，版面全部上移组件层。
+- 依赖 `core/format` / `core/layout` / `protocol/schema` / `core/texts`；不引用 `Theme` 与任何 TUI 组件，版面全部上移组件层。
 - 内部作答状态使用 0-based 索引，对外答卷使用 1-based 编号。
 - 越界写入、非法条件与未知题目就地抛出，由入口层映射为结构化错误。
 
 ## 决策
 
-- 构建期再做一次字段兜底，绕过 `sanitize.ts` 直接构造模型时同样安全。
+- 构建期再做一次字段兜底，绕过 `protocol/sanitize.ts` 直接构造模型时同样安全。
 - 封套中自动生成的占位标题与标签替换为英文（`Question N` / `Option N`），作者界面保留本地化占位；作者自己写的文本原样保留，不做翻译。
 - 封套前缀与结构保持字节稳定，提高模型前缀缓存命中率。
