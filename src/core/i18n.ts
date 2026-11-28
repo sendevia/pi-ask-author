@@ -76,9 +76,7 @@ export function detectLocale(environment: Record<string, string | undefined>, sy
   const candidates: string[] = [];
   for (const name of LOCALE_ENV_NAMES) {
     const value = environment[name];
-    if (!value) continue;
-    if (name === "LANGUAGE") candidates.push(...value.split(":"));
-    else candidates.push(value);
+    if (value) candidates.push(...(name === "LANGUAGE" ? value.split(":") : [value]));
   }
   if (systemLocale) candidates.push(systemLocale);
 
@@ -86,11 +84,11 @@ export function detectLocale(environment: Record<string, string | undefined>, sy
   for (const candidate of candidates) {
     const normalized = normalizeLocale(candidate);
     if (!normalized) continue;
-    const exact = available.find((locale) => locale.toLowerCase() === normalized);
-    if (exact) return exact;
     const language = normalized.split("_")[0];
-    const family = available.find((locale) => locale.toLowerCase().split("_")[0] === language);
-    if (family) return family;
+    const match =
+      available.find((locale) => locale.toLowerCase() === normalized) ??
+      available.find((locale) => locale.toLowerCase().split("_")[0] === language);
+    if (match) return match;
   }
   return CANONICAL_LOCALE;
 }

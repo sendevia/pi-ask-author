@@ -158,19 +158,30 @@ function coerceOptions(value: unknown): QuestionOption[] {
     if (typeof item === "string") return { label: item.trim() || TEXTS.fallbacks.autoOptionLabel(idx + 1) };
     // 不可信边界收窄：守卫失败项回退自动标签，不读属性
     if (!isPlainRecord(item)) return { label: TEXTS.fallbacks.autoOptionLabel(idx + 1) };
-    const o = item;
-
-    // 别名表：标签 / 推演 / 草稿 / 批注占位 / 显示条件各按优先级命中
     return {
       label:
-        cleanOptional(pickString(o, ["label", "name", "title", "text", "value", "choice"])) ??
+        cleanOptional(pickString(item, ["label", "name", "title", "text", "value", "choice"])) ??
         TEXTS.fallbacks.autoOptionLabel(idx + 1),
-      description: cleanOptional(pickString(o, ["description", "desc", "reason", "rationale", "deduction"])),
-      preview: cleanOptional(pickString(o, ["preview", "draft", "scene", "content"])),
-      customPlaceholder: cleanOptional(pickString(o, ["customPlaceholder", "placeholder"])),
-      showIf: coerceShowIf(o.showIf ?? o.when ?? o.visibleIf),
+      description: cleanOptional(pickString(item, ["description", "desc", "reason", "rationale", "deduction"])),
+      preview: cleanOptional(pickString(item, ["preview", "draft", "scene", "content"])),
+      customPlaceholder: cleanOptional(pickString(item, ["customPlaceholder", "placeholder"])),
+      showIf: coerceShowIf(item.showIf ?? item.when ?? item.visibleIf),
     };
   });
+}
+
+/**
+ * 提取推演对象中的方向指示与插入位置
+ * @param record - 已确认为普通对象的推演配置
+ * @returns 仅含 `guidance` / `insert` 的配置对象
+ */
+function extractExpansionFields(record: LooseRecord): { guidance?: string; insert?: InsertPosition } {
+  const config: { guidance?: string; insert?: InsertPosition } = {};
+  const guidance = cleanOptional(pickString(record, ["guidance", "instructions", "hint"]));
+  if (guidance) config.guidance = guidance;
+  const insert = coerceInsertPosition(record.insert ?? record.position);
+  if (insert !== undefined) config.insert = insert;
+  return config;
 }
 
 /**
@@ -180,17 +191,11 @@ function coerceOptions(value: unknown): QuestionOption[] {
  */
 function coerceQuestionExpansion(value: unknown): QuestionInput["expansion"] {
   if (value === undefined) return undefined;
-  if (typeof value === "boolean") return value;
-  const parsed = parseJson(value);
+  const parsed = typeof value === "boolean" ? value : parseJson(value);
   if (typeof parsed === "boolean") return parsed;
   if (!isPlainRecord(parsed)) return undefined;
   if (parsed.enabled !== undefined && !parseBooleanValue(parsed.enabled, true)) return false;
-  const config: NonNullable<Exclude<QuestionInput["expansion"], boolean>> = {};
-  const guidance = cleanOptional(pickString(parsed, ["guidance", "instructions", "hint"]));
-  if (guidance) config.guidance = guidance;
-  const insert = coerceInsertPosition(parsed.insert ?? parsed.position);
-  if (insert !== undefined) config.insert = insert;
-  return config;
+  return extractExpansionFields(parsed);
 }
 
 /**
@@ -199,7 +204,7 @@ function coerceQuestionExpansion(value: unknown): QuestionInput["expansion"] {
  * @returns 形如单题时为 true；非对象、`null` 与批量容器恒为 false
  */
 function isQuestionLike(value: unknown): value is LooseRecord {
-  if (typeof value !== "object" || value === null || "questions" in value) return false;
+  if (!isPlainRecord(value) || "questions" in value) return false;
   return "options" in value || "choices" in value || "items" in value || "question" in value || "prompt" in value;
 }
 
@@ -213,28 +218,25 @@ function sanitizeQuestionEntry(value: unknown, index: number): QuestionInput {
   if (typeof value === "string") {
     return { title: value, options: withDefaultOption([]) };
   }
-  // 不可信边界收窄：经运行时守卫后按普通对象读取别名，非对象条目回退自动标题与默认选项
   if (!isPlainRecord(value)) {
     return { title: TEXTS.fallbacks.autoQuestionTitle(index + 1), options: withDefaultOption([]) };
   }
-  const o = value;
-
   return {
-    id: pickString(o, ["id"]),
+    id: pickString(value, ["id"]),
     title:
-      cleanOptional(pickString(o, ["title", "question", "prompt", "query", "heading"])) ??
+      cleanOptional(pickString(value, ["title", "question", "prompt", "query", "heading"])) ??
       TEXTS.fallbacks.autoQuestionTitle(index + 1),
-    tabLabel: cleanOptional(pickString(o, ["tabLabel", "tabTitle", "tab"])),
-    description: cleanOptional(pickString(o, ["description", "desc", "rationale"])),
-    multiSelect: parseBooleanValue(o.multiSelect, false),
-    minSelect: sanitizeMinSelect(o.minSelect),
-    maxSelect: sanitizeMaxSelect(o.maxSelect),
-    allowEmpty: parseBooleanValue(o.allowEmpty, false),
-    options: withDefaultOption(coerceOptions(o.options ?? o.choices ?? o.items)),
-    allowCustom: parseBooleanValue(o.allowCustom, true),
-    customPlaceholder: pickString(o, ["customPlaceholder", "placeholder"]),
-    showIf: coerceShowIf(o.showIf ?? o.when ?? o.visibleIf),
-    expansion: coerceQuestionExpansion(o.expansion ?? o.expand),
+    tabLabel: cleanOptional(pickString(value, ["tabLabel", "tabTitle", "tab"])),
+    description: cleanOptional(pickString(value, ["description", "desc", "rationale"])),
+    multiSelect: parseBooleanValue(value.multiSelect, false),
+    minSelect: sanitizeMinSelect(value.minSelect),
+    maxSelect: sanitizeMaxSelect(value.maxSelect),
+    allowEmpty: parseBooleanValue(value.allowEmpty, false),
+    options: withDefaultOption(coerceOptions(value.options ?? value.choices ?? value.items)),
+    allowCustom: parseBooleanValue(value.allowCustom, true),
+    customPlaceholder: pickString(value, ["customPlaceholder", "placeholder"]),
+    showIf: coerceShowIf(value.showIf ?? value.when ?? value.visibleIf),
+    expansion: coerceQuestionExpansion(value.expansion ?? value.expand),
   };
 }
 
@@ -286,14 +288,24 @@ function coerceInsertPosition(value: unknown): InsertPosition | undefined {
 function coerceExpansion(value: unknown): ExpansionConfig | undefined {
   const parsed = parseJson(value);
   if (!isPlainRecord(parsed)) return undefined;
-  const config: ExpansionConfig = {};
+  const config: ExpansionConfig = extractExpansionFields(parsed);
   const maxQuestions = parseIntegerValue(parsed.maxQuestions);
   if (maxQuestions !== undefined) config.maxQuestions = Math.min(Math.max(1, maxQuestions), MAX_QUESTIONS);
-  const guidance = cleanOptional(pickString(parsed, ["guidance", "instructions", "hint"]));
-  if (guidance) config.guidance = guidance;
-  const insert = coerceInsertPosition(parsed.insert ?? parsed.position);
-  if (insert !== undefined) config.insert = insert;
   return config;
+}
+
+/**
+ * 按选项标签去重选项数组，保留首次出现或不在已知集合中的选项
+ * @param options - 待过滤的选项列表
+ * @param seen - 已占用的标签集合（原地登记新标签）
+ * @returns 去重后的选项列表
+ */
+function filterUniqueOptions(options: QuestionOption[], seen: Set<string>): QuestionOption[] {
+  return options.filter((option) => {
+    if (seen.has(option.label)) return false;
+    seen.add(option.label);
+    return true;
+  });
 }
 
 /**
@@ -327,57 +339,38 @@ export function sanitizeAskAuthorArgs(args: unknown): RawParams {
   }
 
   // 0. 权威对象：浅拷贝外层后解开 `raw` 包装（载荷可用时整体替换外层）
-  const p: LooseRecord = unwrapRawPayload({ ...source });
+  const p = unwrapRawPayload({ ...source });
 
   // 1. 表单标题别名链：formTitle → title / taskTitle → 缺省兜底（aliasFormTitle 留作平铺题干回退）
-  const aliasFormTitle: string | undefined = cleanOptional(pickString(p, ["title", "taskTitle"]));
-  const formTitle: string =
-    cleanOptional(pickString(p, ["formTitle"])) ?? aliasFormTitle ?? TEXTS.fallbacks.defaultFormTitle;
+  const aliasFormTitle = cleanOptional(pickString(p, ["title", "taskTitle"]));
+  const formTitle = cleanOptional(pickString(p, ["formTitle"])) ?? aliasFormTitle ?? TEXTS.fallbacks.defaultFormTitle;
 
   // 2. 规范化 questions 数组（兼容 questions / form / survey 容器键；空列表视为未提供）
-  const questions: QuestionInput[] | undefined = normalizeQuestions(p.questions ?? p.form ?? p.survey);
+  const questions = normalizeQuestions(p.questions ?? p.form ?? p.survey);
 
   // 3. 规范化单题平铺候选选项（兼容 options / choices / items 容器键，任一键存在即视为平铺模式）
-  const rawFlatOptions: unknown = p.options ?? p.choices ?? p.items;
-  const hasFlatOptions: boolean = p.options !== undefined || p.choices !== undefined || p.items !== undefined;
-  const options: QuestionOption[] | undefined = hasFlatOptions
-    ? withDefaultOption(coerceOptions(rawFlatOptions))
-    : undefined;
+  const rawFlatOptions = p.options ?? p.choices ?? p.items;
+  const hasFlatOptions = p.options !== undefined || p.choices !== undefined || p.items !== undefined;
+  const options = hasFlatOptions ? withDefaultOption(coerceOptions(rawFlatOptions)) : undefined;
 
   // 4. 题干回退链：question → prompt 别名 →（平铺模式下）title 别名
-  const question: string | undefined = resolveFlatQuestion(p.question, p.prompt, aliasFormTitle, hasFlatOptions);
+  const question = resolveFlatQuestion(p.question, p.prompt, aliasFormTitle, hasFlatOptions);
 
-  // 5. 平铺模式标量字段收敛：缺省字段保持 undefined，可选性由 Schema 裁决
-  const description: string | undefined = pickString(p, ["description"]);
-  const multiSelect: boolean | undefined =
-    p.multiSelect === undefined ? undefined : parseBooleanValue(p.multiSelect, false);
-  const minSelect: number | undefined = p.minSelect === undefined ? undefined : sanitizeMinSelect(p.minSelect);
-  const maxSelect: number | undefined = p.maxSelect === undefined ? undefined : sanitizeMaxSelect(p.maxSelect);
-  const allowEmpty: boolean | undefined =
-    p.allowEmpty === undefined ? undefined : parseBooleanValue(p.allowEmpty, false);
-  const allowCustom: boolean | undefined =
-    p.allowCustom === undefined ? undefined : parseBooleanValue(p.allowCustom, true);
-  const customPlaceholder: string | undefined = pickString(p, ["customPlaceholder"]);
-
-  // 6. 实时推演配置（缺省保持 undefined，视为不推演）
-  const expansion: ExpansionConfig | undefined = p.expansion === undefined ? undefined : coerceExpansion(p.expansion);
-
-  // 7. 白名单收敛：仅保留 `RawParams` 声明的字段（键序与 Schema 一致）
-  const sanitized: RawParams = {
+  // 5. 白名单收敛：仅保留 `RawParams` 声明的字段（键序与 Schema 一致）
+  return {
     formTitle,
-    description,
-    expansion,
+    description: pickString(p, ["description"]),
+    expansion: p.expansion === undefined ? undefined : coerceExpansion(p.expansion),
     questions,
     question,
-    multiSelect,
-    minSelect,
-    maxSelect,
-    allowEmpty,
+    multiSelect: p.multiSelect === undefined ? undefined : parseBooleanValue(p.multiSelect, false),
+    minSelect: p.minSelect === undefined ? undefined : sanitizeMinSelect(p.minSelect),
+    maxSelect: p.maxSelect === undefined ? undefined : sanitizeMaxSelect(p.maxSelect),
+    allowEmpty: p.allowEmpty === undefined ? undefined : parseBooleanValue(p.allowEmpty, false),
     options,
-    allowCustom,
-    customPlaceholder,
+    allowCustom: p.allowCustom === undefined ? undefined : parseBooleanValue(p.allowCustom, true),
+    customPlaceholder: pickString(p, ["customPlaceholder"]),
   };
-  return sanitized;
 }
 
 /** 推演载荷的归集上下文：表单已声明的题目 ID 与各题已有选项标签 */
@@ -407,12 +400,7 @@ export function sanitizeExpansionPayload(value: unknown, context: ExpansionConte
 
     const question = sanitizeQuestionEntry(entry, questions.length);
     // 同一题目内重复标签会破坏按标签定位的显示条件，保留首次出现
-    const labels = new Set<string>();
-    question.options = question.options.filter((option) => {
-      if (labels.has(option.label)) return false;
-      labels.add(option.label);
-      return true;
-    });
+    question.options = filterUniqueOptions(question.options, new Set<string>());
     // 与既有题目 ID 冲突的新题目重新派生 ID，避免 showIf 引用歧义
     if (question.id !== undefined && usedQuestionIds.has(question.id)) question.id = undefined;
     if (question.id !== undefined) usedQuestionIds.add(question.id);
@@ -426,12 +414,10 @@ export function sanitizeExpansionPayload(value: unknown, context: ExpansionConte
     if (!questionId) continue;
     const declared = context.optionLabels.get(questionId);
     if (!declared) continue;
-    const labels = new Set(declared);
-    const options = coerceOptions(entry.options ?? entry.choices ?? entry.items).filter((option) => {
-      if (labels.has(option.label)) return false;
-      labels.add(option.label);
-      return true;
-    });
+    const options = filterUniqueOptions(
+      coerceOptions(entry.options ?? entry.choices ?? entry.items),
+      new Set(declared),
+    );
     if (options.length > 0) optionAdditions.push({ questionId, options });
   }
 

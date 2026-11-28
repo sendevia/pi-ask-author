@@ -6,7 +6,7 @@
  */
 
 import { truncateToWidth, visibleWidth, wrapTextWithAnsi } from "@earendil-works/pi-tui";
-import { divider, padToVisibleWidth, pushWrapped, safeLine, windowSlice, clampWindowOffset } from "../core/format.js";
+import { clampWindowOffset, divider, padToVisibleWidth, pushWrapped, safeLine } from "../core/format.js";
 import { ICONS, LAYOUT_CONFIG } from "../core/layout.js";
 import { TEXTS } from "../core/texts.js";
 import type { Theme, ThemeColor } from "../core/theme.js";
@@ -314,7 +314,7 @@ export function buildScrollBand(
   const scrollable = total > height;
   const viewHeight = scrollable ? Math.max(1, height - 1) : height;
   const offset = clampWindowOffset(scrollOffset, total, viewHeight);
-  const lines = windowSlice(fullLines, offset, viewHeight).map((line) => safeLine(line, width));
+  const lines = fullLines.slice(offset, offset + viewHeight).map((line) => safeLine(line, width));
   if (scrollable) {
     const scrollInfo = TEXTS.view.previewScrollInfo(offset + 1, Math.min(total, offset + viewHeight), total);
     lines.push(safeLine(`  ${theme.fg("dim", scrollInfo)}`, width));

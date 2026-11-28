@@ -31,17 +31,6 @@ export function clampWindowOffset(offset: number, total: number, viewHeight: num
 }
 
 /**
- * 截取视口可视行切片（不遍历非可视区数据）
- * @param lines - 完整内容行数组（不修改入参）
- * @param offset - 0-based 起始行位移（须先经 {@link clampWindowOffset} 收敛；负值从尾部开始切片）
- * @param viewHeight - 可视行数
- * @returns 至多 `viewHeight` 行的新数组；`viewHeight <= 0` 或 `offset` 越过末行时为空数组
- */
-export function windowSlice<T>(lines: readonly T[], offset: number, viewHeight: number): T[] {
-  return lines.slice(offset, offset + viewHeight);
-}
-
-/**
  * 清除回车符并把制表符规整为双空格（不剥离 ANSI 控制序列）
  * @param str - 原始文本；缺省时按空串处理
  * @returns 规整后的文本，永不返回 undefined
@@ -100,11 +89,10 @@ function hangText(prefix: string, text: string, width: number): string[] {
     prefix = truncateToWidth(prefix, width - 1);
     prefixW = visibleWidth(prefix);
   }
-  const availableW = Math.max(1, width - prefixW);
-  const pad = " ".repeat(prefixW);
-  const wrapped = wrapTextWithAnsi(text, availableW);
+  const wrapped = wrapTextWithAnsi(text, Math.max(1, width - prefixW));
   if (wrapped.length === 0) return prefix ? [prefix] : [];
-  return wrapped.map((line, i) => (i === 0 ? prefix + line : pad + line));
+  const pad = " ".repeat(prefixW);
+  return wrapped.map((line, i) => (i === 0 ? prefix : pad) + line);
 }
 
 /**
@@ -125,8 +113,7 @@ export function pushWrapped(lines: string[], text: string, width: number, prefix
  * @returns 可见宽度不超过 `maxWidth` 的单行文本（未超宽时原样返回）
  */
 export function safeLine(str: string, maxWidth: number): string {
-  if (maxWidth <= 0) return "";
-  return truncateToWidth(cleanText(str), maxWidth);
+  return maxWidth > 0 ? truncateToWidth(cleanText(str), maxWidth) : "";
 }
 
 /**
@@ -136,8 +123,7 @@ export function safeLine(str: string, maxWidth: number): string {
  * @returns 不足则补齐，超宽则截断并以默认省略号收尾
  */
 export function padToVisibleWidth(str: string, targetWidth: number): string {
-  if (targetWidth <= 0) return "";
-  return truncateToWidth(cleanText(str), targetWidth, "...", true);
+  return targetWidth > 0 ? truncateToWidth(cleanText(str), targetWidth, "...", true) : "";
 }
 
 /**

@@ -72,7 +72,13 @@ function buildQuestionPayload(model: AskAuthorFormModel, index: number) {
   const note = state.customText?.trim();
   const visible = model.isQuestionVisible(index);
   const answered = visible && model.isQuestionAnswered(index);
-  const records = model.getExpansions().filter((record) => record.questionIndex === index);
+  let addedQuestions = 0;
+  let addedOptions = 0;
+  for (const record of model.getExpansions()) {
+    if (record.questionIndex !== index) continue;
+    addedQuestions += record.addedQuestions;
+    for (const addition of record.addedOptions) addedOptions += addition.count;
+  }
   const config = model.expansionConfigFor(index);
 
   return {
@@ -91,11 +97,8 @@ function buildQuestionPayload(model: AskAuthorFormModel, index: number) {
       enabled: config !== undefined,
       guidance: config?.guidance,
       insert: config?.insertLabel,
-      addedQuestions: records.reduce((total, record) => total + record.addedQuestions, 0),
-      addedOptions: records.reduce(
-        (total, record) => total + record.addedOptions.reduce((sum, addition) => sum + addition.count, 0),
-        0,
-      ),
+      addedQuestions,
+      addedOptions,
     },
     visible,
     status: !visible
