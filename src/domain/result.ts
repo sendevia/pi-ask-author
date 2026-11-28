@@ -32,7 +32,7 @@ export interface ResultContext {
  * @param err - 未知异常对象
  * @returns `Error` 实例取其 `message`，其余类型取自 `String(err)`
  */
-function toErrorMessage(err: unknown): string {
+export function toErrorMessage(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
 }
 

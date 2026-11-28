@@ -206,24 +206,16 @@ export function hasQuestionNote(st: QuestionAnswerState): boolean {
 }
 
 /**
- * 判定是否存在非空选项批注
- * @param st - 题目作答状态
- * @returns 任一选项批注去空白后非空时为 true
- */
-function hasAnyOptionNote(st: QuestionAnswerState): boolean {
-  for (const n of st.optionNotes.values()) {
-    if (n?.trim()) return true;
-  }
-  return false;
-}
-
-/**
  * 判定是否存在任意非空批注（题目级或选项级）
  * @param st - 题目作答状态
  * @returns 任一非空批注存在时为 true
  */
 function hasAnyNote(st: QuestionAnswerState): boolean {
-  return hasQuestionNote(st) || hasAnyOptionNote(st);
+  if (hasQuestionNote(st)) return true;
+  for (const n of st.optionNotes.values()) {
+    if (n?.trim()) return true;
+  }
+  return false;
 }
 
 /** 多选区间收敛结果 */
@@ -379,8 +371,13 @@ function resolveConditions(
  * @throws AdaptiveConditionError 任一条件引用非法时抛出
  */
 function buildQuestions(rawQuestions: readonly QuestionInput[]): NormalizedQuestion[] {
-  const pending = rawQuestions.map((raw, index) => buildQuestion(raw, index));
-  const questions = dedupeQuestionIds(pending.map((entry) => entry.question));
+  const used = new Set<string>();
+  const pending = rawQuestions.map((raw, index) => {
+    const built = buildQuestion(raw, index);
+    const id = allocateQuestionId(built.question.id, index, used);
+    return { ...built, question: { ...built.question, id } };
+  });
+  const questions = pending.map((entry) => entry.question);
   const indexById = new Map(questions.map((question, index) => [question.id, index]));
   return questions.map((question, index) => {
     const conditions = pending[index];
@@ -413,24 +410,24 @@ function toAnswerOption(option: NormalizedOption, customText?: string): Question
 }
 
 /**
- * 去重题目 ID（跨题重复会让 `formatAnswers` 按 id 归题出错；重复项回退为顺序自动 ID，仍冲突时追加序号后缀）
- * @param questions - 归一化题目列表
- * @returns ID 全局唯一的题目列表
+ * 分配不与已占用集合重复的题目 ID（冲突时回退顺序自动 ID，仍冲突时追加序号后缀）
+ * @param id - 原始或候选题目 ID
+ * @param index - 题目顺序索引（0-based）
+ * @param used - 已占用的 ID 集合（原地登记分配结果）
+ * @returns 全局唯一的题目 ID
  */
-function dedupeQuestionIds(questions: NormalizedQuestion[]): NormalizedQuestion[] {
-  const used = new Set<string>();
-  return questions.map((q, index) => {
-    if (!used.has(q.id)) {
-      used.add(q.id);
-      return q;
-    }
-    let candidate = TEXTS.fallbacks.autoQuestionId(index + 1);
-    for (let suffix = 2; used.has(candidate); suffix++) {
-      candidate = `${candidate}_${suffix}`;
-    }
-    used.add(candidate);
-    return { ...q, id: candidate };
-  });
+function allocateQuestionId(id: string, index: number, used: Set<string>): string {
+  if (!used.has(id)) {
+    used.add(id);
+    return id;
+  }
+  const base = TEXTS.fallbacks.autoQuestionId(index + 1);
+  let candidate = base;
+  for (let suffix = 2; used.has(candidate); suffix++) {
+    candidate = `${base}_${suffix}`;
+  }
+  used.add(candidate);
+  return candidate;
 }
 
 /**
@@ -880,7 +877,7 @@ export class AskAuthorFormModel {
     const pending: PendingQuestion[] = raws.map((raw, offset) => {
       const index = at + offset;
       const built = buildQuestion(raw, index);
-      const id = this.uniqueQuestionId(built.question.id, index, used);
+      const id = allocateQuestionId(built.question.id, index, used);
       return { ...built, question: { ...built.question, id } };
     });
 
@@ -1021,31 +1018,13 @@ export class AskAuthorFormModel {
   private dropOptionsFromState(questionIndex: number, keptCount: number): void {
     const st = this.states.get(questionIndex);
     if (!st) return;
-    for (const index of [...st.selectedIndices]) {
+    for (const index of st.selectedIndices) {
       if (index >= keptCount) st.selectedIndices.delete(index);
     }
     if (st.selectedIndex !== undefined && st.selectedIndex >= keptCount) st.selectedIndex = undefined;
-    for (const index of [...st.optionNotes.keys()]) {
+    for (const index of st.optionNotes.keys()) {
       if (index >= keptCount) st.optionNotes.delete(index);
     }
-  }
-
-  /**
-   * 生成不与既有题目重复的题目 ID
-   * @param id - 推演给出的原始 ID（可为自动占位）
-   * @param index - 题目顺序索引（0-based）
-   * @param used - 已占用的 ID 集合（就地更新）
-   * @returns 未占用的题目 ID
-   */
-  private uniqueQuestionId(id: string, index: number, used: Set<string>): string {
-    if (!used.has(id)) {
-      used.add(id);
-      return id;
-    }
-    let candidate = TEXTS.fallbacks.autoQuestionId(index + 1);
-    for (let suffix = 2; used.has(candidate); suffix++) candidate = `${candidate}_${suffix}`;
-    used.add(candidate);
-    return candidate;
   }
 
   /**
@@ -1206,12 +1185,12 @@ export class AskAuthorFormModel {
     if (!q || !q.multiSelect) return "cleared";
     const st = this.getState(qIndex);
 
-    if (this.getSelectedIndices(qIndex).length >= q.maxSelect) {
+    let selectedCount = this.getSelectedIndices(qIndex).length;
+    if (selectedCount >= q.maxSelect) {
       st.selectedIndices.clear();
       this.bumpRevision();
       return "cleared";
     }
-    let selectedCount = this.getSelectedIndices(qIndex).length;
     for (const [optionIndex] of q.options.entries()) {
       if (selectedCount >= q.maxSelect) break;
       if (!this.isOptionVisible(qIndex, optionIndex) || st.selectedIndices.has(optionIndex)) continue;
@@ -1243,8 +1222,9 @@ export class AskAuthorFormModel {
     st.optionNotes.set(optionIndex, cleaned);
 
     if (q.multiSelect) {
-      if (this.getSelectedIndices(qIndex).includes(optionIndex)) return "saved";
-      if (this.getSelectedIndices(qIndex).length >= q.maxSelect) return "savedAtLimit";
+      const selected = this.getSelectedIndices(qIndex);
+      if (selected.includes(optionIndex)) return "saved";
+      if (selected.length >= q.maxSelect) return "savedAtLimit";
       st.selectedIndices.add(optionIndex);
       return "saved";
     }
@@ -1355,11 +1335,12 @@ export class AskAuthorFormModel {
       if (!this.isQuestionVisible(i)) continue;
       const st = this.states.get(i);
       const customText = st?.customText?.trim() ? cleanText(st.customText.trim()) : undefined;
-      const base = { questionId: q.id, questionTitle: q.title, customText };
+      const optNotes = this.collectOptionNotes(i, q, st);
+      const optionNotes = Object.keys(optNotes).length > 0 ? optNotes : undefined;
+      const base = { questionId: q.id, questionTitle: q.title, customText, optionNotes };
 
       if (q.multiSelect) {
         const selectedIdxs = this.getSelectedIndices(i);
-        const optNotes = this.collectOptionNotes(i, q, st);
         const selectedOptions: Array<QuestionOption & { customText?: string }> = [];
 
         for (const idx of selectedIdxs) {
@@ -1368,32 +1349,25 @@ export class AskAuthorFormModel {
           selectedOptions.push(toAnswerOption(opt, optNotes[idx + 1]));
         }
 
-        const hasNotes = Object.keys(optNotes).length > 0;
         answers.push({
           ...base,
           multiSelect: true,
           selectedOptions,
           selectedIndices: selectedIdxs.map((idx) => idx + 1),
-          optionNotes: hasNotes ? optNotes : undefined,
         });
       } else {
         const selectedIndex = this.getSelectedIndex(i);
         if (selectedIndex !== undefined) {
           const opt = q.options[selectedIndex];
-          const optNotes = this.collectOptionNotes(i, q, st);
-
           answers.push({
             ...base,
             multiSelect: false,
             selectedOption: opt ? toAnswerOption(opt, optNotes[selectedIndex + 1]) : undefined,
             selectedOptionIndex: selectedIndex + 1,
-            optionNotes: Object.keys(optNotes).length > 0 ? optNotes : undefined,
           });
         } else if (this.isQuestionAnswered(i)) {
           // 无选项勾选的显式决策（仅批注提交或 allowEmpty 主动跳过）必须产出条目，否则 LLM 无法区分主动跳过与问题未曾提出
-          const optNotes = this.collectOptionNotes(i, q, st);
-          const hasNotes = Object.keys(optNotes).length > 0;
-          answers.push({ ...base, multiSelect: false, optionNotes: hasNotes ? optNotes : undefined });
+          answers.push({ ...base, multiSelect: false });
         }
       }
     }

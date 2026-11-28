@@ -198,12 +198,18 @@ export default function askAuthorExtension(pi: ExtensionAPI): void {
         return createRuntimeErrorResult(err, { formTitle: initialFormTitle });
       }
 
+      const formContext = () => ({
+        questions: formModel.questions,
+        formTitle: formModel.formTitle,
+        formDescription: formModel.formDescription,
+      });
+
       if (formModel.questions.length === 0) {
         return createErrorResult(
           TEXTS.markdown.errorReasons.noQuestions,
           TEXTS.markdown.errorGuidances.noQuestions,
           TEXTS.status.errorNoQuestions,
-          { questions: [], formTitle: formModel.formTitle, formDescription: formModel.formDescription },
+          formContext(),
         );
       }
 
@@ -221,11 +227,7 @@ export default function askAuthorExtension(pi: ExtensionAPI): void {
           TEXTS.markdown.errorReasons.expansionUnavailable,
           TEXTS.markdown.errorGuidances.expansionUnavailable,
           TEXTS.status.expansionFailed(TEXTS.expansion.errors.noModel),
-          {
-            questions: formModel.questions,
-            formTitle: formModel.formTitle,
-            formDescription: formModel.formDescription,
-          },
+          formContext(),
         );
       }
       const expansion: ExpansionService | undefined = expansionRunner
@@ -258,13 +260,7 @@ export default function askAuthorExtension(pi: ExtensionAPI): void {
 
         return withUsage(createSuccessResult(formModel, result.answers));
       } catch (err) {
-        return withUsage(
-          createRuntimeErrorResult(err, {
-            questions: formModel.questions,
-            formTitle: formModel.formTitle,
-            formDescription: formModel.formDescription,
-          }),
-        );
+        return withUsage(createRuntimeErrorResult(err, formContext()));
       } finally {
         // dispose() 幂等，宿主亦会卸载组件；此处仅兜住「组件工厂执行后、宿主接管前」的抛出错误路径
         comp?.dispose();
