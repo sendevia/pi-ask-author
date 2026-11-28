@@ -127,7 +127,7 @@ interface RenderedPreviewBand {
 /** 题目作答页视图构建器（持有预览缓存；模型与主题在构造期固定） */
 export class QuestionView {
   /** 预览完整渲染行缓存池（键：题号 + 条目身份 + 列宽 + 批注；超容量按插入序淘汰） */
-  private readonly previewCache = new Map<string, string[]>();
+  private readonly previewCache = new Map<string, readonly string[]>();
 
   /**
    * @param theme - 当前 TUI 主题
@@ -274,7 +274,7 @@ export class QuestionView {
    * @param targetWidth - 预览可用列宽
    * @returns 未切片的完整内容行数组
    */
-  private previewContentLines(tab: number, item: MenuItem, targetWidth: number): string[] {
+  private previewContentLines(tab: number, item: MenuItem, targetWidth: number): readonly string[] {
     // 定界拼接杜绝变长字段歧义（字段值均已剥离控制字符）
     const cacheKey = [tab, item.optionIndex, targetWidth].join("\x1f");
 

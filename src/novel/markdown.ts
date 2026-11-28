@@ -599,7 +599,11 @@ function markNovelSyntax(source: string): string {
  * @param theme - TUI 主题实例
  * @returns 未切片的完整内容行（每行已补足至 `targetWidth`）；`item` 缺省时为空数组
  */
-export function buildFullPreviewContentLines(item: MenuItem | undefined, targetWidth: number, theme: Theme): string[] {
+export function buildFullPreviewContentLines(
+  item: MenuItem | undefined,
+  targetWidth: number,
+  theme: Theme,
+): readonly string[] {
   if (!item) return [];
 
   let mdSource = "";
