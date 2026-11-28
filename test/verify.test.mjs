@@ -246,6 +246,24 @@ const fakeTui = { terminal: { rows: 40 }, requestRender() {} };
   assertStructureEqual(enUS, zhCN, "zh_CN");
 }
 
+// 5.5 重复题目 ID 去重与块级数学区闭合掩码验证
+{
+  const dupModel = new AskAuthorFormModel({
+    formTitle: "ID去重",
+    questions: [
+      { id: "q_3", title: "第一题", options: [{ label: "甲" }] },
+      { id: "q_3", title: "第二题", options: [{ label: "乙" }] },
+      { id: "q_3", title: "第三题", options: [{ label: "丙" }] },
+      { id: "q_3", title: "第四题", options: [{ label: "丁" }] },
+    ],
+  });
+  assert.deepEqual(
+    dupModel.questions.map((q) => q.id),
+    ["q_3", "q_2", "q_3_2", "q_4"],
+    "重复题目 ID 应在基础自动 ID 上递增后缀",
+  );
+}
+
 // 6. 自适应显示条件验证
 {
   const buildBranching = () =>
