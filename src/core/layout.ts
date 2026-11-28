@@ -28,8 +28,6 @@ export const LAYOUT_CONFIG = {
   summaryScrollStep: 3,
   /** 菜单每页最多可见的选项数 */
   visibleOptionCount: 7,
-  /** 补充说明按钮的左侧缩进 (cols) */
-  noteButtonIndent: 2,
   /** 左侧按钮旁边留给文字的最小列数 (cols)；不足时按钮与文字上下堆叠 */
   leadingTextMinWidth: 8,
   /** 按钮共享同一行时允许被压缩到自然宽度的比例；低于此比例就另起一行 */

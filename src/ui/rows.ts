@@ -20,7 +20,7 @@ import {
 /** 按钮每行除内容之外的固定列数（左右边框各 1 列、内容左右各 1 列空格） */
 const BUTTON_CHROME_WIDTH = 4;
 
-/** 同行按钮之间的基础间隙列数（行内有剩余宽度时再按对齐方式加宽） */
+/** 同行按钮之间的固定间隙列数 */
 const BUTTON_GAP = 1;
 
 /** Tab 标签之间的间隙列数（标签自身不留边距，整行从首列起排） */
@@ -554,8 +554,8 @@ interface ButtonBox extends ButtonCell {
   readonly inner: number;
 }
 
-/** 按钮组在可用宽度内的对齐方式：靠左、靠右或两端分开 */
-export type ButtonAlign = "left" | "right" | "spread";
+/** 按钮组在可用宽度内的对齐方式：靠左或靠右 */
+export type ButtonAlign = "left" | "right";
 
 /**
  * 测量按钮文字的自然可见列宽（含宽字符与 ANSI 着色，多行取最宽一行）
@@ -615,7 +615,7 @@ function rowNeed(cells: readonly ButtonCell[]): number {
  * - 分行按“压缩后仍能审读”判定：一行里的每个按钮最多占自然宽度的 `buttonShareShrinkRatio` 就能装下时才同行，否则另起一行
  * - 行内列宽递进均分：窄按钮先拿足自然宽度，剩下的全部给宽按钮，超过分配宽度的文字按列折行
  * - 同一行内按钮高度取该行最大值，短按钮的内容区补空行保持上下缘对齐
- * - `align` 决定整组靠向：靠左首列留 `inset` 列，靠右末列距右缘 `inset` 列，两端分开时首按钮靠左、末按钮靠右、余下列宽均分给列间隙
+ * - `align` 决定整组靠向：靠左首列留 `inset` 列，靠右末列距右缘 `inset` 列
  *
  * @param theme - 主题样式提供者
  * @param buttons - 按钮序列（空数组时无输出行）
@@ -667,10 +667,9 @@ export function renderButtonGroup(
     const rowWidth =
       boxes.reduce((sum, box) => sum + box.inner + BUTTON_CHROME_WIDTH, 0) + (boxes.length - 1) * BUTTON_GAP;
     const leftPad = align === "right" ? Math.max(0, maxWidth - inset - rowWidth) : inset;
-    const gaps = rowGaps(align, boxes.length, rowWidth, available);
     const padStr = " ".repeat(leftPad);
-    const join = (parts: readonly string[]): string =>
-      parts.map((part, index) => (index === 0 ? part : " ".repeat(gaps[index - 1] ?? BUTTON_GAP) + part)).join("");
+    const gapStr = " ".repeat(BUTTON_GAP);
+    const join = (parts: readonly string[]): string => parts.join(gapStr);
 
     const height = Math.max(...boxes.map((box) => box.contentLines.length));
     const tops: string[] = [];
@@ -679,7 +678,7 @@ export function renderButtonGroup(
     const spans: RowRange[] = [];
     let column = leftPad;
 
-    for (const [index, box] of boxes.entries()) {
+    for (const box of boxes) {
       const width = box.inner + BUTTON_CHROME_WIDTH;
       const side = theme.fg(box.tone, frame.side);
       tops.push(theme.fg(box.tone, frame.topLeft + frame.top.repeat(box.inner + 2) + frame.topRight));
@@ -691,7 +690,7 @@ export function renderButtonGroup(
         ),
       );
       spans.push({ start: column, end: column + width });
-      column += width + (gaps[index] ?? BUTTON_GAP);
+      column += width + BUTTON_GAP;
     }
 
     const top = lines.length;
@@ -752,22 +751,4 @@ export function renderLeadingButton(
     return `${padToVisibleWidth(frameLine ?? "", textLeft)}${textLine}`;
   });
   return { lines, rect };
-}
-
-/**
- * 计算一行内相邻按钮之间的列间隙数
- * @param align - 对齐方式
- * @param count - 该行按钮数
- * @param rowWidth - 该行按钮与基础列间隙的总宽
- * @param available - 可用总宽度（已扣除缩进）
- * @returns 长度恒为 `count - 1` 的间隙数组
- */
-function rowGaps(align: ButtonAlign, count: number, rowWidth: number, available: number): number[] {
-  const gaps = count - 1;
-  if (gaps <= 0) return [];
-  if (align !== "spread") return new Array(gaps).fill(1);
-  const free = Math.max(0, available - rowWidth);
-  const share = Math.floor(free / gaps);
-  let remainder = free % gaps;
-  return Array.from({ length: gaps }, () => 1 + share + (remainder-- > 0 ? 1 : 0));
 }
