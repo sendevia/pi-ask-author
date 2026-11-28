@@ -11,7 +11,7 @@ import { ICONS } from "../core/layout.js";
 import { TEXTS } from "../core/texts.js";
 import type { Theme } from "../core/theme.js";
 import type { AskAuthorFormModel, EditTarget } from "../domain/model.js";
-import { composePage, optionLabelOf, renderLeadingButton, type ButtonRect } from "./rows.js";
+import { composePage, offsetButtonRect, optionLabelOf, renderLeadingButton, type ButtonRect } from "./rows.js";
 
 /** 编辑框左右两侧的缩进列数 */
 const EDITOR_INDENT = 2;
@@ -121,7 +121,6 @@ export function renderEditorPage(
     },
   );
 
-  const titleTop = tabLines.length;
   return {
     lines: page.lines,
     editorArea: {
@@ -130,9 +129,6 @@ export function renderEditorPage(
       left: EDITOR_INDENT,
       width: editorWidth,
     },
-    backButton: {
-      rows: { start: titleTop + head.rect.rows.start, end: titleTop + head.rect.rows.end },
-      cols: head.rect.cols,
-    },
+    backButton: offsetButtonRect(head.rect, tabLines.length),
   };
 }

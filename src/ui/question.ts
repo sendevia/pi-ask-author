@@ -21,6 +21,9 @@ import { buildFullPreviewContentLines } from "../novel/markdown.js";
 import {
   composePage,
   formatMenuItemRow,
+  offsetButtonRect,
+  offsetRowRange,
+  optionLabelOf,
   renderButtonGroup,
   renderContentSections,
   type ButtonRect,
@@ -74,16 +77,6 @@ export interface QuestionActionHit {
   readonly action: QuestionActionKind;
   /** 按钮矩形 */
   readonly rect: ButtonRect;
-}
-
-/**
- * 把按钮组的相对矩形平移为整页矩形
- * @param rect - 相对行号的矩形
- * @param rowOffset - 该行数组在整页中的起始行
- * @returns 行号平移后的矩形，列区间不变
- */
-function offsetRect(rect: ButtonRect, rowOffset: number): ButtonRect {
-  return { rows: { start: rect.rows.start + rowOffset, end: rect.rows.end + rowOffset }, cols: rect.cols };
 }
 
 /** 题目作答页渲染结果 */
@@ -210,18 +203,19 @@ export class QuestionView {
       },
     );
 
-    const shift = (range: RowRange): RowRange => ({
-      start: range.start + page.answerStart,
-      end: range.end + page.answerStart,
-    });
-    const shiftRect = (rect: ButtonRect): ButtonRect => ({ rows: shift(rect.rows), cols: rect.cols });
     return {
       lines: page.lines,
       previewViewport: viewport,
       previewBand: page.contentBand,
       tabRange: { start: 0, end: state.tabLines.length },
-      menuItemHits: menuItemHits.map((hit) => ({ index: hit.index, range: shift(hit.range) })),
-      actionButtonHits: actionButtonHits.map((hit) => ({ action: hit.action, rect: shiftRect(hit.rect) })),
+      menuItemHits: menuItemHits.map((hit) => ({
+        index: hit.index,
+        range: offsetRowRange(hit.range, page.answerStart),
+      })),
+      actionButtonHits: actionButtonHits.map((hit) => ({
+        action: hit.action,
+        rect: offsetButtonRect(hit.rect, page.answerStart),
+      })),
     };
   }
 
@@ -268,7 +262,7 @@ export class QuestionView {
     for (const [index, rect] of group.rects.entries()) {
       const button = buttons[index];
       if (!button) continue;
-      hits.push({ action: button.action, rect: offsetRect(rect, start) });
+      hits.push({ action: button.action, rect: offsetButtonRect(rect, start) });
     }
     return hits;
   }
@@ -328,9 +322,7 @@ export class QuestionView {
     if (currentItem && optionNote) {
       const optionLabel = this.theme.fg(
         "muted",
-        TEXTS.view.notePreviewOption(
-          q.options[currentItem.optionIndex]?.label ?? TEXTS.fallbacks.autoOptionLabel(currentItem.optionIndex + 1),
-        ),
+        TEXTS.view.notePreviewOption(optionLabelOf(q, currentItem.optionIndex)),
       );
       pushWrapped(lines, `${optionLabel} ${this.theme.fg("accent", optionNote)}`, renderWidth);
     }

@@ -32,6 +32,7 @@ import {
   type MenuItem,
   type NormalizedQuestion,
 } from "../domain/model.js";
+import { toErrorMessage } from "../domain/result.js";
 import type { ExpansionRequest, ExpansionRunner } from "../protocol/expansion.js";
 import type { ExpansionPayload, InsertPosition } from "../protocol/schema.js";
 import { renderEditorPage, type EditorArea } from "./editor.js";
@@ -380,14 +381,6 @@ export class AskAuthorComponent implements Component, Focusable {
   }
 
   /**
-   * 底部状态行文案
-   * @returns 待展示的状态行文本；无提示时为 null
-   */
-  private get statusLine(): string | null {
-    return this.statusMessage;
-  }
-
-  /**
    * 终结作答流程并触发 `done`（至多投递一次）
    * `isFinished` 防止重复投递；不以 `disposed` 阻断（资源已回收但 `done` 未投递时仍需结算）
    * @param cancelled - 是否用户主动取消
@@ -682,7 +675,7 @@ export class AskAuthorComponent implements Component, Focusable {
       record = this.model.pushExpansion({ questionIndex: qIndex, signature, insert, payload });
     } catch (err) {
       // 推演内容的条件非法时整批丢弃，作者已填写的作答保持不变
-      this.setStatus(TEXTS.status.expansionFailed(this.describeError(err)));
+      this.setStatus(TEXTS.status.expansionFailed(toErrorMessage(err)));
       return;
     }
 
@@ -717,16 +710,7 @@ export class AskAuthorComponent implements Component, Focusable {
     if (ticket !== this.expansionTicket || this.isFinished || this.disposed) return;
     this.expansionPending = false;
     this.expansionAbort = undefined;
-    this.setStatus(TEXTS.status.expansionFailed(this.describeError(err)));
-  }
-
-  /**
-   * 提取异常的可读描述
-   * @param err - 未知异常
-   * @returns `Error` 的 `message`，其余类型取字符串形式
-   */
-  private describeError(err: unknown): string {
-    return err instanceof Error ? err.message : String(err);
+    this.setStatus(TEXTS.status.expansionFailed(toErrorMessage(err)));
   }
 
   /** 题目总数变化后收敛 Tab、光标与光标记忆（题数变少时当前页与越界光标一并回退） */
@@ -1331,7 +1315,7 @@ export class AskAuthorComponent implements Component, Focusable {
         this.editTarget,
         this.editor,
         tabBar.lines,
-        this.statusLine,
+        this.statusMessage,
         layoutWidth,
         renderHeight,
       );
@@ -1343,7 +1327,7 @@ export class AskAuthorComponent implements Component, Focusable {
       const view = this.summaryView.render(
         tabBar.lines,
         this.summaryScrollOffset,
-        this.statusLine,
+        this.statusMessage,
         layoutWidth,
         renderHeight,
       );
@@ -1360,7 +1344,7 @@ export class AskAuthorComponent implements Component, Focusable {
           optionIndex: this.currentOptionIndex,
           listScrollOffset: this.listScrollOffset,
           previewScrollOffset: this.previewScrollOffset,
-          statusMessage: this.statusLine,
+          statusMessage: this.statusMessage,
           menuItems: this.getMenuItems(),
           tabLines: tabBar.lines,
         },

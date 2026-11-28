@@ -12,6 +12,7 @@ import type { Theme } from "../core/theme.js";
 import type { AskAuthorFormModel } from "../domain/model.js";
 import {
   composePage,
+  offsetButtonRect,
   renderButtonGroup,
   renderContentSections,
   type ButtonRect,
@@ -155,12 +156,7 @@ export class SummaryView {
     );
 
     const shiftRect = (rect: ButtonRect | undefined): ButtonRect | undefined =>
-      rect
-        ? {
-            rows: { start: rect.rows.start + page.answerStart, end: rect.rows.end + page.answerStart },
-            cols: rect.cols,
-          }
-        : undefined;
+      rect ? offsetButtonRect(rect, page.answerStart) : undefined;
     return {
       lines: page.lines,
       viewport,
@@ -214,21 +210,11 @@ export function buildSubmitSummaryContentLines(
     );
 
     const selectedLabels: string[] = [];
-    if (q.multiSelect) {
-      // 升序展示与 compileAnswers 保持一致（排序不变量由 getSelectedIndices 保证，已剔除隐藏选项）
-      for (const idx of model.getSelectedIndices(i)) {
-        const opt = q.options[idx];
-        if (!opt) continue;
-        const note = st.optionNotes.get(idx);
-        selectedLabels.push(note ? `${opt.label} ${TEXTS.summary.optionNoteBadge}` : opt.label);
-      }
-    } else {
-      const selectedIndex = model.getSelectedIndex(i);
-      const opt = selectedIndex === undefined ? undefined : q.options[selectedIndex];
-      if (opt && selectedIndex !== undefined) {
-        const note = st.optionNotes.get(selectedIndex);
-        selectedLabels.push(note ? `${opt.label} ${TEXTS.summary.optionNoteBadge}` : opt.label);
-      }
+    for (const idx of model.getSelectedIndices(i)) {
+      const opt = q.options[idx];
+      if (!opt) continue;
+      const note = st.optionNotes.get(idx);
+      selectedLabels.push(note ? `${opt.label} ${TEXTS.summary.optionNoteBadge}` : opt.label);
     }
 
     const value = selectedLabels.length

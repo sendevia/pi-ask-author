@@ -508,6 +508,26 @@ export interface ButtonRect {
   readonly cols: RowRange;
 }
 
+/**
+ * 把相对行范围平移为整页行范围
+ * @param range - 相对行范围
+ * @param rowOffset - 该行数组在整页中的起始行
+ * @returns 平移后的行范围
+ */
+export function offsetRowRange(range: RowRange, rowOffset: number): RowRange {
+  return { start: range.start + rowOffset, end: range.end + rowOffset };
+}
+
+/**
+ * 把按钮的相对矩形平移为整页矩形
+ * @param rect - 相对行号的矩形
+ * @param rowOffset - 该行数组在整页中的起始行
+ * @returns 行号平移后的矩形，列区间不变
+ */
+export function offsetButtonRect(rect: ButtonRect, rowOffset: number): ButtonRect {
+  return { rows: offsetRowRange(rect.rows, rowOffset), cols: rect.cols };
+}
+
 /** 按钮组渲染产物 */
 export interface ButtonGroup {
   /** 整组行：组内同行的按钮高度对齐，短按钮补空内容行 */

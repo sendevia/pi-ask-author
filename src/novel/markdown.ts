@@ -290,11 +290,10 @@ function maskCodeRegions(source: string, lines: readonly string[], lineStarts: L
 
     // 块级数学区：行首 `$$` / `\[…` 开启至闭合定界符所在行，未闭合时按 pending 语义跨空行吞并至源码末尾
     if (BLOCK_MATH_OPENING_PATTERN.test(line)) {
+      const closer = line.trimStart().startsWith("$$") ? "$$" : "\\]";
       const rest = line.replace(BLOCK_MATH_OPENING_PATTERN, "");
       markLine(lineIndex);
-      if (!rest.includes(rest.startsWith("$$") ? "$$" : "\\]")) {
-        mathCloser = rest.startsWith("$$") ? "$$" : "\\]";
-      }
+      if (!rest.includes(closer)) mathCloser = closer;
       continue;
     }
 
@@ -461,10 +460,9 @@ function isSpanWithinParagraph(lines: readonly string[], startLine: number, endL
  * @returns 单反引号围栏包裹的片段序列（每段为哨兵前缀 + 哨兵字符 + 语义原文，逐字透传）
  */
 function wrapNovelCode(line: string, group: readonly NovelLineSegment[]): string {
-  const runs: string[] = [];
-  for (const segment of group) {
-    runs.push(`${NOVEL_MARKER_PREFIX}${segment.template.marker}${line.slice(segment.start, segment.end)}`);
-  }
+  const runs = group.map(
+    (segment) => `${NOVEL_MARKER_PREFIX}${segment.template.marker}${line.slice(segment.start, segment.end)}`,
+  );
   return `\`${runs.join("")}\``;
 }
 
