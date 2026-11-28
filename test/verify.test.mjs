@@ -34,6 +34,9 @@ askAuthorExtension({
 });
 initTheme();
 
+/** 去掉所有空白后判定包含关系，用于匹配可能跨行折行的界面文案 */
+const flatIncludes = (text, fragment) => text.replace(/\s+/g, "").includes(fragment.replace(/\s+/g, ""));
+
 /** 纯文本主题：去掉着色并保留全部文本 */
 const dummyTheme = {
   fg: (_color, text) => text,
@@ -604,6 +607,29 @@ const fakeTui = { terminal: { rows: 40 }, requestRender() {} };
   assert.equal(model.getExpansions().length, 2);
   assert.equal(model.retractFrom(0), 2, "起始题目改动应级联撤回后续推演");
   assert.equal(model.getExpansions().length, 0);
+
+  // 批注、批注修改与 allowEmpty 跳过均应生成可区分的答案签名
+  const noteModel = new AskAuthorFormModel(
+    sanitizeAskAuthorArgs({
+      formTitle: "签名覆盖",
+      expansion: { maxQuestions: 4 },
+      questions: [
+        { id: "q1", title: "批注题", options: [{ label: "甲" }, { label: "乙" }] },
+        { id: "q2", title: "可空题", allowEmpty: true, options: [{ label: "丙" }] },
+      ],
+    }),
+  );
+  assert.equal(noteModel.answerSignature(0), undefined, "未作答且不可空时签名为 undefined");
+  assert.equal(noteModel.answerSignature(1), "", "allowEmpty 跳过时应产出空串签名而非 undefined");
+  noteModel.setQuestionNote(0, "只要冷硬语调");
+  const noteOnlySig = noteModel.answerSignature(0);
+  assert.ok(typeof noteOnlySig === "string" && noteOnlySig.length > 0, "仅写题目批注应产出有效签名");
+  noteModel.setQuestionNote(0, "改用第一人称");
+  assert.notEqual(noteModel.answerSignature(0), noteOnlySig, "修改题目批注后签名应变化");
+  noteModel.toggleOption(0, 0);
+  const withOptSig = noteModel.answerSignature(0);
+  noteModel.setOptionNote(0, 0, "节奏加快");
+  assert.notEqual(noteModel.answerSignature(0), withOptSig, "写入选项批注后签名应变化");
 }
 
 // 11. 推演载荷过滤与回复解析
@@ -840,12 +866,20 @@ const fakeTui = { terminal: { rows: 40 }, requestRender() {} };
   );
 
   const custom = build({ after: "q1" });
-  custom.pushExpansion({ questionIndex: 2, signature: "丙", payload: payload("c1") });
+  const firstCustom = custom.pushExpansion({ questionIndex: 2, signature: "丙", payload: payload("c1") });
+  assert.equal(firstCustom.questionIndex, 3, "前置锚点插入后，记录的触发题目索引应随题目后移");
   assert.deepEqual(
     custom.questions.map((q) => q.id),
     ["q1", "c1", "q2", "q3"],
     "自定义锚点时插到锚点题目之后",
   );
+  assert.equal(custom.retractFrom(3), 1, "按新索引撤回触发题目应准确撤回其前置插入块");
+  assert.deepEqual(
+    custom.questions.map((q) => q.id),
+    ["q1", "q2", "q3"],
+  );
+
+  custom.pushExpansion({ questionIndex: 2, signature: "丙", payload: payload("c1") });
   custom.pushExpansion({ questionIndex: 2, signature: "丙2", payload: payload("c2") });
   assert.deepEqual(
     custom.questions.map((q) => q.id),
@@ -927,14 +961,13 @@ const fakeTui = { terminal: { rows: 40 }, requestRender() {} };
   };
   await registeredToolDef.execute("call-placeholder", body, undefined, undefined, ctx);
 
-  const norm = (str) => str.replace(/\s+/g, "");
   assert.ok(pendingRender.includes(TEXTS.tabs.expansionPlaceholder), "推演在途时激活页的 Tab 标题应换成占位文案");
   assert.ok(pendingRender.includes(TEXTS.status.expansionRunning), "推演在途时占位页应展示运行提示");
-  assert.ok(norm(pendingRender).includes(norm(TEXTS.view.expansionPendingHint)), "推演在途时占位页应展示暂停说明");
+  assert.ok(flatIncludes(pendingRender, TEXTS.view.expansionPendingHint), "推演在途时占位页应展示暂停说明");
   assert.ok(!pendingRender.includes("第二题"), "推演在途时作答页内容应被占位页替换");
   assert.equal(frozenRender, pendingRender, "推演在途期间作答与切换输入应被忽略");
   assert.ok(!readyRender.includes(TEXTS.tabs.expansionPlaceholder), "推演就绪后 Tab 占位文案应恢复");
-  assert.ok(!norm(readyRender).includes(norm(TEXTS.view.expansionPendingHint)), "推演就绪后占位页应消失");
+  assert.ok(!flatIncludes(readyRender, TEXTS.view.expansionPendingHint), "推演就绪后占位页应消失");
   assert.ok(readyRender.includes("推演题"), "推演就绪后生成题目应可见");
   assert.notEqual(resumedRender, readyRender, "推演就绪后题目切换应恢复");
 }
@@ -1513,6 +1546,7 @@ const fakeTui = { terminal: { rows: 40 }, requestRender() {} };
 
   assert.ok(result.content[0].text.includes("[Author supplement: 保持伏笔]"), "提交封套应携带整卷补充行");
   assert.equal(result.details.supplement, "保持伏笔", "结果详情应携带整卷补充原文");
+  assert.equal(frames.result.supplement, "保持伏笔", "组件 finish 回调结果应直接携带整卷补充");
 }
 
 // 23. 选项下方动作按钮组：选项补充 / 题目补充 / 确认靠右成组，换行后仍靠右，点击打开对应编辑器
@@ -1699,7 +1733,7 @@ const fakeTui = { terminal: { rows: 40 }, requestRender() {} };
         );
         const blocked = render();
         assert.ok(
-          text(blocked).replace(/\s+/g, "").includes(TEXTS.status.pleaseAnswerBeforeSubmit.replace(/\s+/g, "")),
+          flatIncludes(text(blocked), TEXTS.status.pleaseAnswerBeforeSubmit),
           "未作答时点确认应提示状态栏",
         );
         assert.ok(text(blocked).includes("第一题"), "未作答时点确认不应切页");
@@ -1808,7 +1842,7 @@ const fakeTui = { terminal: { rows: 40 }, requestRender() {} };
         const jumped = render();
         assert.ok(text(jumped).includes("第一题"), "未完成时点确认应跳到待答题目");
         assert.ok(
-          text(jumped).replace(/\s+/g, "").includes(TEXTS.status.pleaseAnswerBeforeSubmit.replace(/\s+/g, "")),
+          flatIncludes(text(jumped), TEXTS.status.pleaseAnswerBeforeSubmit),
           "跳转时应在状态栏说明原因",
         );
 
@@ -1899,11 +1933,7 @@ const fakeTui = { terminal: { rows: 40 }, requestRender() {} };
         assert.ok(plain(titleRows[0] ?? "").startsWith("┌"), "返回按钮应贴整页左缘");
         // 折行把同一段文字拆到多行，抹掉空白后仍应连成完整面包屑末段
         assert.ok(
-          titleRows
-            .map(plain)
-            .join("")
-            .replace(/\s+/g, "")
-            .includes(TEXTS.titleArea.questionNote.replace(/\s+/g, "")),
+          flatIncludes(titleRows.map(plain).join(""), TEXTS.titleArea.questionNote),
           "面包屑末段应随折行显示",
         );
         const textColumn = plain(titleRows[0] ?? "").indexOf("┐") + 2;
@@ -1930,7 +1960,7 @@ const fakeTui = { terminal: { rows: 40 }, requestRender() {} };
         click(component, dirtyBackX, dirtyBackRow);
         frames.armed = render();
         assert.ok(
-          text(frames.armed).replace(/\s+/g, "").includes(TEXTS.status.editorDiscardConfirm.replace(/\s+/g, "")),
+          flatIncludes(text(frames.armed), TEXTS.status.editorDiscardConfirm),
           "有未保存内容时返回应二次确认",
         );
         assert.ok(text(frames.armed).includes(TEXTS.editor.footerHelp), "首次点击返回不应关闭编辑器");
